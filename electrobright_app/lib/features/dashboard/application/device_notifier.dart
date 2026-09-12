@@ -52,6 +52,7 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
   final DeviceProfile _profile;
   StreamSubscription? _notificationSub;
   StreamSubscription? _connectionSub;
+  Timer? _activePresetDebounceTimer;
 
   DeviceNotifier(
     this._transport,
@@ -64,10 +65,27 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
     _loadPersistedPresets();
   }
 
+  @override
+  set state(DeviceState value) {
+    final oldActiveId = state.activePresetId;
+    super.state = value;
+    if (value.activePresetId != oldActiveId) {
+      _debouncePersistActivePresetId(value.activePresetId);
+    }
+  }
+
+  void _debouncePersistActivePresetId(int? id) {
+    _activePresetDebounceTimer?.cancel();
+    _activePresetDebounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _presetNameRepo.saveActivePresetId(id);
+    });
+  }
+
   Future<void> _loadPersistedPresets() async {
     final names = await _presetNameRepo.loadPresetNames();
     final snapshots = await _presetNameRepo.loadPresetSnapshots();
     final savedIds = await _presetNameRepo.loadSavedPresetIds();
+    final savedActiveId = await _presetNameRepo.loadActivePresetId();
 
     if (!mounted) return;
 
@@ -87,11 +105,33 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
     }
     mergedSaved.addAll(mergedSnapshots.keys);
 
-    state = state.copyWith(
-      presetNames: mergedNames,
-      presetSnapshots: mergedSnapshots,
-      savedPresets: mergedSaved,
-    );
+    if (savedActiveId != null && mergedSnapshots.containsKey(savedActiveId)) {
+      final p = mergedSnapshots[savedActiveId]!;
+      state = state.copyWith(
+        presetNames: mergedNames,
+        presetSnapshots: mergedSnapshots,
+        savedPresets: mergedSaved,
+        activePresetId: savedActiveId,
+        red: p.red,
+        green: p.green,
+        blue: p.blue,
+        white: p.white,
+        brightness: p.brightness,
+        mode: p.mode,
+        modeSpeed: List<int>.from(p.modeSpeed),
+        modeFrequency: List<int>.from(p.modeFrequency),
+        fireworkColorMode: p.fireworkColorMode,
+        clubColorMode: p.clubColorMode,
+        policeColorMode: p.policeColorMode,
+      );
+    } else {
+      state = state.copyWith(
+        presetNames: mergedNames,
+        presetSnapshots: mergedSnapshots,
+        savedPresets: mergedSaved,
+        activePresetId: savedActiveId,
+      );
+    }
   }
 
   void _listenToTransport() {
@@ -480,6 +520,7 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
 
   @override
   void dispose() {
+    _activePresetDebounceTimer?.cancel();
     _notificationSub?.cancel();
     _connectionSub?.cancel();
     super.dispose();

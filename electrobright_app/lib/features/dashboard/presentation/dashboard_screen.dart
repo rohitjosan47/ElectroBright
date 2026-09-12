@@ -106,6 +106,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               SliverToBoxAdapter(
                 child: HeaderBar(
                   connectionState: connectionState.state,
+                  reconnectAttempt: connectionState.reconnectAttempt,
                   activeDeviceLabel: libraryState.activeDevice?.label,
                   isSleeping: deviceState.isSleeping,
                   onConnectionTap: () => _openDeviceLibrary(context),

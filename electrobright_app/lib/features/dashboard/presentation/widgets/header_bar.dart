@@ -8,6 +8,7 @@ class HeaderBar extends StatelessWidget {
   final DeviceConnectionState connectionState;
   final String? activeDeviceLabel;
   final bool isSleeping;
+  final int reconnectAttempt;
   final VoidCallback onConnectionTap;
   final VoidCallback onPowerTap;
   final VoidCallback onSettingsTap;
@@ -17,6 +18,7 @@ class HeaderBar extends StatelessWidget {
     required this.connectionState,
     this.activeDeviceLabel,
     required this.isSleeping,
+    this.reconnectAttempt = 0,
     required this.onConnectionTap,
     required this.onPowerTap,
     required this.onSettingsTap,
@@ -25,6 +27,23 @@ class HeaderBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isConnected = connectionState == DeviceConnectionState.connected;
+    final isReconnecting = connectionState == DeviceConnectionState.reconnecting;
+    final statusColor = isConnected
+        ? AppColors.greenAccent
+        : (isReconnecting ? AppColors.cyanAccent : AppColors.amberAccent);
+
+    String labelText;
+    if (isConnected) {
+      labelText = activeDeviceLabel ?? 'Connected';
+    } else if (isReconnecting) {
+      labelText = 'Reconnecting ($reconnectAttempt/3)...';
+    } else if (connectionState == DeviceConnectionState.scanning) {
+      labelText = 'Scanning...';
+    } else if (connectionState == DeviceConnectionState.connecting) {
+      labelText = 'Connecting...';
+    } else {
+      labelText = activeDeviceLabel == null ? 'Connect Fixture' : 'Connect $activeDeviceLabel';
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
@@ -39,21 +58,30 @@ class HeaderBar extends StatelessWidget {
             },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 8.0),
-              decoration: AppTheme.glassBoxDecoration(
-                color: isConnected
-                    ? AppColors.greenAccent.withOpacity(0.12)
-                    : AppColors.amberAccent.withOpacity(0.12),
-                borderColor: isConnected
-                    ? AppColors.greenAccent.withOpacity(0.5)
-                    : AppColors.amberAccent.withOpacity(0.5),
-                borderRadius: 24.0,
-                glow: isConnected,
+              decoration: BoxDecoration(
+                color: AppColors.cardSurface,
+                borderRadius: BorderRadius.circular(24.0),
+                border: Border.all(
+                  color: isConnected
+                      ? AppColors.greenAccent.withOpacity(0.3)
+                      : (isReconnecting
+                          ? AppColors.cyanAccent.withOpacity(0.3)
+                          : AppColors.cardBorder),
+                  width: 1.0,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(10),
                     child: Image.asset(
                       'assets/images/logo.png',
                       width: 20,
@@ -67,10 +95,10 @@ class HeaderBar extends StatelessWidget {
                     height: 7,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: isConnected ? AppColors.greenAccent : AppColors.amberAccent,
+                      color: statusColor,
                       boxShadow: [
                         BoxShadow(
-                          color: isConnected ? AppColors.greenAccent : AppColors.amberAccent,
+                          color: statusColor,
                           blurRadius: 6,
                         ),
                       ],
@@ -78,15 +106,11 @@ class HeaderBar extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    isConnected
-                        ? (activeDeviceLabel ?? 'Connected')
-                        : (connectionState == DeviceConnectionState.scanning
-                            ? 'Scanning...'
-                            : (activeDeviceLabel == null ? 'Connect Fixture' : 'Connect $activeDeviceLabel')),
+                    labelText,
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: isConnected ? AppColors.greenAccent : AppColors.amberAccent,
+                      color: statusColor,
                     ),
                   ),
                 ],

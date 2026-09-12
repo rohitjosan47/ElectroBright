@@ -96,6 +96,27 @@ class PresetNameRepository {
     } catch (_) {}
   }
 
+  String get _activePresetKey => 'electrobright_active_preset_id_$deviceId';
+
+  Future<int?> loadActivePresetId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_activePresetKey);
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> saveActivePresetId(int? id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (id != null) {
+        await prefs.setInt(_activePresetKey, id);
+      } else {
+        await prefs.remove(_activePresetKey);
+      }
+    } catch (_) {}
+  }
+
   Future<void> wipeAll() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -104,6 +125,7 @@ class PresetNameRepository {
         await prefs.remove('$_dataKeyPrefix$i');
       }
       await prefs.remove(_savedIdsKey);
+      await prefs.remove(_activePresetKey);
     } catch (_) {}
   }
 }

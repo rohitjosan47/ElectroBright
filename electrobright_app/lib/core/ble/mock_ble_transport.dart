@@ -175,17 +175,34 @@ class MockBleTransport implements BleTransport {
     }
   }
 
+  bool failNextConnect = false;
+  Duration connectDelay = const Duration(milliseconds: 100);
+
   @override
   Future<bool> connect(String deviceId) async {
     _state = DeviceConnectionState.connecting;
     _connectionController.add(_state);
 
-    await Future.delayed(const Duration(milliseconds: 300));
+    await Future.delayed(connectDelay);
+    if (failNextConnect) {
+      _state = DeviceConnectionState.disconnected;
+      _connectionController.add(_state);
+      return false;
+    }
+
     _state = DeviceConnectionState.connected;
     _connectionController.add(_state);
 
     _broadcastStatus();
     return true;
+  }
+
+  /// Simulates an unexpected BLE drop (e.g. out-of-range signal loss).
+  void simulateDeviceDrop() {
+    if (_state == DeviceConnectionState.connected) {
+      _state = DeviceConnectionState.disconnected;
+      _connectionController.add(_state);
+    }
   }
 
   @override

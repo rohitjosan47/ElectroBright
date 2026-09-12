@@ -6,6 +6,7 @@ enum DeviceConnectionState {
   connecting,
   connected,
   disconnecting,
+  reconnecting,
 }
 
 class DiscoveredDevice {
