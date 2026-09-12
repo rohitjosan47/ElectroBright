@@ -21,6 +21,28 @@ void main() {
       expect(status.policeColorMode, 1);
     });
 
+    test('Correctly parses complete 15-field STATUS packet matching firmware sendStatus()', () {
+      const raw = 'STATUS:255,165,0,50,220,12,8,9,0,0,1,1,1,300,1\n';
+      final status = BleProtocol.parseStatus(raw);
+
+      expect(status, isNotNull);
+      expect(status!.red, 255);
+      expect(status.green, 165);
+      expect(status.blue, 0);
+      expect(status.white, 50);
+      expect(status.brightness, 220);
+      expect(status.mode, 12);
+      expect(status.currentModeSpeed, 8);
+      expect(status.currentModeFrequency, 9);
+      expect(status.fireworkColorMode, 0);
+      expect(status.clubColorMode, 0);
+      expect(status.policeColorMode, 1);
+      expect(status.sleeping, isTrue);
+      expect(status.timerActive, isTrue);
+      expect(status.timerRemainingSec, 300);
+      expect(status.soundEnabled, isTrue);
+    });
+
     test('Returns null on malformed STATUS packet', () {
       expect(BleProtocol.parseStatus('STATUS:255,100'), isNull);
       expect(BleProtocol.parseStatus('INVALID:1,2,3'), isNull);

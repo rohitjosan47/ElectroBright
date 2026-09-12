@@ -158,7 +158,7 @@ class MockBleTransport implements BleTransport {
 
     Future.delayed(const Duration(milliseconds: 300), () {
       _scanResultsController.add([
-        const DiscoveredDevice(
+        DiscoveredDevice(
           id: 'MOCK-ESP32-C3-001',
           name: DeviceCatalog.electrobrightC3RgbwV1.advertisedNamePrefixes.first,
           rssi: -58,

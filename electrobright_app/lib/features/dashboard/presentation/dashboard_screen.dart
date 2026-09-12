@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../connection/application/connection_notifier.dart';
 import '../application/device_notifier.dart';
+import '../domain/device_state.dart';
 import 'widgets/aura_background.dart';
 import 'widgets/header_bar.dart';
 import 'widgets/master_brightness_card.dart';

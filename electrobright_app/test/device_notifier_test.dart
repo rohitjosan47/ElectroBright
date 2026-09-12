@@ -113,7 +113,8 @@ void main() {
       notifier.setRgbw(0, 255, 0, 0, continuous: true);
       expect(notifier.state.green, 255);
 
-      transport.simulateIncomingNotification('STATUS:MODE=1;SPEED=5;FREQ=5;R=10;G=10;B=10;W=10;BR=255;FWC=0;CC=0;PC=1');
+      transport.simulateIncomingNotification('STATUS:10,10,10,10,255,1,5,5,0,0,1,0,0,0,1');
+      await Future.delayed(Duration.zero);
 
       expect(notifier.state.green, 255); // The incoming G=10 is rejected
       expect(notifier.state.red, 0); // The incoming R=10 is rejected
@@ -125,9 +126,11 @@ void main() {
       expect(echoSuppressor.isLocked('rgbw'), isTrue);
 
       notifier.setRgbw(0, 0, 255, 0, continuous: false);
+      await Future.delayed(const Duration(milliseconds: 300));
       expect(echoSuppressor.isLocked('rgbw'), isFalse);
 
-      transport.simulateIncomingNotification('STATUS:MODE=1;SPEED=5;FREQ=5;R=10;G=10;B=10;W=10;BR=255;FWC=0;CC=0;PC=1');
+      transport.simulateIncomingNotification('STATUS:10,10,10,10,255,1,5,5,0,0,1,0,0,0,1');
+      await Future.delayed(Duration.zero);
 
       expect(notifier.state.red, 10);
       expect(notifier.state.green, 10);

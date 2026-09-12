@@ -33,7 +33,6 @@ class LegacyMigrationService {
       }
       
       const deviceId = 'legacy-default';
-      final legacyPresetCount = DeviceCatalog.electrobrightC3RgbwV1.numPresets;
       for (int i = 0; i < legacyPresetCount; i++) {
         final nameKey = 'electrobright_preset_name_$i';
         if (prefs.containsKey(nameKey)) {

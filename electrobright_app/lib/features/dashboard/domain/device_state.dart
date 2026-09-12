@@ -99,9 +99,9 @@ class DeviceState {
       timerMinutesSet: 0,
       timerRemainingSec: null,
       firmwareVersion: null,
-      savedPresets: const {},
+      savedPresets: PresetData.defaultPresets().keys.toSet(),
       presetNames: PresetData.defaultNames(),
-      presetSnapshots: const {},
+      presetSnapshots: PresetData.defaultPresets(),
       activePresetId: null,
       lastError: null,
     );
