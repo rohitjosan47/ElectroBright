@@ -157,4 +157,31 @@ class BleProtocol {
   static String ping() => 'PING\n';
   static String getInfo() => 'INFO\n';
   static String getVersion() => 'VERSION\n';
+
+  /// Generates a 6-byte binary fast-path packet for continuous color streaming.
+  /// Format: [0xAA, R, G, B, W, Checksum]
+  /// Checksum = (R ^ G ^ B ^ W ^ 0x55) & 0xFF
+  static List<int> encodeRgbwBinary(int r, int g, int b, int w) {
+    final cleanR = r.clamp(0, 255);
+    final cleanG = g.clamp(0, 255);
+    final cleanB = b.clamp(0, 255);
+    final cleanW = w.clamp(0, 255);
+    final checksum = (cleanR ^ cleanG ^ cleanB ^ cleanW ^ 0x55) & 0xFF;
+    return <int>[0xAA, cleanR, cleanG, cleanB, cleanW, checksum];
+  }
+
+  /// Evaluates whether the firmware version is >= 2.8.0 to support binary streaming.
+  static bool isBinaryFastPathSupported(String? versionString) {
+    if (versionString == null) return false;
+    final clean = versionString.trim();
+    final parts = clean.split('.');
+    if (parts.isEmpty) return false;
+    final major = int.tryParse(parts[0]);
+    if (major == null) return false;
+    if (major > 2) return true;
+    if (major < 2) return false;
+    final minor = parts.length > 1 ? int.tryParse(parts[1]) : 0;
+    if (minor == null) return false;
+    return minor >= 8;
+  }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../presets/domain/preset_data.dart';
 import '../../../core/devices/device_profile.dart';
+import '../../../core/ble/ble_protocol.dart';
 
 /// Immutable model representing the complete state of the ElectroBright LED fixture.
 class DeviceState {
@@ -38,6 +39,8 @@ class DeviceState {
   final Map<int, PresetData> presetSnapshots;
   final int? activePresetId;
   final String? lastError;
+
+  bool get supportsBinaryFastPath => BleProtocol.isBinaryFastPathSupported(firmwareVersion);
 
   const DeviceState({
     required this.red,

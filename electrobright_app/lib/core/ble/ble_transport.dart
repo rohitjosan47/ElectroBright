@@ -35,5 +35,6 @@ abstract class BleTransport {
   Future<bool> connect(String deviceId);
   Future<void> disconnect();
   Future<bool> sendRaw(String data);
+  Future<bool> sendBytes(List<int> bytes, {bool withoutResponse = false});
   void dispose();
 }

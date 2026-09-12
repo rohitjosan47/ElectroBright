@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'ble_transport.dart';
-import 'ble_constants.dart';
 import '../devices/device_catalog.dart';
 
 class SimulatedPreset {
@@ -177,6 +176,9 @@ class MockBleTransport implements BleTransport {
 
   bool failNextConnect = false;
   Duration connectDelay = const Duration(milliseconds: 100);
+  int binaryPacketCount = 0;
+  int asciiCommandCount = 0;
+  String simulatedVersion = '2.8.0';
 
   @override
   Future<bool> connect(String deviceId) async {
@@ -219,6 +221,7 @@ class MockBleTransport implements BleTransport {
     final clean = data.trim();
     if (clean.isEmpty) return false;
 
+    asciiCommandCount++;
     await Future.delayed(const Duration(milliseconds: 10));
 
     if (clean.startsWith('RGBW:')) {
@@ -348,10 +351,32 @@ class MockBleTransport implements BleTransport {
     } else if (clean == 'PRESET_LIST') {
       _broadcastPresetList();
     } else if (clean == 'VERSION') {
-      _notificationsController.add('VERSION:2.7.3\n');
+      _notificationsController.add('VERSION:$simulatedVersion\n');
     }
 
     return true;
+  }
+
+  @override
+  Future<bool> sendBytes(List<int> bytes, {bool withoutResponse = false}) async {
+    if (bytes.length == 6 && bytes[0] == 0xAA) {
+      final r = bytes[1];
+      final g = bytes[2];
+      final b = bytes[3];
+      final w = bytes[4];
+      final expectedChecksum = (r ^ g ^ b ^ w ^ 0x55) & 0xFF;
+      if (bytes[5] == expectedChecksum) {
+        binaryPacketCount++;
+        _red = r;
+        _green = g;
+        _blue = b;
+        _white = w;
+        _isSleeping = false;
+        // Binary fast path bypasses notifications
+        return true;
+      }
+    }
+    return false;
   }
 
   void _broadcastStatus() {

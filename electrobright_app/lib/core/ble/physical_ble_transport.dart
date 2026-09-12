@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'ble_transport.dart';
-import 'ble_constants.dart';
 import '../devices/device_catalog.dart';
 
 /// Physical Bluetooth Low Energy transport implementation using flutter_blue_plus.
@@ -116,7 +115,7 @@ class PhysicalBleTransport implements BleTransport {
         await device.requestMtu(512);
       } catch (_) {}
 
-      final defaultProfile = DeviceCatalog.electrobrightC3RgbwV1;
+      const defaultProfile = DeviceCatalog.electrobrightC3RgbwV1;
 
       // Discover Services
       final services = await device.discoverServices();
@@ -193,6 +192,17 @@ class PhysicalBleTransport implements BleTransport {
     try {
       final bytes = utf8.encode(data.endsWith('\n') ? data : '$data\n');
       await _rxCharacteristic!.write(bytes, withoutResponse: false);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> sendBytes(List<int> bytes, {bool withoutResponse = false}) async {
+    if (_rxCharacteristic == null || !isConnected) return false;
+    try {
+      await _rxCharacteristic!.write(bytes, withoutResponse: withoutResponse);
       return true;
     } catch (_) {
       return false;

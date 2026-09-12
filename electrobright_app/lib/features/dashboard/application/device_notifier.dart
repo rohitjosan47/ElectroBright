@@ -258,16 +258,25 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
     }
   }
 
+  bool get supportsBinaryFastPath => BleProtocol.isBinaryFastPathSupported(state.firmwareVersion);
+
   // --- User Intents & Hardware Dispatch ---
 
   void setRgbw(int r, int g, int b, int w, {bool continuous = true}) {
     if (continuous) {
       _echoSuppressor.acquireLock('rgbw');
       state = state.copyWith(red: r, green: g, blue: b, white: w, clearActivePreset: true);
-      _dispatcher.dispatch(
-        BleProtocol.setRgbw(r, g, b, w),
-        priority: CommandPriority.continuous,
-      );
+      if (supportsBinaryFastPath) {
+        _dispatcher.dispatchBinary(
+          BleProtocol.encodeRgbwBinary(r, g, b, w),
+          priority: CommandPriority.continuous,
+        );
+      } else {
+        _dispatcher.dispatch(
+          BleProtocol.setRgbw(r, g, b, w),
+          priority: CommandPriority.continuous,
+        );
+      }
     } else {
       _echoSuppressor.releaseLock('rgbw');
       state = state.copyWith(red: r, green: g, blue: b, white: w, clearActivePreset: true);

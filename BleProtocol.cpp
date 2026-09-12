@@ -54,8 +54,30 @@ class MyServerCallbacks: public BLEServerCallbacks {
 class MyCallbacks: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pCharacteristic) {
       String rxValue = pCharacteristic->getValue();
-      if (rxValue.length() > 0) {
-        for (int i = 0; i < rxValue.length(); i++) {
+      int rxLen = rxValue.length();
+
+      // Binary Fast-Path for continuous color streaming: [0xAA, R, G, B, W, Checksum]
+      // Checksum = (R ^ G ^ B ^ W ^ 0x55) & 0xFF
+      if (rxLen == 6 && (uint8_t)rxValue[0] == 0xAA) {
+        uint8_t r = (uint8_t)rxValue[1];
+        uint8_t g = (uint8_t)rxValue[2];
+        uint8_t b = (uint8_t)rxValue[3];
+        uint8_t w = (uint8_t)rxValue[4];
+        uint8_t expectedChecksum = (uint8_t)((r ^ g ^ b ^ w ^ 0x55) & 0xFF);
+        if ((uint8_t)rxValue[5] == expectedChecksum) {
+          sleepMode = false;
+          currentState.red = r;
+          currentState.green = g;
+          currentState.blue = b;
+          currentState.white = w;
+          applyLEDs(r, g, b, w);
+          markColorDirty();
+        }
+        return;
+      }
+
+      if (rxLen > 0) {
+        for (int i = 0; i < rxLen; i++) {
             char c = rxValue[i];
             if (c == '\n' || c == '\r') {
               if (cmdOverflowed) {
@@ -267,7 +289,7 @@ void parseCommand(char *cmd) {
   } else if (strcmp(cmd, "STATUS") == 0) { sendStatus();
   } else if (strcmp(cmd, "PING") == 0) { bleSendString("OK");
   } else if (strcmp(cmd, "INFO") == 0) { bleSendString("INFO:ElectroBright_ESP32C3_BLE");
-  } else if (strcmp(cmd, "VERSION") == 0) { bleSendString("VERSION:2.7.5");
+  } else if (strcmp(cmd, "VERSION") == 0) { bleSendString("VERSION:2.8.0");
   } else if (strncmp(cmd, "MODE_CAPABILITIES:", 18) == 0) {
     long m = atoiStrict(cmd + 18);
     if (m >= 1 && m <= NUM_MODES) {
