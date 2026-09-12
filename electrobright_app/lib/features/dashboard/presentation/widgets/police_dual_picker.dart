@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/haptics/haptic_service.dart';
+import '../../../../core/widgets/color_picker/interactive_color_square.dart';
 
 class PoliceDualPicker extends StatefulWidget {
   final Color colorA;
@@ -44,7 +44,6 @@ class _PoliceDualPickerState extends State<PoliceDualPicker>
   void _showColorDialog(
       BuildContext context, String title, Color initialColor, Function(Color) onPicked) {
     Color selected = initialColor;
-    bool isDragging = false;
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -76,26 +75,14 @@ class _PoliceDualPickerState extends State<PoliceDualPicker>
                 ),
               ],
             ),
-            content: SingleChildScrollView(
-              physics: isDragging
-                  ? const NeverScrollableScrollPhysics()
-                  : const ClampingScrollPhysics(),
-              child: Listener(
-                behavior: HitTestBehavior.opaque,
-                onPointerDown: (_) => setDialogState(() => isDragging = true),
-                onPointerUp: (_) => setDialogState(() => isDragging = false),
-                onPointerCancel: (_) => setDialogState(() => isDragging = false),
-                child: ColorPicker(
-                  pickerColor: selected,
-                  onColorChanged: (c) {
-                    selected = c;
-                    setDialogState(() {});
-                  },
-                  enableAlpha: false,
-                  displayThumbColor: true,
-                  paletteType: PaletteType.hsvWithHue,
-                  pickerAreaHeightPercent: 0.65,
-                ),
+            content: SizedBox(
+              width: 300,
+              child: InteractiveColorSquare(
+                initialColor: selected,
+                onColorChanged: (c) {
+                  selected = c;
+                  setDialogState(() {});
+                },
               ),
             ),
             actions: [

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:electrobright_app/core/widgets/color_picker/hue_ring_inner_square_wheel.dart';
+import 'package:electrobright_app/core/widgets/color_picker/interactive_color_square.dart';
 import 'package:electrobright_app/features/dashboard/presentation/widgets/rgbw_palette_card.dart';
+import 'package:electrobright_app/features/dashboard/presentation/widgets/police_dual_picker.dart';
 
 void main() {
   group('Color Picker Responsiveness & Drag Interaction Tests', () {
-    testWidgets('RgbwPaletteCard supports Wheel, Square, and Sliders with smooth dragging', (tester) async {
+    testWidgets('RgbwPaletteCard supports Wheel with inner square and Sliders', (tester) async {
       int lastR = 0, lastG = 0, lastB = 0, lastW = 0;
       bool lastContinuous = false;
       bool? isInteracting;
@@ -35,55 +37,48 @@ void main() {
         ),
       );
 
-      // Verify header and tab icons are present
+      // Verify header and tab buttons (Only 2 tabs: Wheel & Sliders)
       expect(find.text('Color Palette'), findsOneWidget);
-      expect(find.text('Wheel'), findsOneWidget); // Active tab displays its text
-      expect(find.byIcon(Icons.crop_square_rounded), findsOneWidget);
+      expect(find.text('Wheel'), findsOneWidget); // Active tab displays text
       expect(find.byIcon(Icons.tune_rounded), findsOneWidget);
+      // Square tab should NO LONGER exist as a separate tab button
+      expect(find.byIcon(Icons.crop_square_rounded), findsNothing);
 
-      // Initial tab is Wheel (HueRingPicker)
-      expect(find.byType(HueRingPicker), findsOneWidget);
+      // Initial tab renders HueRingInnerSquareWheel
+      expect(find.byType(HueRingInnerSquareWheel), findsOneWidget);
 
-      // Drag across the wheel
-      final wheelFinder = find.byType(HueRingPicker);
-      final gesture = await tester.startGesture(tester.getCenter(wheelFinder));
+      final wheelFinder = find.byType(HueRingInnerSquareWheel);
+      final center = tester.getCenter(wheelFinder);
+
+      // 1. Drag the inner square (center)
+      final squareGesture = await tester.startGesture(center);
       expect(isInteracting, isTrue);
 
-      // Move continuously in a circle / drag path
-      await gesture.moveBy(const Offset(20, 20));
+      await squareGesture.moveBy(const Offset(20, -15));
       await tester.pump();
       expect(lastContinuous, isTrue);
 
-      await gesture.moveBy(const Offset(-10, 30));
+      await squareGesture.up();
       await tester.pump();
+      expect(isInteracting, isFalse);
+      expect(lastContinuous, isFalse);
 
-      await gesture.up();
+      // 2. Drag the outer hue ring (radius ~ 110px from center)
+      final ringStart = center + const Offset(105, 0);
+      final ringGesture = await tester.startGesture(ringStart);
+      expect(isInteracting, isTrue);
+
+      await ringGesture.moveBy(const Offset(-30, 80));
+      await tester.pump();
+      expect(lastContinuous, isTrue);
+
+      await ringGesture.up();
       await tester.pump();
       expect(isInteracting, isFalse);
       expect(lastContinuous, isFalse);
       expect(lastR >= 0 && lastG >= 0 && lastB >= 0 && lastW >= 0, isTrue);
 
-      // Switch to Square tab by tapping square icon
-      await tester.tap(find.byIcon(Icons.crop_square_rounded));
-      await tester.pumpAndSettle();
-
-      // Verify ColorPicker square is rendered and tab text appears
-      expect(find.text('Square'), findsOneWidget);
-      expect(find.byType(ColorPicker), findsOneWidget);
-
-      // Drag across the square palette
-      final squareFinder = find.byType(ColorPicker);
-      final squareGesture = await tester.startGesture(tester.getCenter(squareFinder));
-      expect(isInteracting, isTrue);
-
-      await squareGesture.moveBy(const Offset(30, -20));
-      await tester.pump();
-
-      await squareGesture.up();
-      await tester.pump();
-      expect(isInteracting, isFalse);
-
-      // Switch to Sliders tab by tapping sliders icon
+      // 3. Switch to Sliders tab by tapping sliders icon
       await tester.tap(find.byIcon(Icons.tune_rounded));
       await tester.pumpAndSettle();
 
@@ -92,6 +87,57 @@ void main() {
       expect(find.text('Green Channel'), findsOneWidget);
       expect(find.text('Blue Channel'), findsOneWidget);
       expect(find.text('True White Channel'), findsOneWidget);
+    });
+
+    testWidgets('PoliceDualPicker renders InteractiveColorSquare in dialog without glitches', (tester) async {
+      Color pickedA = Colors.red;
+      Color pickedB = Colors.blue;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: PoliceDualPicker(
+                colorA: pickedA,
+                colorB: pickedB,
+                onColorAChanged: (r, g, b, w) {
+                  pickedA = Color.fromARGB(255, r, g, b);
+                },
+                onColorBChanged: (r, g, b, w) {
+                  pickedB = Color.fromARGB(255, r, g, b);
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Verify Police Dual Picker renders beacon cards
+      expect(find.text('Beacon A'), findsWidgets);
+      expect(find.text('Beacon B'), findsWidgets);
+
+      // Tap Beacon A swatch card to open dialog
+      await tester.tap(find.text('Beacon A').last);
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Verify dialog is open and contains InteractiveColorSquare
+      expect(find.byType(InteractiveColorSquare), findsOneWidget);
+      expect(find.text('Set Police Beacon A'), findsOneWidget);
+
+      // Drag inside InteractiveColorSquare
+      final squareFinder = find.byType(InteractiveColorSquare);
+      final gesture = await tester.startGesture(tester.getCenter(squareFinder));
+      await gesture.moveBy(const Offset(30, -20));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+
+      // Tap Apply Color button
+      await tester.tap(find.text('Apply Color'));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Dialog closed
+      expect(find.byType(InteractiveColorSquare), findsNothing);
     });
   });
 }

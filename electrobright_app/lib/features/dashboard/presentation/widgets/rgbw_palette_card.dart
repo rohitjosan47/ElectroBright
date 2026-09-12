@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/haptics/haptic_service.dart';
+import '../../../../core/widgets/color_picker/hue_ring_inner_square_wheel.dart';
 
 class RgbwPaletteCard extends StatefulWidget {
   final int red;
@@ -27,13 +27,12 @@ class RgbwPaletteCard extends StatefulWidget {
 }
 
 class _RgbwPaletteCardState extends State<RgbwPaletteCard> {
-  int _selectedTab = 0; // 0 = Wheel, 1 = Square, 2 = Sliders
+  int _selectedTab = 0; // 0 = Wheel (Ring + Inner Square), 1 = Sliders (RGBW)
   late int _r;
   late int _g;
   late int _b;
   late int _w;
-  bool _isDragging = false;
-  int _externalUpdateCounter = 0;
+  bool _isInteracting = false;
 
   @override
   void initState() {
@@ -47,18 +46,16 @@ class _RgbwPaletteCardState extends State<RgbwPaletteCard> {
   @override
   void didUpdateWidget(covariant RgbwPaletteCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.red != widget.red ||
-        oldWidget.green != widget.green ||
-        oldWidget.blue != widget.blue ||
-        oldWidget.white != widget.white) {
-      // Only sync from external props if the user is not actively dragging
-      if (!_isDragging) {
+    if (!_isInteracting) {
+      if (oldWidget.red != widget.red ||
+          oldWidget.green != widget.green ||
+          oldWidget.blue != widget.blue ||
+          oldWidget.white != widget.white) {
         setState(() {
           _r = widget.red;
           _g = widget.green;
           _b = widget.blue;
           _w = widget.white;
-          _externalUpdateCounter++;
         });
       }
     }
@@ -72,15 +69,9 @@ class _RgbwPaletteCardState extends State<RgbwPaletteCard> {
 
   Color get _currentColor => Color.fromARGB(255, _r, _g, _b);
 
-  void _handleDragStart() {
-    _isDragging = true;
-    widget.onInteractionChanged?.call(true);
-  }
-
-  void _handleDragEnd() {
-    _isDragging = false;
-    widget.onInteractionChanged?.call(false);
-    widget.onRgbwChanged(_r, _g, _b, _w, false);
+  void _onInternalInteractionChanged(bool interacting) {
+    _isInteracting = interacting;
+    widget.onInteractionChanged?.call(interacting);
   }
 
   @override
@@ -148,7 +139,7 @@ class _RgbwPaletteCardState extends State<RgbwPaletteCard> {
                   ],
                 ),
 
-                // 3-Way Tab Switcher Pill: Wheel | Square | Sliders
+                // 2-Way Tab Switcher Pill: Wheel | Sliders
                 Container(
                   padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
@@ -158,8 +149,7 @@ class _RgbwPaletteCardState extends State<RgbwPaletteCard> {
                   child: Row(
                     children: [
                       _buildTabButton(0, Icons.donut_large_rounded, 'Wheel'),
-                      _buildTabButton(1, Icons.crop_square_rounded, 'Square'),
-                      _buildTabButton(2, Icons.tune_rounded, 'Sliders'),
+                      _buildTabButton(1, Icons.tune_rounded, 'Sliders'),
                     ],
                   ),
                 ),
@@ -167,80 +157,25 @@ class _RgbwPaletteCardState extends State<RgbwPaletteCard> {
             ),
             const SizedBox(height: 18),
 
-            // Tab View
+            // Tab View: 0 = Wheel (Hue Ring + Inner Square), 1 = Sliders (RGBW)
             if (_selectedTab == 0) ...[
-              // Circular Color Wheel (HueRingPicker) with stable key during drag
-              Listener(
-                behavior: HitTestBehavior.opaque,
-                onPointerDown: (_) => _handleDragStart(),
-                onPointerUp: (_) => _handleDragEnd(),
-                onPointerCancel: (_) => _handleDragEnd(),
-                child: Center(
-                  child: HueRingPicker(
-                    key: ValueKey('wheel-$_externalUpdateCounter'),
-                    pickerColor: _currentColor,
-                    onColorChanged: (newColor) {
-                      setState(() {
-                        _r = newColor.red;
-                        _g = newColor.green;
-                        _b = newColor.blue;
-                      });
-                      widget.onRgbwChanged(_r, _g, _b, _w, true);
-                    },
-                    enableAlpha: false,
-                    displayThumbColor: true,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              _buildChannelSlider(
-                label: 'True White (Phosphor Channel)',
-                value: _w,
-                activeColor: AppColors.channelWhite,
-                onChanged: (val) {
-                  setState(() => _w = val);
-                  widget.onRgbwChanged(_r, _g, _b, _w, true);
-                },
-                onChangeEnd: (val) {
-                  widget.onRgbwChanged(_r, _g, _b, _w, false);
-                },
-              ),
-            ] else if (_selectedTab == 1) ...[
-              // 2D HSV Saturation/Brightness Color Picker Square
-              Listener(
-                behavior: HitTestBehavior.opaque,
-                onPointerDown: (_) => _handleDragStart(),
-                onPointerUp: (_) => _handleDragEnd(),
-                onPointerCancel: (_) => _handleDragEnd(),
-                child: ColorPicker(
-                  key: ValueKey('square-$_externalUpdateCounter'),
-                  pickerColor: _currentColor,
-                  onColorChanged: (newColor) {
+              Center(
+                child: HueRingInnerSquareWheel(
+                  red: _r,
+                  green: _g,
+                  blue: _b,
+                  white: _w,
+                  onInteractionChanged: _onInternalInteractionChanged,
+                  onRgbwChanged: (r, g, b, w, continuous) {
                     setState(() {
-                      _r = newColor.red;
-                      _g = newColor.green;
-                      _b = newColor.blue;
+                      _r = r;
+                      _g = g;
+                      _b = b;
+                      _w = w;
                     });
-                    widget.onRgbwChanged(_r, _g, _b, _w, true);
+                    widget.onRgbwChanged(r, g, b, w, continuous);
                   },
-                  enableAlpha: false,
-                  displayThumbColor: true,
-                  paletteType: PaletteType.hsvWithHue,
-                  pickerAreaHeightPercent: 0.65,
                 ),
-              ),
-              const SizedBox(height: 14),
-              _buildChannelSlider(
-                label: 'True White (Phosphor Channel)',
-                value: _w,
-                activeColor: AppColors.channelWhite,
-                onChanged: (val) {
-                  setState(() => _w = val);
-                  widget.onRgbwChanged(_r, _g, _b, _w, true);
-                },
-                onChangeEnd: (val) {
-                  widget.onRgbwChanged(_r, _g, _b, _w, false);
-                },
               ),
             ] else ...[
               // Individual 4-Channel Sliders (RGBW)
@@ -300,7 +235,7 @@ class _RgbwPaletteCardState extends State<RgbwPaletteCard> {
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: isSelected ? AppColors.cyanAccent : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
@@ -376,12 +311,12 @@ class _RgbwPaletteCardState extends State<RgbwPaletteCard> {
               value: value.toDouble(),
               min: 0,
               max: 255,
-              onChangeStart: (_) => widget.onInteractionChanged?.call(true),
+              onChangeStart: (_) => _onInternalInteractionChanged(true),
               onChanged: (val) {
                 onChanged(val.round());
               },
               onChangeEnd: (val) {
-                widget.onInteractionChanged?.call(false);
+                _onInternalInteractionChanged(false);
                 onChangeEnd(val.round());
               },
             ),
