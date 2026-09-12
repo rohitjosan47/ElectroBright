@@ -243,12 +243,31 @@ uint8_t calculateCRC8(const SystemState &state) {
 
 void parseCommand(char *cmd);
 
-void bleSendString(String str) {
-  if (deviceConnected) {
-    str += "\n";
-    pTxCharacteristic->setValue(str.c_str());
-    pTxCharacteristic->notify();
+void bleSendString(const char *str) {
+  if (deviceConnected && pTxCharacteristic) {
+    size_t len = strlen(str);
+    if (len == 0) return;
+    if (len + 1 < 512) {
+      char outBuf[512];
+      memcpy(outBuf, str, len);
+      outBuf[len] = '\n';
+      pTxCharacteristic->setValue((uint8_t*)outBuf, len + 1);
+      pTxCharacteristic->notify();
+    } else {
+      char *dyn = (char*)malloc(len + 2);
+      if (dyn) {
+        memcpy(dyn, str, len);
+        dyn[len] = '\n';
+        pTxCharacteristic->setValue((uint8_t*)dyn, len + 1);
+        pTxCharacteristic->notify();
+        free(dyn);
+      }
+    }
   }
+}
+
+void bleSendString(const String &str) {
+  bleSendString(str.c_str());
 }
 
 class MyServerCallbacks: public BLEServerCallbacks {
@@ -438,7 +457,7 @@ void loadStateFromEEPROM() {
   }
 }
 
-void updateEEPROM(bool force = false) {
+void updateEEPROM(bool force) {
   bool needsCommit = false;
   if (force || (colorDirty && currentMillis - colorDirtyMillis >= EEPROM_COMMIT_DELAY)) {
     colorDirty = false; needsCommit = true;
@@ -1215,7 +1234,7 @@ void sendPresetList() {
       if (len < sizeof(buf)) len += snprintf(buf + len, sizeof(buf) - len, "%d,", i);
     }
   }
-  bleSendString(String(buf));
+  bleSendString(buf);
 }
 
 void sendStatus() {
@@ -1231,7 +1250,7 @@ void sendStatus() {
            currentState.modeSpeed[currentState.mode - 1], currentState.modeFrequency[currentState.mode - 1],
            currentState.fireworkColorMode, currentState.clubColorMode, currentState.policeColorMode,
            sleepMode ? 1 : 0, timerActive ? 1 : 0, (unsigned long)timerRemainingSec, soundEnabled ? 1 : 0);
-  bleSendString(String(buf));
+  bleSendString(buf);
 }
 
 void factoryReset() {
@@ -1335,7 +1354,7 @@ void parseCommand(char *cmd) {
       if (len < 0) break;
       if (i < NUM_MODES - 1 && (size_t)len < sizeof(buf) - 1) { buf[len++] = ';'; buf[len] = '\0'; }
     }
-    bleSendString(String(buf));
+    bleSendString(buf);
   } else if (strncmp(cmd, "PRESET_SAVE:", 12) == 0) {
     long p = atoiStrict(cmd + 12);
     if (p >= 0 && p < NUM_PRESETS) { savePreset((uint8_t)p); playSoundEvent(3); bleSendString("OK"); } 
@@ -1357,7 +1376,7 @@ void parseCommand(char *cmd) {
   } else if (strcmp(cmd, "STATUS") == 0) { sendStatus();
   } else if (strcmp(cmd, "PING") == 0) { bleSendString("OK");
   } else if (strcmp(cmd, "INFO") == 0) { bleSendString("INFO:ElectroBright_ESP32C3_BLE");
-  } else if (strcmp(cmd, "VERSION") == 0) { bleSendString("VERSION:2.7.4");
+  } else if (strcmp(cmd, "VERSION") == 0) { bleSendString("VERSION:2.7.5");
   } else if (strncmp(cmd, "MODE_CAPABILITIES:", 18) == 0) {
     long m = atoiStrict(cmd + 18);
     if (m >= 1 && m <= NUM_MODES) {
