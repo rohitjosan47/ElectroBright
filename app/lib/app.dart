@@ -1,14 +1,39 @@
 import 'package:flutter/material.dart';
 
+import 'bootstrap/service_registry.dart';
+import 'design/glass/glass_surface.dart';
+import 'design/haptics/haptics_scope.dart';
+
 import 'design/theme/app_theme.dart';
+import 'design/gallery/gallery.dart';
+import 'features/diagnostics/ble_lab.dart';
 import 'l10n/app_localizations.dart';
 
 class ElectroBrightApp extends StatelessWidget {
-  const ElectroBrightApp({super.key});
+  const ElectroBrightApp({this.services, super.key});
+
+  /// Null in widget tests that don't need platform services.
+  final AppServices? services;
 
   @override
   Widget build(BuildContext context) {
+    final AppServices? services = this.services;
     return MaterialApp(
+      builder: (BuildContext context, Widget? child) {
+        final Widget app = services == null
+            ? child!
+            : HapticsScope(haptics: services.haptics, child: child!);
+        final ValueNotifier<bool>? solid =
+            services?.platform.reduceTransparency;
+        if (solid == null) return GlassPolicy(child: app);
+        return ValueListenableBuilder<bool>(
+          valueListenable: solid,
+          builder: (BuildContext context, bool reduce, _) => GlassPolicy(
+            solid: reduce || MediaQuery.highContrastOf(context),
+            child: app,
+          ),
+        );
+      },
       onGenerateTitle: (BuildContext context) =>
           AppLocalizations.of(context).appTitle,
       debugShowCheckedModeBanner: false,
@@ -37,6 +62,29 @@ class _HomePlaceholder extends StatelessWidget {
                 ?.copyWith(fontWeight: FontWeight.w700),
           ),
         ),
+      ),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: <Widget>[
+          FloatingActionButton.extended(
+            heroTag: 'gallery',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const ComponentGallery()),
+            ),
+            label: const Text('Design gallery'),
+            icon: const Icon(Icons.palette_outlined),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'lab',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const BleLabScreen()),
+            ),
+            label: const Text('BLE Lab'),
+            icon: const Icon(Icons.science_outlined),
+          ),
+        ],
       ),
     );
   }

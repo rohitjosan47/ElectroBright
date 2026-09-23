@@ -172,6 +172,13 @@ final class ConnectionManager {
     _evaluate();
   }
 
+  /// Drops the link now; it reconnects at once if still wanted (diagnostics,
+  /// "unresponsive" recovery).
+  Future<void> reconnect(String fixtureId) async {
+    final _Slot? s = _slots[fixtureId];
+    await s?.link?.disconnect();
+  }
+
   // ---- lifecycle -------------------------------------------------------------------
 
   Future<void> onBackground() async {

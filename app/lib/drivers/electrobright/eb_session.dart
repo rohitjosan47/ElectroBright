@@ -125,6 +125,9 @@ final class EbSession {
       StreamController<EbEvent>.broadcast();
   bool _emitScheduled = false;
 
+  /// Test/diagnostic hook: every send, completion and settle.
+  void Function(String line)? debugLog;
+
   // Diagnostics.
   int malformedLines = 0;
   int strayLines = 0;
@@ -502,6 +505,7 @@ final class EbSession {
     for (final String k in keys) {
       _latest[k] = seq;
     }
+    debugLog?.call('send $command #$seq $keys');
     _changed();
     return _commands.enqueue(command, seq: seq, fence: fence);
   }
@@ -566,6 +570,10 @@ final class EbSession {
 
   /// Runs synchronously in wire order when a command finishes.
   void _onCommandDone(EbCommand c, int seq, EbResult r, List<EbReply> notes) {
+    debugLog?.call(
+      'done $c #$seq $r '
+      '${_keysOf(c).map((String k) => '$k:${_latest[k]}').join(',')}',
+    );
     if (notes.any((EbReply n) => n is EbError && n.code == EbError.storage)) {
       _events.add(const EbStorageWarning());
     }

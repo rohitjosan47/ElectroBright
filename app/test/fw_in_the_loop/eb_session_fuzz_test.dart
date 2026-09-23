@@ -47,6 +47,9 @@ Future<void> _fuzz(int seed, {required bool faults}) async {
     mtu: r.nextBool() ? 247 : 23,
   );
   final List<String> log = <String>[];
+  final List<String> dbg = <String>[];
+  h.session.debugLog = dbg.add;
+  h.session.commandLane.debugLog = dbg.add;
   final List<Future<Object?>> results = <Future<Object?>>[];
   bool flashFailing = false;
   try {
@@ -109,6 +112,24 @@ Future<void> _fuzz(int seed, {required bool faults}) async {
   } catch (e) {
     // ignore: avoid_print
     print('seed $seed actions:\n  ${log.join('\n  ')}');
+    // ignore: avoid_print
+    print(
+      'events: ${h.events.map((EbEvent e) => e is EbCommandFailed
+          ? 'failed ${e.command} ${e.result}'
+          : e is EbDivergence
+          ? 'diverged ${e.key}'
+          : e.runtimeType).join(', ')}',
+    );
+    // ignore: avoid_print
+    print(
+      'pending ${h.session.view.pending} lane idle ${h.session.commandLane.isIdle} '
+      'timeouts ${h.session.commandLane.timeouts} merged ${h.session.commandLane.merged} '
+      'skipped ${h.session.commandLane.skipped} divergences ${h.session.divergences}',
+    );
+    // ignore: avoid_print
+    print(
+      'trace (last 60):\n  ${dbg.skip(dbg.length > 60 ? dbg.length - 60 : 0).join('\n  ')}',
+    );
     rethrow;
   } finally {
     await h.close();

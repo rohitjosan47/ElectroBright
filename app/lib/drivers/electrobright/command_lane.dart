@@ -62,9 +62,15 @@ final class CommandLane {
   final Queue<_Job> _queue = Queue<_Job>();
   _Job? _active;
   final List<_Job> _queries = <_Job>[];
-  bool _starting = false;
+
+  /// The job being fenced/started; the lane sends nothing else meanwhile.
+  /// Owned by that job, so a stale _start can never clear another's guard.
+  _Job? _startingJob;
   bool _closed = false;
   int _consecutiveTimeouts = 0;
+
+  /// Test/diagnostic hook.
+  void Function(String line)? debugLog;
 
   int sent = 0;
   int timeouts = 0;
@@ -72,7 +78,10 @@ final class CommandLane {
   int skipped = 0;
 
   bool get isIdle =>
-      _queue.isEmpty && _active == null && _queries.isEmpty && !_starting;
+      _queue.isEmpty &&
+      _active == null &&
+      _queries.isEmpty &&
+      _startingJob == null;
 
   /// Queues [command]; the future completes with the outcome. [attempts]
   /// overrides the per-attempt timeouts (default: the command timeout, plus
@@ -105,6 +114,7 @@ final class CommandLane {
         }
       }
     }
+    debugLog?.call('lane queue ${command.wire} #$seq q=${_queue.length}');
     if (atHead) {
       _queue.addFirst(job);
     } else {
@@ -185,7 +195,9 @@ final class CommandLane {
   }
 
   void _pump() {
-    if (_closed || _starting || _active != null || _queue.isEmpty) return;
+    if (_closed || _startingJob != null || _active != null || _queue.isEmpty) {
+      return;
+    }
     final _Job job = _queue.first;
     if (job.command.isQuery && !job.fence) {
       if (_queries.length >= maxPipelinedQueries) return;
@@ -206,7 +218,10 @@ final class CommandLane {
   }
 
   Future<void> _start(_Job job) async {
-    _starting = true;
+    debugLog?.call(
+      'lane start ${job.command.wire} #${job.seq} fence=${job.fence}',
+    );
+    _startingJob = job;
     try {
       if (job.fence) {
         await _stream.fenceAndHold();
@@ -217,13 +232,11 @@ final class CommandLane {
           fence: false,
           attempts: <Duration>[const Ping().timeout],
         )..internal = true;
-        // _starting stays true: nothing else may be sent until [job] is.
         _active = ping;
         await _transmit(ping);
         final EbResult pong = await ping.done.future;
         if (_closed) return;
         if (pong.outcome != EbOutcome.ok) {
-          _starting = false;
           _finish(job, pong);
           return;
         }
@@ -232,12 +245,12 @@ final class CommandLane {
         job.holding = true;
       }
       _active = job;
-      _starting = false;
+      if (identical(_startingJob, job)) _startingJob = null;
       await _transmit(job);
     } on LinkClosedException {
       _finish(job, EbResult.disconnected);
     } finally {
-      _starting = false;
+      if (identical(_startingJob, job)) _startingJob = null;
     }
   }
 
@@ -288,6 +301,10 @@ final class CommandLane {
 
   void _finish(_Job job, EbResult result, {bool pump = true}) {
     if (job.done.isCompleted) return;
+    if (identical(_startingJob, job)) _startingJob = null;
+    debugLog?.call(
+      'lane finish ${job.command.wire} #${job.seq} $result q=${_queue.map((_Job j) => j.command.wire).toList()}',
+    );
     job.timer?.cancel();
     job.grace?.cancel();
     if (identical(_active, job)) _active = null;

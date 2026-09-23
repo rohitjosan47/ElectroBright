@@ -1,0 +1,204 @@
+import 'dart:math' as math;
+
+import 'package:meta/meta.dart';
+
+import '../protocol/eb/eb_scene.dart';
+import '../protocol/eb/mode_catalog.dart';
+import 'color_science.dart';
+
+/// What a light looks like to the eye: the sum of its emitters (RGB + the
+/// white LED at its colour temperature), at full intensity; brightness is
+/// carried separately so dim lights keep their hue in the UI.
+@immutable
+final class DisplayColor {
+  const DisplayColor(this.color, this.brightness, {this.off = false});
+
+  /// Normalised linear colour (max channel 1), black when nothing emits.
+  final LinearRgb color;
+
+  /// 0..1 perceptual output level.
+  final double brightness;
+  final bool off;
+
+  static DisplayColor ofScene(
+    EbScene s, {
+    required bool sleeping,
+    int whiteTempK = 4000,
+  }) {
+    LinearRgb c;
+    if (EbModeCatalog.usesPickedColor(s)) {
+      final LinearRgb rgb = LinearRgb(
+        ColorScience.levelToLinear(s.color.r),
+        ColorScience.levelToLinear(s.color.g),
+        ColorScience.levelToLinear(s.color.b),
+      );
+      c =
+          rgb +
+          ColorScience.kelvinToLinear(whiteTempK.toDouble()) *
+              ColorScience.levelToLinear(s.color.w);
+    } else {
+      // The effect has its own colours: represent it by its accent gradient.
+      c = ColorScience.fromArgb(EbModeCatalog.byId(s.mode).gradient.first);
+    }
+    return DisplayColor(
+      c.normalized(),
+      s.brightness / 255,
+      off: sleeping || c.max <= 1e-6 || s.brightness == 0,
+    );
+  }
+}
+
+/// A palette derived from the light's colour (plan §11 "LightTone"), in ARGB.
+@immutable
+final class LightTone {
+  const LightTone({
+    required this.dark,
+    required this.canvas,
+    required this.glow,
+    required this.glowStrength,
+    required this.accent,
+    required this.onAccent,
+    required this.tint,
+    required this.hue,
+  });
+
+  final bool dark;
+
+  /// Three background stops, top (where the light "spills in") to bottom.
+  final List<int> canvas;
+  final int glow;
+
+  /// 0..1: how strongly the glow shows (follows brightness, 0 when off).
+  final double glowStrength;
+  final int accent;
+
+  /// Black or white, whichever reads best on [accent].
+  final int onAccent;
+
+  /// Glass tint (colour without alpha; the surface picks the opacity).
+  final int tint;
+  final double hue;
+
+  static const double _neutralChroma = 0.03;
+
+  /// The neutral tone for "no light" (first launch, nothing connected).
+  static LightTone neutral({required bool dark}) =>
+      derive(const DisplayColor(LinearRgb(1, 1, 1), 0, off: true), dark: dark);
+
+  static LightTone derive(DisplayColor d, {required bool dark}) {
+    Oklch o = ColorScience.toOklch(d.color);
+    double chroma = o.c;
+    double hue = o.h;
+    if (chroma < _neutralChroma) {
+      // Whites take a hint of their temperature: warm amber or cool blue.
+      final double k = ColorScience.estimateKelvin(d.color);
+      hue = k < 4500 ? 70 : 245;
+      chroma = k < 3500 || k > 6000 ? 0.02 : 0.008;
+    }
+    if (d.off) chroma *= 0.15; // graphite, a trace of the last hue
+    o = Oklch(o.l, chroma, hue);
+
+    Oklch stop(double l, double maxC) =>
+        ColorScience.toGamut(Oklch(l, math.min(o.c, maxC), o.h));
+    final double lift = d.off ? 0 : d.brightness;
+    final List<int> canvas = dark
+        ? <int>[
+            _argb(stop(0.19 + 0.07 * lift, 0.11 * (0.4 + 0.6 * lift))),
+            _argb(stop(0.16, 0.05)),
+            _argb(stop(0.135, 0.02)),
+          ]
+        : <int>[
+            _argb(stop(0.93 - 0.02 * lift, 0.06 * (0.4 + 0.6 * lift))),
+            _argb(stop(0.955, 0.025)),
+            _argb(stop(0.968, 0.01)),
+          ];
+    final Oklch accent = _readableAccent(
+      ColorScience.toGamut(Oklch(dark ? 0.78 : 0.55, math.min(o.c, 0.16), o.h)),
+      dark: dark,
+    );
+    final int accentArgb = _argb(accent);
+    final LinearRgb accentLin = ColorScience.fromArgb(accentArgb);
+    final int onAccent =
+        ColorScience.contrast(accentLin, const LinearRgb(0, 0, 0)) >=
+            ColorScience.contrast(accentLin, const LinearRgb(1, 1, 1))
+        ? 0xFF000000
+        : 0xFFFFFFFF;
+    return LightTone(
+      dark: dark,
+      canvas: canvas,
+      glow: _argb(
+        ColorScience.toGamut(Oklch(0.75, math.min(o.c * 1.2, 0.2), o.h)),
+      ),
+      glowStrength: d.off ? 0 : (0.25 + 0.75 * d.brightness).clamp(0.0, 1.0),
+      accent: accentArgb,
+      onAccent: onAccent,
+      tint: _argb(
+        ColorScience.toGamut(Oklch(dark ? 0.5 : 0.8, math.min(o.c, 0.1), o.h)),
+      ),
+      hue: o.h,
+    );
+  }
+
+  /// Adjusts lightness until the accent has >= 3:1 against the canvas.
+  static Oklch _readableAccent(Oklch a, {required bool dark}) {
+    final LinearRgb bg = dark
+        ? const LinearRgb(0.004, 0.005, 0.008)
+        : const LinearRgb(0.9, 0.9, 0.92);
+    Oklch x = a;
+    for (int i = 0; i < 20; i++) {
+      if (ColorScience.contrast(ColorScience.fromOklch(x).clamp01(), bg) >= 3) {
+        break;
+      }
+      x = ColorScience.toGamut(x.copyWith(l: x.l + (dark ? 0.02 : -0.02)));
+    }
+    return x;
+  }
+
+  static int _argb(Oklch o) =>
+      ColorScience.toArgb(ColorScience.fromOklch(o).clamp01());
+
+  /// Blends two tones in OKLab (for animated transitions).
+  static LightTone lerp(LightTone a, LightTone b, double t) {
+    int mix(int x, int y) => _argb(
+      ColorScience.lerp(
+        ColorScience.toOklch(ColorScience.fromArgb(x)),
+        ColorScience.toOklch(ColorScience.fromArgb(y)),
+        t,
+      ),
+    );
+    return LightTone(
+      dark: t < 0.5 ? a.dark : b.dark,
+      canvas: <int>[for (int i = 0; i < 3; i++) mix(a.canvas[i], b.canvas[i])],
+      glow: mix(a.glow, b.glow),
+      glowStrength: a.glowStrength + (b.glowStrength - a.glowStrength) * t,
+      accent: mix(a.accent, b.accent),
+      onAccent: t < 0.5 ? a.onAccent : b.onAccent,
+      tint: mix(a.tint, b.tint),
+      hue: b.hue,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is LightTone &&
+      other.dark == dark &&
+      other.canvas[0] == canvas[0] &&
+      other.canvas[1] == canvas[1] &&
+      other.canvas[2] == canvas[2] &&
+      other.glow == glow &&
+      other.glowStrength == glowStrength &&
+      other.accent == accent &&
+      other.tint == tint;
+
+  @override
+  int get hashCode => Object.hash(
+    dark,
+    canvas[0],
+    canvas[1],
+    canvas[2],
+    glow,
+    glowStrength,
+    accent,
+    tint,
+  );
+}
