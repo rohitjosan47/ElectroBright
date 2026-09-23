@@ -1,0 +1,7 @@
+{
+  "@@locale": "en",
+  "appTitle": "ElectroBright",
+  "@appTitle": { "description": "Application name shown in the task switcher." },
+  "lightsTitle": "Lights",
+  "@lightsTitle": { "description": "Title of the home screen that lists all fixtures." }
+}

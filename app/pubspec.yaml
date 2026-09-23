@@ -1,0 +1,46 @@
+name: electrobright
+description: "ElectroBright lighting controller"
+publish_to: 'none'
+version: 2.0.0+200
+
+environment:
+  sdk: ^3.13.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  collection: ^1.19.1
+  cupertino_icons: ^1.0.8 # required by liquid_glass_widgets
+  flutter_reactive_ble: ^5.6.0
+  flutter_riverpod: ^3.4.3
+  intl: ^0.20.3
+  # Pinned exactly: the glass renderer is wrapped by lib/design/glass/ and
+  # upgraded deliberately (API churn, GPU cost).
+  liquid_glass_widgets: 1.7.2
+  meta: ^1.19.0
+  path_provider: ^2.1.6
+  shared_preferences: ^2.5.5 # one-time import of the previous app's data only
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  fake_async: ^1.3.3
+  flutter_lints: ^6.0.0
+  pigeon: ^29.0.2
+
+flutter:
+  uses-material-design: true
+  generate: true
+  assets:
+    - assets/brand/
+    - assets/profiles/builtin/
+  fonts:
+    # Android UI font (iOS uses the system San Francisco). SIL OFL 1.1,
+    # licence in assets/fonts/Inter-OFL.txt.
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/InterVariable.ttf

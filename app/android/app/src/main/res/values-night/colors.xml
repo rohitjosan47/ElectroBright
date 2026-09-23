@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Must match the app's dark canvas base (lib/design/tokens: Palette.canvasDark). -->
+    <color name="launch_background">#0A0C11</color>
+</resources>
