@@ -1,0 +1,3 @@
+tags:
+  fwsim:
+    description: Firmware-in-the-loop tests that run the real firmware core (fwsim).
