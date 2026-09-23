@@ -107,18 +107,61 @@ class DeviceLibrarySheet extends ConsumerWidget {
                           PopupMenuButton<String>(
                             icon: const Icon(Icons.more_vert, color: Colors.white54),
                             color: AppColors.cardSurfaceSecondary,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            elevation: 8,
                             itemBuilder: (context) => [
+                              if (isConnected)
+                                const PopupMenuItem(
+                                  value: 'disconnect',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.power_settings_new_rounded, color: AppColors.amberAccent, size: 20),
+                                      SizedBox(width: 12),
+                                      Text('Disconnect', style: TextStyle(color: Colors.white)),
+                                    ],
+                                  ),
+                                )
+                              else
+                                const PopupMenuItem(
+                                  value: 'connect',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.power_rounded, color: AppColors.greenAccent, size: 20),
+                                      SizedBox(width: 12),
+                                      Text('Connect', style: TextStyle(color: Colors.white)),
+                                    ],
+                                  ),
+                                ),
                               const PopupMenuItem(
                                 value: 'rename',
-                                child: Text('Rename', style: TextStyle(color: Colors.white)),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.edit_rounded, color: Colors.white, size: 20),
+                                    SizedBox(width: 12),
+                                    Text('Rename', style: TextStyle(color: Colors.white)),
+                                  ],
+                                ),
                               ),
                               const PopupMenuItem(
                                 value: 'retype',
-                                child: Text('Change Type', style: TextStyle(color: Colors.white)),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.category_rounded, color: Colors.white, size: 20),
+                                    SizedBox(width: 12),
+                                    Text('Change Type', style: TextStyle(color: Colors.white)),
+                                  ],
+                                ),
                               ),
+                              const PopupMenuDivider(),
                               const PopupMenuItem(
                                 value: 'remove',
-                                child: Text('Remove', style: TextStyle(color: Colors.redAccent)),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.delete_forever_rounded, color: AppColors.redAccent, size: 20),
+                                    SizedBox(width: 12),
+                                    Text('Remove', style: TextStyle(color: AppColors.redAccent)),
+                                  ],
+                                ),
                               ),
                             ],
                             onSelected: (val) => _handleMenuAction(context, ref, val, device),
@@ -126,23 +169,12 @@ class DeviceLibrarySheet extends ConsumerWidget {
                         ],
                       ),
                       onTap: () async {
-                        if (!isActive) {
-                          await ref.read(connectionProvider.notifier).disconnect();
-                          await ref.read(deviceLibraryProvider.notifier).setActiveDevice(device.id);
-                          final ok = await ref.read(connectionProvider.notifier).connect(
-                            DiscoveredDevice(id: device.id, name: device.label, rssi: -50),
-                          );
-                          if (!ok && context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Could not reach "${device.label}". Try scanning nearby.'),
-                                backgroundColor: Colors.redAccent,
-                              ),
-                            );
+                        if (!isConnected) {
+                          await _handleConnect(context, ref, device);
+                        } else {
+                          if (context.mounted) {
+                            Navigator.pop(context);
                           }
-                        }
-                        if (context.mounted) {
-                          Navigator.pop(context);
                         }
                       },
                     );
@@ -181,7 +213,12 @@ class DeviceLibrarySheet extends ConsumerWidget {
   }
 
   void _handleMenuAction(BuildContext context, WidgetRef ref, String action, PairedDevice device) {
-    if (action == 'rename') {
+    if (action == 'connect') {
+      _handleConnect(context, ref, device);
+    } else if (action == 'disconnect') {
+      ref.read(connectionProvider.notifier).disconnect();
+      Navigator.pop(context);
+    } else if (action == 'rename') {
       _showRenameDialog(context, ref, device);
     } else if (action == 'retype') {
       Navigator.pop(context);
@@ -197,6 +234,28 @@ class DeviceLibrarySheet extends ConsumerWidget {
       );
     } else if (action == 'remove') {
       _showRemoveDialog(context, ref, device);
+    }
+  }
+
+  Future<void> _handleConnect(BuildContext context, WidgetRef ref, PairedDevice device) async {
+    await ref.read(connectionProvider.notifier).disconnect();
+    await ref.read(deviceLibraryProvider.notifier).setActiveDevice(device.id);
+    final ok = await ref.read(connectionProvider.notifier).connect(
+      DiscoveredDevice(id: device.id, name: device.label, rssi: -50),
+    );
+    if (ok) {
+      await ref.read(deviceLibraryProvider.notifier).touchLastConnected(device.id);
+    }
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not reach "${device.label}". Try scanning nearby.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+    if (context.mounted) {
+      Navigator.pop(context);
     }
   }
 

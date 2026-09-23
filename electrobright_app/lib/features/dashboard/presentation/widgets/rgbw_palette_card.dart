@@ -51,12 +51,14 @@ class _RgbwPaletteCardState extends State<RgbwPaletteCard> {
           oldWidget.green != widget.green ||
           oldWidget.blue != widget.blue ||
           oldWidget.white != widget.white) {
-        setState(() {
-          _r = widget.red;
-          _g = widget.green;
-          _b = widget.blue;
-          _w = widget.white;
-        });
+        if (widget.red != _r || widget.green != _g || widget.blue != _b || widget.white != _w) {
+          setState(() {
+            _r = widget.red;
+            _g = widget.green;
+            _b = widget.blue;
+            _w = widget.white;
+          });
+        }
       }
     }
   }

@@ -72,7 +72,8 @@ class _AddDeviceFlowState extends ConsumerState<AddDeviceFlow> {
       addedAt: DateTime.now(),
     );
 
-    ref.read(deviceLibraryProvider.notifier).addDevice(device);
+    final library = ref.read(deviceLibraryProvider.notifier);
+    library.addDevice(device).then((_) => library.touchLastConnected(device.id));
     Navigator.pop(context);
   }
 

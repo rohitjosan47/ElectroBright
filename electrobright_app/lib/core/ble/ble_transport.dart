@@ -27,6 +27,7 @@ abstract class BleTransport {
   Stream<String> get notificationsStream;
   DeviceConnectionState get currentConnectionState;
   bool get isConnected => currentConnectionState == DeviceConnectionState.connected;
+  int get writeErrorCount;
 
   Future<void> startScan({Duration timeout = const Duration(seconds: 5)});
   Future<void> stopScan();

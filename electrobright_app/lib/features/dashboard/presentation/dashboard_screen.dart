@@ -54,11 +54,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         profile: ref.read(deviceLibraryProvider).activeProfile,
         soundEnabled: deviceState.soundEnabled,
         timerActive: deviceState.timerActive,
-        timerMinutesSet: deviceState.timerMinutesSet,
+        timerSecondsSet: deviceState.timerSecondsSet,
         timerRemainingSec: deviceState.timerRemainingSec,
         firmwareVersion: deviceState.firmwareVersion,
+        // Real count of BLE writes the link rejected or that timed out.
+        writeErrorCount: ref.read(bleDispatcherProvider).failureCount,
         onToggleSound: () => notifier.toggleSound(),
-        onSetTimer: (mins) => notifier.setTimer(mins),
+        onSetTimer: (secs) => notifier.setTimer(secs),
         onFactoryReset: () {
           notifier.factoryReset();
           final activeLabel = ref.read(deviceLibraryProvider).activeDevice?.label ?? 'device';
@@ -97,25 +99,32 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       body: AuraBackground(
         activeColor: deviceState.activeRgbColor,
         child: SafeArea(
-          child: CustomScrollView(
-            physics: _isInteractingWithControl
-                ? const NeverScrollableScrollPhysics()
-                : const BouncingScrollPhysics(),
-            slivers: [
-              // 1. Top Header Bar
-              SliverToBoxAdapter(
-                child: HeaderBar(
-                  connectionState: connectionState.state,
-                  reconnectAttempt: connectionState.reconnectAttempt,
-                  activeDeviceLabel: libraryState.activeDevice?.label,
-                  isSleeping: deviceState.isSleeping,
-                  onConnectionTap: () => _openDeviceLibrary(context),
-                  onPowerTap: () => notifier.toggleSleep(),
-                  onSettingsTap: () => _openSettings(context),
-                ),
+          bottom: false,
+          child: Column(
+            children: [
+              // 1. Top Header Bar (Sticky)
+              HeaderBar(
+                connectionState: connectionState.state,
+                reconnectAttempt: connectionState.reconnectAttempt,
+                maxReconnectAttempts: connectionState.maxReconnectAttempts,
+                activeDeviceLabel: libraryState.activeDevice?.label,
+                isSleeping: deviceState.isSleeping,
+                onConnectionTap: () => _openDeviceLibrary(context),
+                onPowerTap: () => notifier.toggleSleep(),
+                onSettingsTap: () => _openSettings(context),
               ),
-
-              // 2. Master Brightness Section
+              Expanded(
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 350),
+                  opacity: deviceState.isSleeping ? 0.3 : 1.0,
+                  child: IgnorePointer(
+                    ignoring: deviceState.isSleeping,
+                    child: CustomScrollView(
+                      physics: _isInteractingWithControl
+                          ? const NeverScrollableScrollPhysics()
+                          : const BouncingScrollPhysics(),
+                      slivers: [
+                        // 2. Master Brightness Section
               SliverToBoxAdapter(
                 child: MasterBrightnessCard(
                   brightness: deviceState.brightness,
@@ -242,6 +251,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ),
         ),
       ),
+    ),
+  ],
+  ),
+  ),
+  ),
     );
   }
 }

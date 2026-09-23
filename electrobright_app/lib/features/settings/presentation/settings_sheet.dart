@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../dashboard/application/device_notifier.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/haptics/haptic_service.dart';
@@ -8,9 +10,10 @@ import '../../devices/presentation/device_library_sheet.dart';
 class SettingsSheet extends StatefulWidget {
   final bool soundEnabled;
   final bool timerActive;
-  final int timerMinutesSet;
+  final int timerSecondsSet;
   final int? timerRemainingSec;
   final String? firmwareVersion;
+  final int writeErrorCount;
   final DeviceProfile profile;
   final VoidCallback onToggleSound;
   final ValueChanged<int> onSetTimer;
@@ -20,9 +23,10 @@ class SettingsSheet extends StatefulWidget {
     super.key,
     required this.soundEnabled,
     required this.timerActive,
-    required this.timerMinutesSet,
+    required this.timerSecondsSet,
     this.timerRemainingSec,
     this.firmwareVersion,
+    required this.writeErrorCount,
     required this.profile,
     required this.onToggleSound,
     required this.onSetTimer,
@@ -35,21 +39,27 @@ class SettingsSheet extends StatefulWidget {
 
 class _SettingsSheetState extends State<SettingsSheet> {
   late double _sliderIndex;
-  late bool _timerActive;
 
+  // Minimum auto-sleep is 30 s (APP-HWSET-02).
   static const List<int> _timerSteps = [
-    5, 10, 15, 30, 60, 90, 120, 180, 240, 360, 480, 720, 1440
+    30, 60, 120, 300, 600, 900, 1200, 1800, 3600, 5400, 7200, 10800, 14400, 21600
   ];
+
+  String _formatTimerStep(int seconds) {
+    if (seconds < 60) return '$seconds secs';
+    final mins = seconds ~/ 60;
+    if (mins < 60) return '$mins mins';
+    final hours = mins / 60.0;
+    return '${hours == hours.toInt() ? hours.toInt() : hours.toStringAsFixed(1)} hours';
+  }
 
   @override
   void initState() {
     super.initState();
-    _timerActive = widget.timerActive;
-    
-    int initialMin = widget.timerMinutesSet > 0 ? widget.timerMinutesSet : 30;
+    int initialSecs = widget.timerSecondsSet > 0 ? widget.timerSecondsSet : 30;
     int closestIndex = 0;
     for (int i = 0; i < _timerSteps.length; i++) {
-      if (_timerSteps[i] >= initialMin) {
+      if (_timerSteps[i] >= initialSecs) {
         closestIndex = i;
         break;
       }
@@ -154,8 +164,12 @@ class _SettingsSheetState extends State<SettingsSheet> {
           ),
           const SizedBox(height: 14),
 
-          // Sound (Buzzer) Toggle
-          Container(
+          // Sound (Buzzer) Toggle — reads the live device state so it always
+          // reflects what the hardware reported, not a copy from when the
+          // sheet was opened.
+          Consumer(builder: (context, ref, _) {
+          final soundEnabled = ref.watch(deviceStateProvider.select((s) => s.soundEnabled));
+          return Container(
             padding: const EdgeInsets.all(16),
             decoration: AppTheme.glassBoxDecoration(),
             child: Row(
@@ -164,8 +178,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
                 Row(
                   children: [
                     Icon(
-                      widget.soundEnabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
-                      color: widget.soundEnabled ? AppColors.cyanAccent : AppColors.textMuted,
+                      soundEnabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+                      color: soundEnabled ? AppColors.cyanAccent : AppColors.textMuted,
                     ),
                     const SizedBox(width: 12),
                     Column(
@@ -180,7 +194,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
                           ),
                         ),
                         Text(
-                          widget.soundEnabled ? 'Buzzer events enabled' : 'Buzzer silenced',
+                          soundEnabled ? 'Buzzer events enabled' : 'Buzzer silenced',
                           style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
                         ),
                       ],
@@ -188,24 +202,34 @@ class _SettingsSheetState extends State<SettingsSheet> {
                   ],
                 ),
                 Switch(
-                  value: widget.soundEnabled,
+                  value: soundEnabled,
                   onChanged: (val) {
                     HapticService.selectionTick();
-                    widget.onToggleSound();
+                    if (val != soundEnabled) widget.onToggleSound();
                   },
                 ),
               ],
             ),
-          ),
+          );
+          }),
           const SizedBox(height: 14),
 
           // Sleep Timer
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: AppTheme.glassBoxDecoration(),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          Consumer(
+            builder: (context, ref, child) {
+              final isSleeping = ref.watch(deviceStateProvider.select((s) => s.isSleeping));
+              final timerActive = ref.watch(deviceStateProvider.select((s) => s.timerActive));
+              return AnimatedOpacity(
+                duration: const Duration(milliseconds: 350),
+                opacity: isSleeping ? 0.3 : 1.0,
+                child: IgnorePointer(
+                  ignoring: isSleeping,
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: AppTheme.glassBoxDecoration(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -224,7 +248,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
                       ],
                     ),
                     Text(
-                      '${_timerSteps[_sliderIndex.toInt()]} mins',
+                      _formatTimerStep(_timerSteps[_sliderIndex.toInt()]),
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -256,29 +280,41 @@ class _SettingsSheetState extends State<SettingsSheet> {
                     Expanded(
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _timerActive
+                          backgroundColor: timerActive
                               ? AppColors.cardSurfaceSecondary
                               : AppColors.amberAccent,
-                          foregroundColor: _timerActive ? AppColors.textPrimary : Colors.black,
+                          foregroundColor: timerActive ? AppColors.textPrimary : Colors.black,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                         onPressed: () {
                           HapticService.pop();
-                          setState(() => _timerActive = true);
                           widget.onSetTimer(_timerSteps[_sliderIndex.toInt()]);
                         },
-                        child: Text(
-                          _timerActive ? 'Timer Running' : 'Start Timer',
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
+                        child: timerActive 
+                            ? Consumer(
+                                builder: (context, ref, child) {
+                                  final remaining = ref.watch(deviceStateProvider.select((s) => s.timerRemainingSec));
+                                  if (remaining == null) return const Text('Timer Running', style: TextStyle(fontWeight: FontWeight.w700));
+                                  final h = remaining ~/ 3600;
+                                  final m = (remaining % 3600) ~/ 60;
+                                  final s = remaining % 60;
+                                  final timeStr = h > 0 
+                                      ? '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}'
+                                      : '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+                                  return Text(
+                                    timeStr,
+                                    style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                                  );
+                                },
+                              )
+                            : const Text('Start Timer', style: TextStyle(fontWeight: FontWeight.w700)),
                       ),
                     ),
-                    if (_timerActive) ...[
+                    if (timerActive) ...[
                       const SizedBox(width: 10),
                       IconButton(
                         onPressed: () {
                           HapticService.lightTick();
-                          setState(() => _timerActive = false);
                           widget.onSetTimer(0);
                         },
                         icon: const Icon(Icons.close_rounded, color: AppColors.redAccent),
@@ -286,21 +322,13 @@ class _SettingsSheetState extends State<SettingsSheet> {
                     ],
                   ],
                 ),
-                if (_timerActive && widget.timerRemainingSec != null) ...[
-                  const SizedBox(height: 12),
-                  Center(
-                    child: Text(
-                      'Time remaining: ${widget.timerRemainingSec! ~/ 60}m ${widget.timerRemainingSec! % 60}s',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.amberAccent,
-                        fontWeight: FontWeight.w600,
-                      ),
+
+                      ],
                     ),
                   ),
-                ],
-              ],
-            ),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 14),
 
@@ -314,7 +342,12 @@ class _SettingsSheetState extends State<SettingsSheet> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text('Firmware Protocol', style: TextStyle(color: AppColors.textMuted)),
-                    Text(widget.firmwareVersion ?? 'Unknown Version', style: const TextStyle(color: AppColors.cyanAccent, fontWeight: FontWeight.w600)),
+                    Consumer(
+                      builder: (context, ref, child) {
+                        final version = ref.watch(deviceStateProvider.select((s) => s.firmwareVersion));
+                        return Text(version ?? 'Unknown Version', style: const TextStyle(color: AppColors.cyanAccent, fontWeight: FontWeight.w600));
+                      },
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -323,6 +356,14 @@ class _SettingsSheetState extends State<SettingsSheet> {
                   children: [
                     Text('Architecture', style: TextStyle(color: AppColors.textMuted)),
                     Text('ESP32-C3 RISC-V', style: TextStyle(color: AppColors.textPrimary)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Transport Drop Count', style: TextStyle(color: AppColors.textMuted)),
+                    Text('${widget.writeErrorCount}', style: TextStyle(color: widget.writeErrorCount > 0 ? AppColors.redAccent : AppColors.textPrimary)),
                   ],
                 ),
                 const Divider(color: AppColors.cardBorder, height: 24),

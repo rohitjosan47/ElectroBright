@@ -40,9 +40,9 @@ void main() {
       expect(notifier.state.green, 255);
       expect(notifier.state.blue, 255);
       expect(notifier.state.white, 0);
-      expect(notifier.state.getPresetName(0), 'Warm Candle');
+      expect(notifier.state.getPresetName(0), 'Preset 1');
       expect(notifier.state.getPresetName(5), 'Preset 6');
-      expect(notifier.state.savedPresets.contains(0), isTrue);
+      expect(notifier.state.savedPresets, isEmpty);
     });
 
     test('Changing mode to 12 (Police) updates state and notifies transport', () async {
@@ -138,7 +138,14 @@ void main() {
       expect(notifier.state.white, 10);
     });
 
-    test('Sleep mode toggles state and power state', () {
+    test('Power toggle is ignored while disconnected and reports an error', () {
+      notifier.toggleSleep();
+      expect(notifier.state.isSleeping, isFalse);
+      expect(notifier.state.lastError, isNotNull);
+    });
+
+    test('Sleep mode toggles state and power state', () async {
+      await transport.connect('MOCK');
       expect(notifier.state.isSleeping, isFalse);
       notifier.toggleSleep();
       expect(notifier.state.isSleeping, isTrue);

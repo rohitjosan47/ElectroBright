@@ -11,6 +11,12 @@ class ModeDefinition {
   final bool hasColorMode;
   final bool hasDualCustomColors;
 
+  /// UI name of the speed slider for this mode — describes what it really does.
+  final String speedLabel;
+
+  /// UI name of the frequency slider for this mode.
+  final String frequencyLabel;
+
   const ModeDefinition({
     required this.id,
     required this.name,
@@ -21,16 +27,17 @@ class ModeDefinition {
     this.hasFrequency = false,
     this.hasColorMode = false,
     this.hasDualCustomColors = false,
+    this.speedLabel = 'Speed',
+    this.frequencyLabel = 'Frequency',
   });
 
   // ╔══════════════════════════════════════════════════════════════════════╗
-  // ║  SYNC NOTICE — Keep in sync with firmware parseCommand()           ║
+  // ║  SYNC NOTICE — Keep in sync with the firmware mode registry        ║
   // ║                                                                    ║
-  // ║  The MODE_CAPABILITIES:<mode> handler in parseCommand()            ║
-  // ║  (ElectroBright_ESP32C3_BLE.ino) is the firmware source of truth   ║
-  // ║  for which modes support SPEED, FREQUENCY, and COLOR_MODE.         ║
-  // ║  If you add/remove a capability here, verify the firmware branch   ║
-  // ║  matches, and vice versa.                                          ║
+  // ║  firmware/ElectroBright/src/render/ModeRegistry.h is the           ║
+  // ║  firmware source of truth for which modes support SPEED,           ║
+  // ║  FREQUENCY and COLOR_MODE, and for the slider names below.         ║
+  // ║  If you change a capability or label here, update it there too.    ║
   // ╚══════════════════════════════════════════════════════════════════════╝
   static const List<ModeDefinition> allModes = [
     ModeDefinition(
@@ -50,6 +57,7 @@ class ModeDefinition {
       accentGradient: LinearGradient(colors: [Color(0xFFFFEA00), Color(0xFFFF9100)]),
       hasSpeed: false,
       hasFrequency: true,
+      frequencyLabel: 'Blink Rate',
     ),
     ModeDefinition(
       id: 3,
@@ -57,8 +65,10 @@ class ModeDefinition {
       description: 'Smooth organic sinusoidal respiration',
       icon: Icons.air,
       accentGradient: LinearGradient(colors: [Color(0xFF00F5A0), Color(0xFF00D9F5)]),
-      hasSpeed: false,
+      hasSpeed: true,
       hasFrequency: true,
+      speedLabel: 'Breath Shape',
+      frequencyLabel: 'Breathing Rate',
     ),
     ModeDefinition(
       id: 4,
@@ -69,6 +79,8 @@ class ModeDefinition {
       hasSpeed: true,
       hasFrequency: true,
       hasColorMode: true,
+      speedLabel: 'Burst Speed',
+      frequencyLabel: 'Launch Rate',
     ),
     ModeDefinition(
       id: 5,
@@ -78,6 +90,8 @@ class ModeDefinition {
       accentGradient: LinearGradient(colors: [Color(0xFF7000FF), Color(0xFF00E5FF)]),
       hasSpeed: true,
       hasFrequency: true,
+      speedLabel: 'Scene Pace',
+      frequencyLabel: 'Cuts & Flicker',
     ),
     ModeDefinition(
       id: 6,
@@ -87,6 +101,8 @@ class ModeDefinition {
       accentGradient: LinearGradient(colors: [Color(0xFF2979FF), Color(0xFFD500F9)]),
       hasSpeed: true,
       hasFrequency: true,
+      speedLabel: 'Stroke Tempo',
+      frequencyLabel: 'Strike Rate',
     ),
     ModeDefinition(
       id: 7,
@@ -96,15 +112,19 @@ class ModeDefinition {
       accentGradient: LinearGradient(colors: [Color(0xFFFF9100), Color(0xFFFF1744)]),
       hasSpeed: true,
       hasFrequency: true,
+      speedLabel: 'Glitch Speed',
+      frequencyLabel: 'Glitch Rate',
     ),
     ModeDefinition(
       id: 8,
-      name: 'Single Dynamic',
-      description: 'Autonomous color drift and wave sweeps',
-      icon: Icons.waves,
-      accentGradient: LinearGradient(colors: [Color(0xFF00E5FF), Color(0xFF00F5A0)]),
-      hasSpeed: false,
+      name: 'Welding',
+      description: 'Arc welding with ignition sparks, spatter and glowing bead',
+      icon: Icons.construction,
+      accentGradient: LinearGradient(colors: [Color(0xFFFF6D00), Color(0xFF00B0FF)]),
+      hasSpeed: true,
       hasFrequency: true,
+      speedLabel: 'Weld Length',
+      frequencyLabel: 'Weld Gap',
     ),
     ModeDefinition(
       id: 9,
@@ -115,6 +135,8 @@ class ModeDefinition {
       hasSpeed: true,
       hasFrequency: true,
       hasColorMode: true,
+      speedLabel: 'Tempo',
+      frequencyLabel: 'Energy',
     ),
     ModeDefinition(
       id: 10,
@@ -130,6 +152,7 @@ class ModeDefinition {
       ]),
       hasSpeed: false,
       hasFrequency: true,
+      frequencyLabel: 'Cycle Speed',
     ),
     ModeDefinition(
       id: 11,
@@ -139,6 +162,8 @@ class ModeDefinition {
       accentGradient: LinearGradient(colors: [Color(0xFFFF1744), Color(0xFFFF9100)]),
       hasSpeed: true,
       hasFrequency: true,
+      speedLabel: 'Flicker Speed',
+      frequencyLabel: 'Flame Intensity',
     ),
     ModeDefinition(
       id: 12,
@@ -150,6 +175,8 @@ class ModeDefinition {
       hasFrequency: true,
       hasColorMode: true,
       hasDualCustomColors: true,
+      speedLabel: 'Flash Speed',
+      frequencyLabel: 'Flashes per Side',
     ),
     ModeDefinition(
       id: 13,
@@ -159,6 +186,8 @@ class ModeDefinition {
       accentGradient: LinearGradient(colors: [Color(0xFFFF9E00), Color(0xFFFF5E00)]),
       hasSpeed: true,
       hasFrequency: true,
+      speedLabel: 'Flicker Speed',
+      frequencyLabel: 'Flicker Depth',
     ),
   ];
 

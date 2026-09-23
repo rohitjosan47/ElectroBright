@@ -63,6 +63,9 @@ class ConnectionNotifier extends StateNotifier<ConnectionUiState> {
   Timer? _reconnectTimer;
   bool _userInitiatedDisconnect = false;
   bool _isReconnecting = false;
+  // Last settled (non-transient) state. `disconnecting` is only a transition,
+  // so it must not erase the fact that we were connected before the drop.
+  DeviceConnectionState _lastStableState = DeviceConnectionState.disconnected;
 
   static const String prefLastDeviceId = 'electrobright_last_connected_device_id';
   static const String prefLastDeviceName = 'electrobright_last_connected_device_name';
@@ -112,6 +115,11 @@ class ConnectionNotifier extends StateNotifier<ConnectionUiState> {
   }
 
   void _handleConnectionStateChange(DeviceConnectionState cState) {
+    final wasConnected = _lastStableState == DeviceConnectionState.connected;
+    if (cState != DeviceConnectionState.disconnecting) {
+      _lastStableState = cState;
+    }
+
     if (_userInitiatedDisconnect) {
       if (cState == DeviceConnectionState.disconnected) {
         _isReconnecting = false;
@@ -130,7 +138,6 @@ class ConnectionNotifier extends StateNotifier<ConnectionUiState> {
       _isReconnecting = false;
       state = state.copyWith(state: cState, reconnectAttempt: 0);
     } else if (cState == DeviceConnectionState.disconnected) {
-      final wasConnected = state.state == DeviceConnectionState.connected;
       if (wasConnected &&
           state.lastConnectedDeviceId != null &&
           state.maxReconnectAttempts > 0) {
@@ -139,6 +146,9 @@ class ConnectionNotifier extends StateNotifier<ConnectionUiState> {
       } else {
         state = state.copyWith(state: cState, reconnectAttempt: 0);
       }
+    } else if (cState == DeviceConnectionState.disconnecting && wasConnected) {
+      // Keep showing `connected` until the link actually settles; the
+      // following `disconnected` event decides whether to auto-reconnect.
     } else {
       state = state.copyWith(state: cState);
     }

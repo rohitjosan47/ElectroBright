@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/ble/ble_constants.dart';
 import '../../../../core/ble/ble_transport.dart';
 import '../../../../core/ble/ble_dispatcher.dart';
 import '../../../../core/ble/ble_protocol.dart';
@@ -28,10 +30,12 @@ final echoSuppressorProvider = Provider<EchoSuppressor>((ref) {
   return suppressor;
 });
 
+// These providers deliberately watch ONLY the active device id / profile.
+// Watching the whole library state rebuilt the DeviceNotifier (resetting all
+// hardware state to defaults) on every rename, retype or timestamp update.
 final presetNameRepositoryProvider = Provider<PresetNameRepository>((ref) {
-  final lib = ref.watch(deviceLibraryProvider);
-  final activeId = lib.activeDeviceId ?? 'legacy-default';
-  final numPresets = lib.activeProfile.numPresets;
+  final activeId = ref.watch(deviceLibraryProvider.select((s) => s.activeDeviceId)) ?? 'legacy-default';
+  final numPresets = ref.watch(deviceLibraryProvider.select((s) => s.activeProfile.numPresets));
   return PresetNameRepository(activeId, numPresets);
 });
 
@@ -40,7 +44,7 @@ final deviceStateProvider = StateNotifierProvider<DeviceNotifier, DeviceState>((
   final dispatcher = ref.watch(bleDispatcherProvider);
   final echoSuppressor = ref.watch(echoSuppressorProvider);
   final presetRepo = ref.watch(presetNameRepositoryProvider);
-  final profile = ref.watch(deviceLibraryProvider).activeProfile;
+  final profile = ref.watch(deviceLibraryProvider.select((s) => s.activeProfile));
   return DeviceNotifier(transport, dispatcher, echoSuppressor, presetRepo, profile);
 });
 
@@ -53,6 +57,17 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
   StreamSubscription? _notificationSub;
   StreamSubscription? _connectionSub;
   Timer? _activePresetDebounceTimer;
+  Timer? _localSleepTimer;
+  Timer? _reconciliationTimer;
+  late final ValueNotifier<LiveColorState> liveColor;
+
+  /// True once the hardware has answered PRESET_LIST in this session; from then
+  /// on the hardware list is authoritative over locally cached presets.
+  bool _hardwarePresetsKnown = false;
+
+  /// Slot whose PRESET_LOAD is in flight; the next STATUS reflects that preset
+  /// and is used to refresh its cached snapshot.
+  int? _pendingPresetLoadId;
 
   DeviceNotifier(
     this._transport,
@@ -61,8 +76,42 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
     this._presetNameRepo,
     this._profile,
   ) : super(DeviceState.initial(_profile)) {
+    liveColor = ValueNotifier(LiveColorState(
+      red: state.red,
+      green: state.green,
+      blue: state.blue,
+      white: state.white,
+      brightness: state.brightness,
+    ));
     _listenToTransport();
     _loadPersistedPresets();
+    // The notifier can be (re)created while a link is already up (e.g. after a
+    // device is added or the active device changes). The connect listener only
+    // fires on a transition, so sync explicitly here.
+    if (_transport.isConnected) _requestFullSync();
+  }
+
+  void _requestFullSync() {
+    _dispatcher.dispatch(BleProtocol.requestStatus());
+    _dispatcher.dispatch(BleProtocol.requestModeSettings());
+    _dispatcher.dispatch(BleProtocol.requestPresetList());
+    _dispatcher.dispatch(BleProtocol.getVersion());
+    _dispatcher.dispatch(BleProtocol.requestCaps());
+  }
+
+  void _scheduleReconciliation({Duration delay = const Duration(milliseconds: 300)}) {
+    _reconciliationTimer?.cancel();
+    _reconciliationTimer = Timer(delay, () {
+      if (mounted) _dispatcher.dispatch(BleProtocol.requestStatus());
+    });
+  }
+
+  static const _toggleHold = Duration(milliseconds: BleConstants.toggleSuppressionMs);
+
+  bool _requireConnection() {
+    if (_transport.isConnected) return true;
+    state = state.copyWith(lastError: 'Not connected to a light');
+    return false;
   }
 
   @override
@@ -99,49 +148,50 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
       mergedSnapshots[k] = v;
     });
 
-    final mergedSaved = Set<int>.from(state.savedPresets);
-    if (savedIds != null) {
-      mergedSaved.addAll(savedIds);
-    }
-    mergedSaved.addAll(mergedSnapshots.keys);
-
-    if (savedActiveId != null && mergedSnapshots.containsKey(savedActiveId)) {
-      final p = mergedSnapshots[savedActiveId]!;
-      state = state.copyWith(
-        presetNames: mergedNames,
-        presetSnapshots: mergedSnapshots,
-        savedPresets: mergedSaved,
-        activePresetId: savedActiveId,
-        red: p.red,
-        green: p.green,
-        blue: p.blue,
-        white: p.white,
-        brightness: p.brightness,
-        mode: p.mode,
-        modeSpeed: List<int>.from(p.modeSpeed),
-        modeFrequency: List<int>.from(p.modeFrequency),
-        fireworkColorMode: p.fireworkColorMode,
-        clubColorMode: p.clubColorMode,
-        policeColorMode: p.policeColorMode,
-      );
+    // Which slots are occupied: the hardware list wins if it already arrived;
+    // otherwise use the persisted list from the last session (offline view).
+    final Set<int> saved;
+    if (_hardwarePresetsKnown) {
+      saved = Set<int>.from(state.savedPresets);
     } else {
-      state = state.copyWith(
-        presetNames: mergedNames,
-        presetSnapshots: mergedSnapshots,
-        savedPresets: mergedSaved,
-        activePresetId: savedActiveId,
-      );
+      saved = savedIds ?? mergedSnapshots.keys.toSet();
     }
+    mergedNames.removeWhere((k, _) => !saved.contains(k));
+    mergedSnapshots.removeWhere((k, _) => !saved.contains(k));
+
+    // Only restore the highlight; the live color/mode come from the hardware's
+    // STATUS, never from a cached snapshot (which may no longer match reality).
+    state = state.copyWith(
+      presetNames: mergedNames,
+      presetSnapshots: mergedSnapshots,
+      savedPresets: saved,
+      activePresetId: (savedActiveId != null && saved.contains(savedActiveId)) ? savedActiveId : null,
+      clearActivePreset: savedActiveId == null || !saved.contains(savedActiveId),
+    );
   }
 
   void _listenToTransport() {
     _notificationSub = _transport.notificationsStream.listen(_handleIncomingNotification);
     _connectionSub = _transport.connectionStateStream.listen((connState) {
       if (connState == DeviceConnectionState.connected) {
-        _dispatcher.dispatch(BleProtocol.requestStatus());
-        _dispatcher.dispatch(BleProtocol.requestModeSettings());
-        _dispatcher.dispatch(BleProtocol.requestPresetList());
-        _dispatcher.dispatch(BleProtocol.getVersion());
+        _requestFullSync();
+      } else if (connState == DeviceConnectionState.disconnected) {
+        _hardwarePresetsKnown = false;
+        _pendingPresetLoadId = null;
+      }
+    });
+  }
+
+  void _startLocalSleepTimer() {
+    _localSleepTimer?.cancel();
+    _localSleepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (state.timerActive && state.timerRemainingSec != null && state.timerRemainingSec! > 0) {
+        state = state.copyWith(timerRemainingSec: state.timerRemainingSec! - 1);
+      } else {
+        timer.cancel();
+        if (state.timerRemainingSec == 0 && state.timerActive) {
+          state = state.copyWith(timerActive: false, isSleeping: true);
+        }
       }
     });
   }
@@ -157,12 +207,20 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
         newFreqs[status.mode - 1] = status.currentModeFrequency;
       }
 
-      // If activePresetId is set, sync hardware status into local snapshot cache
+      final policeA = status.policeColorA ??
+          [state.policeColorAR, state.policeColorAG, state.policeColorAB, state.policeColorAW];
+      final policeB = status.policeColorB ??
+          [state.policeColorBR, state.policeColorBG, state.policeColorBB, state.policeColorBW];
+
+      // The first STATUS after a PRESET_LOAD is the hardware's version of that
+      // preset: refresh the cached snapshot from it. Any other STATUS must NOT
+      // touch snapshots (it reflects live edits, not the saved preset).
       var updatedSnapshots = state.presetSnapshots;
-      if (state.activePresetId != null) {
-        final currentId = state.activePresetId!;
+      final loadedId = _pendingPresetLoadId;
+      if (loadedId != null) {
+        _pendingPresetLoadId = null;
         final map = Map<int, PresetData>.from(state.presetSnapshots);
-        map[currentId] = PresetData.fromValues(
+        final snapshot = PresetData.fromValues(
           red: status.red,
           green: status.green,
           blue: status.blue,
@@ -174,18 +232,32 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
           fireworkColorMode: status.fireworkColorMode,
           clubColorMode: status.clubColorMode,
           policeColorMode: status.policeColorMode,
-          policeColorAR: state.policeColorAR,
-          policeColorAG: state.policeColorAG,
-          policeColorAB: state.policeColorAB,
-          policeColorAW: state.policeColorAW,
-          policeColorBR: state.policeColorBR,
-          policeColorBG: state.policeColorBG,
-          policeColorBB: state.policeColorBB,
-          policeColorBW: state.policeColorBW,
+          policeColorAR: policeA[0],
+          policeColorAG: policeA[1],
+          policeColorAB: policeA[2],
+          policeColorAW: policeA[3],
+          policeColorBR: policeB[0],
+          policeColorBG: policeB[1],
+          policeColorBB: policeB[2],
+          policeColorBW: policeB[3],
         );
+        map[loadedId] = snapshot;
         updatedSnapshots = map;
+        _presetNameRepo.savePresetSnapshot(loadedId, snapshot);
       }
 
+      if (status.timerActive == true) {
+        _startLocalSleepTimer();
+      } else {
+        _localSleepTimer?.cancel();
+      }
+
+      // APP-9 Post-Drag Reconciliation Policy:
+      // We unconditionally accept the device's authoritative state (if the lock is free).
+      // If a terminal commit packet was dropped due to BLE congestion, the hardware
+      // will echo back the old state. The UI will instantly snap back, providing
+      // truthful visual feedback to the user that the command failed.
+      // (Silent background retries mask connectivity issues and create divergent state).
       state = state.copyWith(
         red: _echoSuppressor.isLocked('rgbw') ? state.red : status.red,
         green: _echoSuppressor.isLocked('rgbw') ? state.green : status.green,
@@ -198,12 +270,30 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
         fireworkColorMode: status.fireworkColorMode,
         clubColorMode: status.clubColorMode,
         policeColorMode: status.policeColorMode,
+        policeColorAR: policeA[0],
+        policeColorAG: policeA[1],
+        policeColorAB: policeA[2],
+        policeColorAW: policeA[3],
+        policeColorBR: policeB[0],
+        policeColorBG: policeB[1],
+        policeColorBB: policeB[2],
+        policeColorBW: policeB[3],
         presetSnapshots: updatedSnapshots,
-        isSleeping: status.sleeping ?? state.isSleeping,
-        soundEnabled: status.soundEnabled ?? state.soundEnabled,
+        isSleeping: _echoSuppressor.isLocked('sleep') ? state.isSleeping : (status.sleeping ?? state.isSleeping),
+        soundEnabled: _echoSuppressor.isLocked('sound') ? state.soundEnabled : (status.soundEnabled ?? state.soundEnabled),
         timerActive: status.timerActive ?? state.timerActive,
         timerRemainingSec: status.timerRemainingSec ?? state.timerRemainingSec,
       );
+      
+      if (!_echoSuppressor.isLocked('rgbw') && !_echoSuppressor.isLocked('brightness')) {
+        liveColor.value = LiveColorState(
+          red: state.red,
+          green: state.green,
+          blue: state.blue,
+          white: state.white,
+          brightness: state.brightness,
+        );
+      }
       return;
     }
 
@@ -225,7 +315,7 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
     // 3. Check for PRESETS list
     final presets = BleProtocol.parsePresets(line);
     if (presets != null) {
-      state = state.copyWith(savedPresets: presets);
+      _applyHardwarePresetList(presets);
       return;
     }
 
@@ -236,10 +326,19 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
       return;
     }
 
+    // 4.5 Check for CAPS
+    final caps = BleProtocol.parseCaps(line);
+    if (caps != null) {
+      final protocol = int.tryParse(caps['PROTOCOL'] ?? '') ?? 0;
+      state = state.copyWith(supportsBinaryFastPath: protocol >= 1);
+      return;
+    }
+
     // 5. Check for errors
     final error = BleProtocol.parseError(line);
     if (error != null) {
       if (error.startsWith('PRESET_EMPTY')) {
+        _pendingPresetLoadId = null;
         final parts = error.split(':');
         final failedId = parts.length > 1 ? int.tryParse(parts[1]) : null;
         if (failedId != null) {
@@ -258,51 +357,120 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
     }
   }
 
-  bool get supportsBinaryFastPath => BleProtocol.isBinaryFastPathSupported(state.firmwareVersion);
+
+
+  /// Makes the hardware's occupied-slot list authoritative: cached names and
+  /// snapshots for slots the device does not have are dropped (and forgotten
+  /// on disk), so an emptied slot never resurrects a stale name or scene.
+  void _applyHardwarePresetList(Set<int> presets) {
+    _hardwarePresetsKnown = true;
+    final staleIds = {...state.presetSnapshots.keys, ...state.presetNames.keys}
+        .where((id) => !presets.contains(id))
+        .toSet();
+    final names = Map<int, String>.from(state.presetNames)..removeWhere((k, _) => staleIds.contains(k));
+    final snapshots = Map<int, PresetData>.from(state.presetSnapshots)..removeWhere((k, _) => staleIds.contains(k));
+    final activeStillValid = state.activePresetId != null && presets.contains(state.activePresetId);
+    state = state.copyWith(
+      savedPresets: presets,
+      presetNames: names,
+      presetSnapshots: snapshots,
+      clearActivePreset: !activeStillValid,
+    );
+    for (final id in staleIds) {
+      _presetNameRepo.resetPresetName(id);
+      _presetNameRepo.deletePresetSnapshot(id);
+    }
+    _presetNameRepo.saveSavedPresetIds(presets);
+  }
 
   // --- User Intents & Hardware Dispatch ---
 
   void setRgbw(int r, int g, int b, int w, {bool continuous = true}) {
+    liveColor.value = LiveColorState(
+      red: r, green: g, blue: b, white: w, brightness: liveColor.value.brightness
+    );
     if (continuous) {
       _echoSuppressor.acquireLock('rgbw');
       state = state.copyWith(red: r, green: g, blue: b, white: w, clearActivePreset: true);
-      if (supportsBinaryFastPath) {
+      if (state.supportsBinaryFastPath) {
         _dispatcher.dispatchBinary(
-          BleProtocol.encodeRgbwBinary(r, g, b, w),
+          BleProtocol.encodeRgbwBrightnessBinary(r, g, b, w, liveColor.value.brightness),
           priority: CommandPriority.continuous,
+          identity: 'color',
         );
       } else {
         _dispatcher.dispatch(
           BleProtocol.setRgbw(r, g, b, w),
           priority: CommandPriority.continuous,
+          identity: 'rgbw',
         );
       }
     } else {
       _echoSuppressor.releaseLock('rgbw');
       state = state.copyWith(red: r, green: g, blue: b, white: w, clearActivePreset: true);
-      _dispatcher.flushPending();
-      _dispatcher.dispatch(BleProtocol.setRgbw(r, g, b, w));
+      if (state.supportsBinaryFastPath) {
+        _dispatcher.dispatchBinary(
+          BleProtocol.encodeRgbwBrightnessBinary(r, g, b, w, liveColor.value.brightness),
+          priority: CommandPriority.immediate,
+          identity: 'color',
+        );
+      } else {
+        _dispatcher.dispatch(BleProtocol.setRgbw(r, g, b, w));
+      }
+      _scheduleReconciliation();
     }
   }
 
   void setBrightness(int br, {bool continuous = true}) {
+    liveColor.value = LiveColorState(
+      red: liveColor.value.red, green: liveColor.value.green, 
+      blue: liveColor.value.blue, white: liveColor.value.white, brightness: br
+    );
     if (continuous) {
       _echoSuppressor.acquireLock('brightness');
       state = state.copyWith(brightness: br, clearActivePreset: true);
-      _dispatcher.dispatch(
-        BleProtocol.setBrightness(br),
-        priority: CommandPriority.continuous,
-      );
+      if (state.supportsBinaryFastPath) {
+        _dispatcher.dispatchBinary(
+          BleProtocol.encodeRgbwBrightnessBinary(
+            liveColor.value.red, liveColor.value.green, liveColor.value.blue, liveColor.value.white, br
+          ),
+          priority: CommandPriority.continuous,
+          identity: 'color',
+        );
+      } else {
+        _dispatcher.dispatch(
+          BleProtocol.setBrightness(br),
+          priority: CommandPriority.continuous,
+          identity: 'brightness',
+        );
+      }
     } else {
       _echoSuppressor.releaseLock('brightness');
       state = state.copyWith(brightness: br, clearActivePreset: true);
-      _dispatcher.flushPending();
-      _dispatcher.dispatch(BleProtocol.setBrightness(br));
+      if (state.supportsBinaryFastPath) {
+        _dispatcher.dispatchBinary(
+          BleProtocol.encodeRgbwBrightnessBinary(
+            liveColor.value.red, liveColor.value.green, liveColor.value.blue, liveColor.value.white, br
+          ),
+          priority: CommandPriority.immediate,
+          identity: 'color',
+        );
+      } else {
+        _dispatcher.dispatch(BleProtocol.setBrightness(br));
+      }
+      _scheduleReconciliation();
     }
   }
 
   void setMode(int mode) {
     state = state.copyWith(mode: mode, clearActivePreset: true);
+    liveColor.value = LiveColorState(
+      red: state.red,
+      green: state.green,
+      blue: state.blue,
+      white: state.white,
+      brightness: state.brightness,
+    );
     _dispatcher.dispatch(BleProtocol.setMode(mode));
   }
 
@@ -316,6 +484,7 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
       _dispatcher.dispatch(
         BleProtocol.setSpeed(speed),
         priority: CommandPriority.continuous,
+        identity: 'speed',
       );
     } else {
       _echoSuppressor.releaseLock('speed');
@@ -335,6 +504,7 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
       _dispatcher.dispatch(
         BleProtocol.setFrequency(freq),
         priority: CommandPriority.continuous,
+        identity: 'freq',
       );
     } else {
       _echoSuppressor.releaseLock('freq');
@@ -404,16 +574,23 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
       policeColorBW: state.policeColorBW,
     );
 
+    final wasEmpty = !state.savedPresets.contains(id);
     final updatedSaved = Set<int>.from(state.savedPresets)..add(id);
     final updatedSnapshots = Map<int, PresetData>.from(state.presetSnapshots)..[id] = snapshot;
+    // A new preset in a previously empty slot starts with the default name.
+    final updatedNames = Map<int, String>.from(state.presetNames);
+    if (wasEmpty) updatedNames.remove(id);
 
     state = state.copyWith(
       savedPresets: updatedSaved,
       presetSnapshots: updatedSnapshots,
+      presetNames: updatedNames,
       activePresetId: id,
     );
 
     _dispatcher.dispatch(BleProtocol.savePreset(id));
+    _dispatcher.dispatch(BleProtocol.requestPresetList());
+    if (wasEmpty) _presetNameRepo.resetPresetName(id);
     _presetNameRepo.savePresetSnapshot(id, snapshot);
     _presetNameRepo.saveSavedPresetIds(updatedSaved);
   }
@@ -455,17 +632,29 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
       state = state.copyWith(activePresetId: id);
     }
 
-    // 3. Dispatch load to hardware (and query status)
+    // 3. Sync liveColor so binary fast-path packets use the preset's values
+    liveColor.value = LiveColorState(
+      red: state.red,
+      green: state.green,
+      blue: state.blue,
+      white: state.white,
+      brightness: state.brightness,
+    );
+
+    // 4. Dispatch load to hardware. The firmware answers a successful load
+    //    with STATUS (used to refresh this slot's snapshot) or PRESET_EMPTY.
+    _pendingPresetLoadId = id;
     _dispatcher.dispatch(BleProtocol.loadPreset(id));
-    _dispatcher.dispatch(BleProtocol.requestStatus());
   }
 
   void deletePreset(int id) {
     final updatedSaved = Set<int>.from(state.savedPresets)..remove(id);
     final updatedSnapshots = Map<int, PresetData>.from(state.presetSnapshots)..remove(id);
+    final updatedNames = Map<int, String>.from(state.presetNames)..remove(id);
     final isCurrentActive = state.activePresetId == id;
 
     state = state.copyWith(
+      presetNames: updatedNames,
       savedPresets: updatedSaved,
       presetSnapshots: updatedSnapshots,
       clearActivePreset: isCurrentActive,
@@ -490,16 +679,26 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
   }
 
   void toggleSleep() {
+    if (!_requireConnection()) return;
     final newSleep = !state.isSleeping;
-    state = state.copyWith(isSleeping: newSleep);
+    // Short timed hold so a STATUS already in flight cannot flip the button
+    // back; reconciliation after the hold confirms the device's real state.
+    _echoSuppressor.suppressFor('sleep', _toggleHold);
     if (newSleep) {
+      // Firmware SLEEP also cancels any running timer.
+      _localSleepTimer?.cancel();
+      state = state.copyWith(isSleeping: true, timerActive: false, timerRemainingSec: 0);
       _dispatcher.dispatch(BleProtocol.sleep());
     } else {
+      state = state.copyWith(isSleeping: false);
       _dispatcher.dispatch(BleProtocol.wake());
     }
+    _scheduleReconciliation(delay: _toggleHold + const Duration(milliseconds: 100));
   }
 
   void toggleSound() {
+    if (!_requireConnection()) return;
+    _echoSuppressor.suppressFor('sound', _toggleHold);
     final newSound = !state.soundEnabled;
     state = state.copyWith(soundEnabled: newSound);
     if (newSound) {
@@ -507,20 +706,47 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
     } else {
       _dispatcher.dispatch(BleProtocol.soundOff());
     }
+    _scheduleReconciliation(delay: _toggleHold + const Duration(milliseconds: 100));
   }
 
-  void setTimer(int minutes) {
+  void setTimer(int seconds) {
+    if (!_requireConnection()) return;
     state = state.copyWith(
-      timerActive: minutes > 0,
-      timerMinutesSet: minutes,
-      timerRemainingSec: minutes * 60,
+      timerActive: seconds > 0,
+      timerSecondsSet: seconds,
+      timerRemainingSec: seconds,
     );
-    _dispatcher.dispatch(BleProtocol.setTimer(minutes));
+    _dispatcher.dispatch(BleProtocol.setTimer(seconds));
+    if (seconds > 0) {
+      _startLocalSleepTimer();
+    } else {
+      _localSleepTimer?.cancel();
+    }
   }
 
   void factoryReset() {
+    if (!_requireConnection()) return;
+    _presetNameRepo.wipeAll();
+    _localSleepTimer?.cancel();
+    _echoSuppressor.releaseAll();
+    _pendingPresetLoadId = null;
+    _hardwarePresetsKnown = false;
+    // Connection-level facts (firmware version, protocol caps) survive a reset.
+    state = DeviceState.initial(_profile).copyWith(
+      firmwareVersion: state.firmwareVersion,
+      supportsBinaryFastPath: state.supportsBinaryFastPath,
+    );
+    liveColor.value = LiveColorState(
+      red: state.red,
+      green: state.green,
+      blue: state.blue,
+      white: state.white,
+      brightness: state.brightness,
+    );
     _dispatcher.dispatch(BleProtocol.factoryReset());
-    state = DeviceState.initial(_profile);
+    _dispatcher.dispatch(BleProtocol.requestStatus());
+    _dispatcher.dispatch(BleProtocol.requestModeSettings());
+    _dispatcher.dispatch(BleProtocol.requestPresetList());
   }
 
   void clearError() {
@@ -530,8 +756,11 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
   @override
   void dispose() {
     _activePresetDebounceTimer?.cancel();
+    _localSleepTimer?.cancel();
+    _reconciliationTimer?.cancel();
     _notificationSub?.cancel();
     _connectionSub?.cancel();
+    liveColor.dispose();
     super.dispose();
   }
 }

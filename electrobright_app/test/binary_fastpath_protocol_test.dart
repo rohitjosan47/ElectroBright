@@ -10,50 +10,55 @@ import 'package:electrobright_app/features/presets/data/preset_name_repository.d
 
 void main() {
   group('Tier 4: BleProtocol Binary Fast-Path Encoding & Versioning', () {
-    test('encodeRgbwBinary generates valid 6-byte packet with correct checksum', () {
-      final packet = BleProtocol.encodeRgbwBinary(255, 128, 0, 30);
-      expect(packet.length, 6);
+    test('encodeRgbwBrightnessBinary generates valid 8-byte packet with correct checksum', () {
+      final packet = BleProtocol.encodeRgbwBrightnessBinary(255, 128, 0, 30, 100);
+      expect(packet.length, 8);
       expect(packet[0], 0xAA); // Magic start byte
-      expect(packet[1], 255);  // Red
-      expect(packet[2], 128);  // Green
-      expect(packet[3], 0);    // Blue
-      expect(packet[4], 30);   // White
+      final seq = packet[1];   // Sequence number
+      expect(packet[2], 255);  // Red
+      expect(packet[3], 128);  // Green
+      expect(packet[4], 0);    // Blue
+      expect(packet[5], 30);   // White
+      expect(packet[6], 100);  // Brightness
 
-      const expectedChecksum = (255 ^ 128 ^ 0 ^ 30 ^ 0x55) & 0xFF;
-      expect(packet[5], expectedChecksum);
+      final expectedChecksum = (seq ^ 255 ^ 128 ^ 0 ^ 30 ^ 100 ^ 0x55) & 0xFF;
+      expect(packet[7], expectedChecksum);
     });
 
-    test('encodeRgbwBinary clamps inputs to 0-255 range', () {
-      final packet = BleProtocol.encodeRgbwBinary(-10, 300, 256, -1);
-      expect(packet[1], 0);
-      expect(packet[2], 255);
+    test('encodeRgbwBrightnessBinary clamps inputs to 0-255 range', () {
+      final packet = BleProtocol.encodeRgbwBrightnessBinary(-10, 300, 256, -1, 300);
+      final seq = packet[1];
+      expect(packet[2], 0);
       expect(packet[3], 255);
-      expect(packet[4], 0);
+      expect(packet[4], 255);
+      expect(packet[5], 0);
+      expect(packet[6], 255);
 
-      const expectedChecksum = (0 ^ 255 ^ 255 ^ 0 ^ 0x55) & 0xFF;
-      expect(packet[5], expectedChecksum);
+      final expectedChecksum = (seq ^ 0 ^ 255 ^ 255 ^ 0 ^ 255 ^ 0x55) & 0xFF;
+      expect(packet[7], expectedChecksum);
     });
 
     test('Checksum edge cases (all zeroes, all 255s)', () {
-      final zeroPacket = BleProtocol.encodeRgbwBinary(0, 0, 0, 0);
-      expect(zeroPacket[5], 0x55);
+      final zeroPacket = BleProtocol.encodeRgbwBrightnessBinary(0, 0, 0, 0, 0);
+      final seqZero = zeroPacket[1];
+      expect(zeroPacket[7], (seqZero ^ 0x55) & 0xFF);
 
-      final maxPacket = BleProtocol.encodeRgbwBinary(255, 255, 255, 255);
-      // 255 ^ 255 = 0, 255 ^ 255 = 0, 0 ^ 0x55 = 0x55
-      expect(maxPacket[5], 0x55);
+      final maxPacket = BleProtocol.encodeRgbwBrightnessBinary(255, 255, 255, 255, 255);
+      final seqMax = maxPacket[1];
+      // 255^255=0, 255^255=0, 255^0x55 = 0xAA
+      expect(maxPacket[7], (seqMax ^ 255 ^ 255 ^ 255 ^ 255 ^ 255 ^ 0x55) & 0xFF);
     });
 
-    test('isBinaryFastPathSupported accurately evaluates semantic versions', () {
-      expect(BleProtocol.isBinaryFastPathSupported(null), isFalse);
-      expect(BleProtocol.isBinaryFastPathSupported(''), isFalse);
-      expect(BleProtocol.isBinaryFastPathSupported('INVALID'), isFalse);
-      expect(BleProtocol.isBinaryFastPathSupported('1.9.9'), isFalse);
-      expect(BleProtocol.isBinaryFastPathSupported('2.7.3'), isFalse);
-      expect(BleProtocol.isBinaryFastPathSupported('2.7.5'), isFalse);
-      expect(BleProtocol.isBinaryFastPathSupported('2.8.0'), isTrue);
-      expect(BleProtocol.isBinaryFastPathSupported('2.8.1'), isTrue);
-      expect(BleProtocol.isBinaryFastPathSupported('2.9.0'), isTrue);
-      expect(BleProtocol.isBinaryFastPathSupported('3.0.0'), isTrue);
+    test('parseCaps accurately parses CAPS payload', () {
+      expect(BleProtocol.parseCaps(''), isNull);
+      expect(BleProtocol.parseCaps('VERSION:2.8.0'), isNull);
+      
+      final caps = BleProtocol.parseCaps('CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL');
+      expect(caps, isNotNull);
+      expect(caps!['PROTOCOL'], '1');
+      expect(caps['PWM'], '14');
+      expect(caps['GAMMA'], '2.2');
+      expect(caps['MASTER'], 'PERCEPTUAL');
     });
   });
 
@@ -86,12 +91,12 @@ void main() {
       transport.dispose();
     });
 
-    test('Case 1: New App + New Firmware (2.8.0) uses binary fast-path for continuous streaming', () async {
-      transport.simulatedVersion = '2.8.0';
+    test('Case 1: New App + New Firmware (CAPS PROTOCOL>=1) uses binary fast-path for continuous streaming', () async {
+      transport.simulatedCaps = 'PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL';
       await transport.connect('MOCK-ESP32-C3-001');
       await Future.delayed(const Duration(milliseconds: 150));
 
-      expect(notifier.supportsBinaryFastPath, isTrue);
+      expect(notifier.state.supportsBinaryFastPath, isTrue);
 
       final initialBinaryCount = transport.binaryPacketCount;
       final initialAsciiCount = transport.asciiCommandCount;
@@ -109,16 +114,16 @@ void main() {
       notifier.setRgbw(255, 100, 50, 0, continuous: false);
       await Future.delayed(const Duration(milliseconds: 70));
 
-      // Terminal commit sent ASCII RGBW: command to guarantee synchronization & ACK
-      expect(transport.asciiCommandCount, initialAsciiCount + 1);
+      // Terminal commit sent binary packet with immediate priority
+      expect(transport.binaryPacketCount, initialBinaryCount + 2);
     });
 
-    test('Case 2: New App + Old Firmware (2.7.3) safely falls back to ASCII streaming', () async {
-      transport.simulatedVersion = '2.7.3';
+    test('Case 2: New App + Old Firmware (No CAPS) safely falls back to ASCII streaming', () async {
+      transport.simulatedCaps = ''; // Simulate old firmware that doesn't return CAPS
       await transport.connect('MOCK-ESP32-C3-001');
       await Future.delayed(const Duration(milliseconds: 150));
 
-      expect(notifier.supportsBinaryFastPath, isFalse);
+      expect(notifier.state.supportsBinaryFastPath, isFalse);
 
       final initialBinaryCount = transport.binaryPacketCount;
       final initialAsciiCount = transport.asciiCommandCount;
@@ -135,7 +140,7 @@ void main() {
     });
 
     test('Case 3: In-flight streaming deduplication coalesces rapid binary updates', () async {
-      transport.simulatedVersion = '2.8.0';
+      transport.simulatedCaps = 'PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL';
       await transport.connect('MOCK-ESP32-C3-001');
       await Future.delayed(const Duration(milliseconds: 150));
 
@@ -148,8 +153,8 @@ void main() {
 
       await Future.delayed(const Duration(milliseconds: 70));
 
-      // Coalesced into exactly 1 binary packet with the latest value (red = 190)
-      expect(transport.binaryPacketCount, initialBinaryCount + 1);
+      // Coalesced into exactly 2 binary packets (the first one, and the last coalesced one)
+      expect(transport.binaryPacketCount, initialBinaryCount + 2);
     });
 
     test('Throughput Benchmark: Binary Fast-Path achieves >= 60% byte payload reduction', () {

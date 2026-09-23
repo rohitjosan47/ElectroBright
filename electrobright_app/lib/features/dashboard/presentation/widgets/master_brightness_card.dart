@@ -21,6 +21,7 @@ class MasterBrightnessCard extends StatefulWidget {
 class _MasterBrightnessCardState extends State<MasterBrightnessCard> {
   late double _currentValue;
   int _lastTickStep = -1;
+  bool _isInteracting = false;
 
   @override
   void initState() {
@@ -31,7 +32,7 @@ class _MasterBrightnessCardState extends State<MasterBrightnessCard> {
   @override
   void didUpdateWidget(covariant MasterBrightnessCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.brightness != widget.brightness) {
+    if (!_isInteracting && oldWidget.brightness != widget.brightness) {
       setState(() {
         _currentValue = widget.brightness.toDouble();
       });
@@ -58,9 +59,7 @@ class _MasterBrightnessCardState extends State<MasterBrightnessCard> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        curve: Curves.easeOut,
+      child: Container(
         padding: const EdgeInsets.all(20.0),
         decoration: BoxDecoration(
           color: AppColors.cardSurface.withOpacity(0.85),
@@ -138,7 +137,12 @@ class _MasterBrightnessCardState extends State<MasterBrightnessCard> {
                 value: _currentValue,
                 min: 0,
                 max: 255,
-                onChangeStart: (_) => widget.onInteractionChanged?.call(true),
+                onChangeStart: (_) {
+                  setState(() {
+                    _isInteracting = true;
+                  });
+                  widget.onInteractionChanged?.call(true);
+                },
                 onChanged: (val) {
                   setState(() => _currentValue = val);
                   final step = (val / 25.5).floor();
@@ -149,6 +153,9 @@ class _MasterBrightnessCardState extends State<MasterBrightnessCard> {
                   widget.onBrightnessChanged(val.round(), true);
                 },
                 onChangeEnd: (val) {
+                  setState(() {
+                    _isInteracting = false;
+                  });
                   widget.onInteractionChanged?.call(false);
                   widget.onBrightnessChanged(val.round(), false);
                 },

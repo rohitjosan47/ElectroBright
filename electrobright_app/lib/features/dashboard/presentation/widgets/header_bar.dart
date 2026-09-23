@@ -9,6 +9,7 @@ class HeaderBar extends StatelessWidget {
   final String? activeDeviceLabel;
   final bool isSleeping;
   final int reconnectAttempt;
+  final int maxReconnectAttempts;
   final VoidCallback onConnectionTap;
   final VoidCallback onPowerTap;
   final VoidCallback onSettingsTap;
@@ -19,6 +20,7 @@ class HeaderBar extends StatelessWidget {
     this.activeDeviceLabel,
     required this.isSleeping,
     this.reconnectAttempt = 0,
+    this.maxReconnectAttempts = 3,
     required this.onConnectionTap,
     required this.onPowerTap,
     required this.onSettingsTap,
@@ -36,7 +38,7 @@ class HeaderBar extends StatelessWidget {
     if (isConnected) {
       labelText = activeDeviceLabel ?? 'Connected';
     } else if (isReconnecting) {
-      labelText = 'Reconnecting ($reconnectAttempt/3)...';
+      labelText = 'Reconnecting ($reconnectAttempt/$maxReconnectAttempts)...';
     } else if (connectionState == DeviceConnectionState.scanning) {
       labelText = 'Scanning...';
     } else if (connectionState == DeviceConnectionState.connecting) {

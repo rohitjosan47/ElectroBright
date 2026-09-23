@@ -8,3 +8,4 @@ electrobright_app/.idea/
 electrobright_app/*.iml
 electrobright_app/.pub-cache/
 electrobright_app/.pub/
+firmware/ElectroBright/test/build/

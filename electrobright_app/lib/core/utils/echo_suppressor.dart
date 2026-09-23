@@ -5,7 +5,7 @@ import '../ble/ble_constants.dart';
 class EchoSuppressor {
   final Set<String> _heldLocks = {};
   final Map<String, Timer> _releaseTimers = {};
-  static const _maxHoldDuration = Duration(seconds: 4);
+  static const _maxHoldDuration = Duration(seconds: 15);
 
   /// Acquires a lock while active touch is held.
   void acquireLock(String key) {
@@ -28,6 +28,16 @@ class EchoSuppressor {
         _releaseTimers.remove(key);
       },
     );
+  }
+
+  /// Suppresses external updates for [key] for a fixed [duration]. Used for
+  /// discrete toggles (power, sound) which have no "release" gesture.
+  void suppressFor(String key, Duration duration) {
+    _releaseTimers[key]?.cancel();
+    _heldLocks.remove(key);
+    _releaseTimers[key] = Timer(duration, () {
+      _releaseTimers.remove(key);
+    });
   }
 
   /// Checks if an external update should be suppressed.

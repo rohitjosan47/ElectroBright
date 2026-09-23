@@ -15,6 +15,9 @@ class ParsedStatus {
   final bool? timerActive;
   final int? timerRemainingSec;
   final bool? soundEnabled;
+  /// Police custom colors [r, g, b, w] (firmware >= 2.9.0, fields 15-22).
+  final List<int>? policeColorA;
+  final List<int>? policeColorB;
 
   const ParsedStatus({
     required this.red,
@@ -32,6 +35,8 @@ class ParsedStatus {
     this.timerActive,
     this.timerRemainingSec,
     this.soundEnabled,
+    this.policeColorA,
+    this.policeColorB,
   });
 }
 
@@ -63,6 +68,8 @@ class BleProtocol {
         timerActive: parts.length >= 13 ? parts[12] == '1' : null,
         timerRemainingSec: parts.length >= 14 ? int.tryParse(parts[13]) : null,
         soundEnabled: parts.length >= 15 ? parts[14] == '1' : null,
+        policeColorA: parts.length >= 23 ? parts.sublist(15, 19).map(int.parse).toList() : null,
+        policeColorB: parts.length >= 23 ? parts.sublist(19, 23).map(int.parse).toList() : null,
       );
     } catch (_) {
       return null;
@@ -152,36 +159,42 @@ class BleProtocol {
   static String wake() => 'WAKE\n';
   static String soundOn() => 'SOUND_ON\n';
   static String soundOff() => 'SOUND_OFF\n';
-  static String setTimer(int minutes) => 'TIMER:$minutes\n';
+  static String setTimer(int seconds) => 'TIMER:$seconds\n';
   static String factoryReset() => 'FACTORY_RESET\n';
   static String ping() => 'PING\n';
   static String getInfo() => 'INFO\n';
   static String getVersion() => 'VERSION\n';
+  static String requestCaps() => 'CAPS\n';
 
-  /// Generates a 6-byte binary fast-path packet for continuous color streaming.
-  /// Format: [0xAA, R, G, B, W, Checksum]
-  /// Checksum = (R ^ G ^ B ^ W ^ 0x55) & 0xFF
-  static List<int> encodeRgbwBinary(int r, int g, int b, int w) {
+  static int _binarySeq = 0;
+
+  /// Generates an 8-byte binary fast-path packet for continuous color & brightness streaming.
+  /// Format: [0xAA, Seq, R, G, B, W, Brightness, Checksum]
+  /// Checksum = (Seq ^ R ^ G ^ B ^ W ^ Brightness ^ 0x55) & 0xFF
+  static List<int> encodeRgbwBrightnessBinary(int r, int g, int b, int w, int brightness) {
     final cleanR = r.clamp(0, 255);
     final cleanG = g.clamp(0, 255);
     final cleanB = b.clamp(0, 255);
     final cleanW = w.clamp(0, 255);
-    final checksum = (cleanR ^ cleanG ^ cleanB ^ cleanW ^ 0x55) & 0xFF;
-    return <int>[0xAA, cleanR, cleanG, cleanB, cleanW, checksum];
+    final cleanBr = brightness.clamp(0, 255);
+    
+    _binarySeq = (_binarySeq + 1) & 0xFF;
+    final checksum = (_binarySeq ^ cleanR ^ cleanG ^ cleanB ^ cleanW ^ cleanBr ^ 0x55) & 0xFF;
+    return <int>[0xAA, _binarySeq, cleanR, cleanG, cleanB, cleanW, cleanBr, checksum];
   }
 
-  /// Evaluates whether the firmware version is >= 2.8.0 to support binary streaming.
-  static bool isBinaryFastPathSupported(String? versionString) {
-    if (versionString == null) return false;
-    final clean = versionString.trim();
-    final parts = clean.split('.');
-    if (parts.isEmpty) return false;
-    final major = int.tryParse(parts[0]);
-    if (major == null) return false;
-    if (major > 2) return true;
-    if (major < 2) return false;
-    final minor = parts.length > 1 ? int.tryParse(parts[1]) : 0;
-    if (minor == null) return false;
-    return minor >= 8;
+  /// Parses the CAPS command response (e.g. "CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2")
+  static Map<String, String>? parseCaps(String line) {
+    if (!line.startsWith('CAPS:')) return null;
+    final payload = line.substring(5).trim();
+    final parts = payload.split(',');
+    final result = <String, String>{};
+    for (final part in parts) {
+      final kv = part.split('=');
+      if (kv.length == 2) {
+        result[kv[0]] = kv[1];
+      }
+    }
+    return result;
   }
 }

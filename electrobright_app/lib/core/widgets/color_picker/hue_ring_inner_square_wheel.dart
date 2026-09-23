@@ -60,7 +60,10 @@ class _HueRingInnerSquareWheelState extends State<HueRingInnerSquareWheel> {
       if (oldWidget.red != widget.red ||
           oldWidget.green != widget.green ||
           oldWidget.blue != widget.blue) {
-        _syncHsvFromRgb(widget.red, widget.green, widget.blue);
+        final c = _currentColor;
+        if (widget.red != c.red || widget.green != c.green || widget.blue != c.blue) {
+          _syncHsvFromRgb(widget.red, widget.green, widget.blue);
+        }
       }
     }
   }

@@ -39,12 +39,14 @@ class _InteractiveColorSquareState extends State<InteractiveColorSquare> {
   void didUpdateWidget(covariant InteractiveColorSquare oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!_isDragging && oldWidget.initialColor != widget.initialColor) {
-      final hsv = HSVColor.fromColor(widget.initialColor);
-      if (hsv.saturation > 0.05 && hsv.value > 0.05) {
-        _hue = hsv.hue;
+      if (widget.initialColor.value != _currentColor.value) {
+        final hsv = HSVColor.fromColor(widget.initialColor);
+        if (hsv.saturation > 0.05 && hsv.value > 0.05) {
+          _hue = hsv.hue;
+        }
+        _saturation = hsv.saturation;
+        _value = hsv.value;
       }
-      _saturation = hsv.saturation;
-      _value = hsv.value;
     }
   }
 

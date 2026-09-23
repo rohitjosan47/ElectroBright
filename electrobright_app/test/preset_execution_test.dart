@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:electrobright_app/core/ble/mock_ble_transport.dart';
 import 'package:electrobright_app/core/ble/ble_dispatcher.dart';
 import 'package:electrobright_app/core/utils/echo_suppressor.dart';
@@ -7,6 +8,8 @@ import 'package:electrobright_app/features/dashboard/application/device_notifier
 import 'package:electrobright_app/core/devices/device_catalog.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('Preset Execution & Reactive UI State Tests (Offline & Connected)', () {
     late MockBleTransport transport;
     late BleDispatcher dispatcher;
@@ -15,6 +18,7 @@ void main() {
     late DeviceNotifier notifier;
 
     setUp(() {
+      SharedPreferences.setMockInitialValues({});
       transport = MockBleTransport();
       dispatcher = BleDispatcher(transport);
       suppressor = EchoSuppressor();
@@ -29,17 +33,28 @@ void main() {
       transport.dispose();
     });
 
-    test('Tapping Preset 1 (Warm Candle) immediately updates mode, brightness, color and speeds', () {
-      // Start in mode 1 Solid Color, 100% white
-      expect(notifier.state.mode, 1);
-      expect(notifier.state.brightness, 255);
+    test('Fresh state has no demo presets (APP-PRESET-01)', () {
+      expect(notifier.state.savedPresets, isEmpty);
+      expect(notifier.state.presetSnapshots, isEmpty);
+      expect(notifier.state.getPresetName(0), 'Preset 1');
+    });
 
-      // Tap Preset 1 (Slot 0)
+    test('Loading a saved Candle scene immediately restores mode, brightness, color and speeds', () {
+      notifier.setMode(13);
+      notifier.setBrightness(240, continuous: false);
+      notifier.setSpeed(6, continuous: false);
+      notifier.setFrequency(7, continuous: false);
+      notifier.setRgbw(255, 140, 0, 60, continuous: false);
+      notifier.savePreset(0);
+
+      notifier.setMode(1);
+      notifier.setBrightness(255, continuous: false);
+      notifier.setRgbw(255, 255, 255, 0, continuous: false);
+
       notifier.loadPreset(0);
 
-      // Verify immediate state transformation
       expect(notifier.state.activePresetId, 0);
-      expect(notifier.state.mode, 13); // Candle
+      expect(notifier.state.mode, 13);
       expect(notifier.state.brightness, 240);
       expect(notifier.state.red, 255);
       expect(notifier.state.green, 140);
@@ -49,30 +64,20 @@ void main() {
       expect(notifier.state.currentFrequency, 7);
     });
 
-    test('Tapping Preset 2 (Cyber Club) immediately updates mode to 9 and color to neon magenta', () {
-      notifier.loadPreset(1);
+    test('Loading a saved Police scene restores mode and both custom beacon colors', () {
+      notifier.setMode(12);
+      notifier.setPoliceColorMode(0);
+      notifier.setPoliceColorA(255, 0, 0, 0);
+      notifier.setPoliceColorB(0, 0, 255, 0);
+      notifier.savePreset(4);
 
-      expect(notifier.state.activePresetId, 1);
-      expect(notifier.state.mode, 9); // Club Lights
-      expect(notifier.state.brightness, 255);
-      expect(notifier.state.red, 255);
-      expect(notifier.state.green, 0);
-      expect(notifier.state.blue, 180);
-      expect(notifier.state.white, 0);
-      expect(notifier.state.currentSpeed, 8);
-      expect(notifier.state.currentFrequency, 8);
-      expect(notifier.state.clubColorMode, 0);
-    });
+      notifier.setMode(1);
+      notifier.setPoliceColorA(1, 2, 3, 4);
 
-    test('Tapping Preset 5 (Police Warning) immediately updates to Police mode with dual beacons', () {
       notifier.loadPreset(4);
-
       expect(notifier.state.activePresetId, 4);
-      expect(notifier.state.mode, 12); // Police Strobe
-      expect(notifier.state.brightness, 255);
-      expect(notifier.state.currentSpeed, 9);
-      expect(notifier.state.currentFrequency, 10);
-      expect(notifier.state.policeColorMode, 1);
+      expect(notifier.state.mode, 12);
+      expect(notifier.state.policeColorMode, 0);
       expect(notifier.state.policeColorAR, 255);
       expect(notifier.state.policeColorAB, 0);
       expect(notifier.state.policeColorBR, 0);
@@ -115,6 +120,7 @@ void main() {
     });
 
     test('Deleting an active preset removes it from savedPresets and clears activePresetId', () {
+      notifier.savePreset(0);
       notifier.loadPreset(0);
       expect(notifier.state.activePresetId, 0);
 

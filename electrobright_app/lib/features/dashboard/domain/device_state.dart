@@ -1,9 +1,19 @@
 import 'package:flutter/material.dart';
 import '../../presets/domain/preset_data.dart';
 import '../../../core/devices/device_profile.dart';
-import '../../../core/ble/ble_protocol.dart';
 
 /// Immutable model representing the complete state of the ElectroBright LED fixture.
+class LiveColorState {
+  final int red, green, blue, white, brightness;
+  const LiveColorState({
+    required this.red,
+    required this.green,
+    required this.blue,
+    required this.white,
+    required this.brightness,
+  });
+}
+
 class DeviceState {
   final int red;
   final int green;
@@ -26,12 +36,10 @@ class DeviceState {
   final int policeColorBW;
   final bool isSleeping;
   final bool soundEnabled;
-  // TODO: timerActive only tracks app-session state. True cross-device sync
-  // would require a firmware protocol addition (e.g. a TIMER_STATUS query
-  // returning remaining milliseconds). Do not fake this with a client-side
-  // countdown after app restart.
+  // Timer state is reported by the firmware in STATUS (active flag and
+  // remaining seconds); the app counts down locally between STATUS replies.
   final bool timerActive;
-  final int timerMinutesSet;
+  final int timerSecondsSet;
   final int? timerRemainingSec;
   final String? firmwareVersion;
   final Set<int> savedPresets;
@@ -39,8 +47,9 @@ class DeviceState {
   final Map<int, PresetData> presetSnapshots;
   final int? activePresetId;
   final String? lastError;
+  final int writeErrorCount;
 
-  bool get supportsBinaryFastPath => BleProtocol.isBinaryFastPathSupported(firmwareVersion);
+  final bool supportsBinaryFastPath;
 
   const DeviceState({
     required this.red,
@@ -65,7 +74,7 @@ class DeviceState {
     required this.isSleeping,
     required this.soundEnabled,
     required this.timerActive,
-    required this.timerMinutesSet,
+    required this.timerSecondsSet,
     this.timerRemainingSec,
     this.firmwareVersion,
     required this.savedPresets,
@@ -73,6 +82,8 @@ class DeviceState {
     required this.presetSnapshots,
     this.activePresetId,
     this.lastError,
+    required this.writeErrorCount,
+    required this.supportsBinaryFastPath,
   });
 
   factory DeviceState.initial(DeviceProfile profile) {
@@ -99,14 +110,18 @@ class DeviceState {
       isSleeping: false,
       soundEnabled: true,
       timerActive: false,
-      timerMinutesSet: 0,
+      timerSecondsSet: 0,
       timerRemainingSec: null,
       firmwareVersion: null,
-      savedPresets: PresetData.defaultPresets().keys.toSet(),
-      presetNames: PresetData.defaultNames(),
-      presetSnapshots: PresetData.defaultPresets(),
+      // No demo presets: the hardware's PRESET_LIST is the source of truth
+      // for which slots are occupied (a fresh install / factory reset is empty).
+      savedPresets: const {},
+      presetNames: const {},
+      presetSnapshots: const {},
       activePresetId: null,
       lastError: null,
+      writeErrorCount: 0,
+      supportsBinaryFastPath: false,
     );
   }
 
@@ -153,7 +168,7 @@ class DeviceState {
     bool? isSleeping,
     bool? soundEnabled,
     bool? timerActive,
-    int? timerMinutesSet,
+    int? timerSecondsSet,
     int? timerRemainingSec,
     String? firmwareVersion,
     Set<int>? savedPresets,
@@ -163,6 +178,8 @@ class DeviceState {
     bool clearActivePreset = false,
     String? lastError,
     bool clearLastError = false,
+    int? writeErrorCount,
+    bool? supportsBinaryFastPath,
   }) {
     return DeviceState(
       red: red ?? this.red,
@@ -187,7 +204,7 @@ class DeviceState {
       isSleeping: isSleeping ?? this.isSleeping,
       soundEnabled: soundEnabled ?? this.soundEnabled,
       timerActive: timerActive ?? this.timerActive,
-      timerMinutesSet: timerMinutesSet ?? this.timerMinutesSet,
+      timerSecondsSet: timerSecondsSet ?? this.timerSecondsSet,
       timerRemainingSec: timerRemainingSec ?? this.timerRemainingSec,
       firmwareVersion: firmwareVersion ?? this.firmwareVersion,
       savedPresets: savedPresets ?? Set.from(this.savedPresets),
@@ -195,6 +212,8 @@ class DeviceState {
       presetSnapshots: presetSnapshots ?? Map.from(this.presetSnapshots),
       activePresetId: clearActivePreset ? null : (activePresetId ?? this.activePresetId),
       lastError: clearLastError ? null : (lastError ?? this.lastError),
+      writeErrorCount: writeErrorCount ?? this.writeErrorCount,
+      supportsBinaryFastPath: supportsBinaryFastPath ?? this.supportsBinaryFastPath,
     );
   }
 }

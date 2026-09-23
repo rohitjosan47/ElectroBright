@@ -68,7 +68,10 @@ void main() {
       );
       await Future.delayed(Duration.zero);
 
-      // Tap preset 1 (Cyber Club, Mode 9)
+      // Save a Club scene into slot 1, then recall it
+      notifier.setMode(9);
+      notifier.savePreset(1);
+      notifier.setMode(1);
       notifier.loadPreset(1);
       expect(notifier.state.activePresetId, 1);
       expect(notifier.state.mode, 9);
@@ -94,8 +97,11 @@ void main() {
       // Wait for _loadPersistedPresets async load
       await Future.delayed(const Duration(milliseconds: 50));
 
+      // Only the highlight is restored; live color/mode come from the
+      // hardware STATUS, never from a cached snapshot (A5).
       expect(restartedNotifier.state.activePresetId, 1);
-      expect(restartedNotifier.state.mode, 9);
+      expect(restartedNotifier.state.savedPresets, contains(1));
+      expect(restartedNotifier.state.mode, 1);
 
       // Modifying controls directly clears active preset
       restartedNotifier.setRgbw(200, 200, 0, 0, continuous: false);

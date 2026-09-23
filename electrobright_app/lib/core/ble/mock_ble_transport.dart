@@ -63,76 +63,7 @@ class MockBleTransport implements BleTransport {
   MockBleTransport() {
     _connectionController.add(_state);
 
-    // Seed realistic, distinctive default presets for slots 0..4
-    _presetStorage[0] = const SimulatedPreset(
-      red: 255,
-      green: 140,
-      blue: 0,
-      white: 60,
-      brightness: 240,
-      mode: 13, // Candle
-      speed: 6,
-      freq: 7,
-      fireworkColorMode: 0,
-      clubColorMode: 0,
-      policeColorMode: 1,
-    );
-
-    _presetStorage[1] = const SimulatedPreset(
-      red: 255,
-      green: 0,
-      blue: 180,
-      white: 0,
-      brightness: 255,
-      mode: 9, // Club Lights
-      speed: 8,
-      freq: 8,
-      fireworkColorMode: 0,
-      clubColorMode: 0,
-      policeColorMode: 1,
-    );
-
-    _presetStorage[2] = const SimulatedPreset(
-      red: 0,
-      green: 245,
-      blue: 160,
-      white: 0,
-      brightness: 190,
-      mode: 3, // Breath
-      speed: 5,
-      freq: 8,
-      fireworkColorMode: 0,
-      clubColorMode: 0,
-      policeColorMode: 1,
-    );
-
-    _presetStorage[3] = const SimulatedPreset(
-      red: 0,
-      green: 229,
-      blue: 255,
-      white: 0,
-      brightness: 230,
-      mode: 10, // Rainbow
-      speed: 5,
-      freq: 6,
-      fireworkColorMode: 0,
-      clubColorMode: 0,
-      policeColorMode: 1,
-    );
-
-    _presetStorage[4] = const SimulatedPreset(
-      red: 255,
-      green: 0,
-      blue: 68,
-      white: 0,
-      brightness: 255,
-      mode: 12, // Police Strobe
-      speed: 9,
-      freq: 10,
-      fireworkColorMode: 0,
-      clubColorMode: 0,
-      policeColorMode: 1,
-    );
+    // No seeded presets: real firmware starts with every slot empty.
   }
 
   @override
@@ -148,14 +79,21 @@ class MockBleTransport implements BleTransport {
   DeviceConnectionState get currentConnectionState => _state;
 
   @override
+  int get writeErrorCount => 0;
+
+  @override
   bool get isConnected => _state == DeviceConnectionState.connected;
 
   @override
   Future<void> startScan({Duration timeout = const Duration(seconds: 5)}) async {
-    _state = DeviceConnectionState.scanning;
-    _connectionController.add(_state);
+    // Mirrors PhysicalBleTransport: scanning never masks a live connection.
+    if (!isConnected) {
+      _state = DeviceConnectionState.scanning;
+      _connectionController.add(_state);
+    }
 
     Future.delayed(const Duration(milliseconds: 300), () {
+      if (_scanResultsController.isClosed) return;
       _scanResultsController.add([
         DiscoveredDevice(
           id: 'MOCK-ESP32-C3-001',
@@ -178,7 +116,8 @@ class MockBleTransport implements BleTransport {
   Duration connectDelay = const Duration(milliseconds: 100);
   int binaryPacketCount = 0;
   int asciiCommandCount = 0;
-  String simulatedVersion = '2.8.0';
+  String simulatedVersion = '2.9.0';
+  String simulatedCaps = 'PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL';
 
   @override
   Future<bool> connect(String deviceId) async {
@@ -256,8 +195,10 @@ class MockBleTransport implements BleTransport {
       _policeColorMode = int.parse(clean.substring(18));
       _notificationsController.add('OK\n');
     } else if (clean.startsWith('POLICE_COLOR_A:')) {
+      _policeA = clean.substring(15).split(',').map(int.parse).toList();
       _notificationsController.add('OK\n');
     } else if (clean.startsWith('POLICE_COLOR_B:')) {
+      _policeB = clean.substring(15).split(',').map(int.parse).toList();
       _notificationsController.add('OK\n');
     } else if (clean.startsWith('PRESET_SAVE:')) {
       final id = int.parse(clean.substring(12));
@@ -302,11 +243,11 @@ class MockBleTransport implements BleTransport {
       _notificationsController.add('OK\n');
       _broadcastPresetList();
     } else if (clean.startsWith('TIMER:')) {
-      final mins = int.parse(clean.substring(6));
+      final secs = int.parse(clean.substring(6));
       _simulatedTimer?.cancel();
-      if (mins > 0) {
+      if (secs > 0) {
         _timerActive = true;
-        _timerRemainingSec = mins * 60;
+        _timerRemainingSec = secs;
         _simulatedTimer = Timer.periodic(const Duration(seconds: 1), (t) {
           if (_timerRemainingSec > 0) {
             _timerRemainingSec--;
@@ -324,6 +265,9 @@ class MockBleTransport implements BleTransport {
       _notificationsController.add('OK\n');
     } else if (clean == 'SLEEP') {
       _isSleeping = true;
+      _simulatedTimer?.cancel();
+      _timerActive = false;
+      _timerRemainingSec = 0;
       _notificationsController.add('OK\n');
     } else if (clean == 'WAKE') {
       _isSleeping = false;
@@ -343,7 +287,7 @@ class MockBleTransport implements BleTransport {
     } else if (clean == 'PING') {
       _notificationsController.add('OK\n');
     } else if (clean == 'INFO') {
-      _notificationsController.add('INFO:ElectroBright_ESP32C3_BLE\n');
+      _notificationsController.add('INFO:EB-C3-RGBW-V1\n');  // matches the current firmware
     } else if (clean == 'STATUS') {
       _broadcastStatus();
     } else if (clean == 'MODE_SETTINGS') {
@@ -352,6 +296,8 @@ class MockBleTransport implements BleTransport {
       _broadcastPresetList();
     } else if (clean == 'VERSION') {
       _notificationsController.add('VERSION:$simulatedVersion\n');
+    } else if (clean == 'CAPS') {
+      _notificationsController.add('CAPS:$simulatedCaps\n');
     }
 
     return true;
@@ -359,18 +305,22 @@ class MockBleTransport implements BleTransport {
 
   @override
   Future<bool> sendBytes(List<int> bytes, {bool withoutResponse = false}) async {
-    if (bytes.length == 6 && bytes[0] == 0xAA) {
-      final r = bytes[1];
-      final g = bytes[2];
-      final b = bytes[3];
-      final w = bytes[4];
-      final expectedChecksum = (r ^ g ^ b ^ w ^ 0x55) & 0xFF;
-      if (bytes[5] == expectedChecksum) {
+    // 8-byte binary format: [0xAA, Seq, R, G, B, W, Brightness, Checksum]
+    if (bytes.length == 8 && bytes[0] == 0xAA) {
+      final seq = bytes[1];
+      final r = bytes[2];
+      final g = bytes[3];
+      final b = bytes[4];
+      final w = bytes[5];
+      final br = bytes[6];
+      final expectedChecksum = (seq ^ r ^ g ^ b ^ w ^ br ^ 0x55) & 0xFF;
+      if (bytes[7] == expectedChecksum) {
         binaryPacketCount++;
         _red = r;
         _green = g;
         _blue = b;
         _white = w;
+        _brightness = br;
         _isSleeping = false;
         // Binary fast path bypasses notifications
         return true;
@@ -379,11 +329,15 @@ class MockBleTransport implements BleTransport {
     return false;
   }
 
+  List<int> _policeA = [255, 165, 0, 0];
+  List<int> _policeB = [0, 0, 0, 255];
+
   void _broadcastStatus() {
     final payload = 'STATUS:$_red,$_green,$_blue,$_white,$_brightness,$_mode,'
         '${_modeSpeed[_mode - 1]},${_modeFrequency[_mode - 1]},'
         '$_fireworkColorMode,$_clubColorMode,$_policeColorMode,'
-        '${_isSleeping ? 1 : 0},${_timerActive ? 1 : 0},$_timerRemainingSec,${_soundEnabled ? 1 : 0}\n';
+        '${_isSleeping ? 1 : 0},${_timerActive ? 1 : 0},$_timerRemainingSec,${_soundEnabled ? 1 : 0},'
+        '${_policeA.join(',')},${_policeB.join(',')}\n';
     _notificationsController.add(payload);
   }
 

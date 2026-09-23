@@ -74,7 +74,7 @@ class ContextualControlsCard extends StatelessWidget {
             if (modeDef.hasSpeed)
               _buildStepSlider(
                 context: context,
-                label: 'Animation Speed',
+                label: modeDef.speedLabel,
                 icon: Icons.speed_rounded,
                 value: deviceState.currentSpeed,
                 min: 1,
@@ -88,7 +88,7 @@ class ContextualControlsCard extends StatelessWidget {
             if (modeDef.hasFrequency)
               _buildStepSlider(
                 context: context,
-                label: 'Frequency / Density',
+                label: modeDef.frequencyLabel,
                 icon: Icons.graphic_eq_rounded,
                 value: deviceState.currentFrequency,
                 min: 1,

@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'ble_transport.dart';
 import '../devices/device_catalog.dart';
@@ -20,6 +22,10 @@ class PhysicalBleTransport implements BleTransport {
 
   DeviceConnectionState _state = DeviceConnectionState.disconnected;
   String _rxBuffer = '';
+  int _writeErrorCount = 0;
+
+  @override
+  int get writeErrorCount => _writeErrorCount;
 
   PhysicalBleTransport() {
     _connectionController.add(_state);
@@ -47,8 +53,12 @@ class PhysicalBleTransport implements BleTransport {
 
   @override
   Future<void> startScan({Duration timeout = const Duration(seconds: 5)}) async {
-    _state = DeviceConnectionState.scanning;
-    _connectionController.add(_state);
+    // Scanning must never mask a live connection: when already connected the
+    // link state stays `connected` (writes keep working) and only the scan runs.
+    if (!isConnected) {
+      _state = DeviceConnectionState.scanning;
+      _connectionController.add(_state);
+    }
 
     _scanResultsSubscription?.cancel();
     _scanResultsSubscription = FlutterBluePlus.scanResults.listen((results) {
@@ -100,6 +110,12 @@ class PhysicalBleTransport implements BleTransport {
       _connectedDevice = device;
 
       await device.connect(timeout: const Duration(seconds: 8));
+
+      if (Platform.isAndroid) {
+        try {
+          await device.requestConnectionPriority(connectionPriorityRequest: ConnectionPriority.high);
+        } catch (_) {}
+      }
 
       _connectionStateSubscription?.cancel();
       _connectionStateSubscription = device.connectionState.listen((connState) {
@@ -193,7 +209,9 @@ class PhysicalBleTransport implements BleTransport {
       final bytes = utf8.encode(data.endsWith('\n') ? data : '$data\n');
       await _rxCharacteristic!.write(bytes, withoutResponse: false);
       return true;
-    } catch (_) {
+    } catch (e) {
+      _writeErrorCount++;
+      debugPrint('BLE Write Error (Raw): $e');
       return false;
     }
   }
@@ -204,7 +222,9 @@ class PhysicalBleTransport implements BleTransport {
     try {
       await _rxCharacteristic!.write(bytes, withoutResponse: withoutResponse);
       return true;
-    } catch (_) {
+    } catch (e) {
+      _writeErrorCount++;
+      debugPrint('BLE Write Error (Bytes): $e');
       return false;
     }
   }
