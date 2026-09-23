@@ -41,7 +41,11 @@ class ElectroBrightApp extends StatelessWidget {
       darkTheme: AppTheme.dark(),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: const _HomePlaceholder(),
+      // `--dart-define=EB_START=gallery` opens the component gallery directly
+      // (screenshots and design review).
+      home: const String.fromEnvironment('EB_START') == 'gallery'
+          ? const ComponentGallery()
+          : const _HomePlaceholder(),
     );
   }
 }

@@ -200,7 +200,8 @@ class GlyphPainter extends CustomPainter {
             : cyc < 0.6
             ? 0.25 * (0.6 - cyc) / 0.36
             : 0;
-        glow(c, r, color, flash * 0.9);
+        // A faint resting glow keeps the storm readable between strokes.
+        glow(c, r, color, 0.14 + flash * 0.8);
         final Path bolt = Path()
           ..moveTo(c.dx + r * 0.10, c.dy - r * 0.62)
           ..lineTo(c.dx - r * 0.22, c.dy + r * 0.05)
@@ -215,8 +216,8 @@ class GlyphPainter extends CustomPainter {
             ..color = Color.lerp(
               color,
               Colors.white,
-              0.5,
-            )!.withValues(alpha: 0.35 + 0.65 * flash),
+              0.25 + 0.5 * flash,
+            )!.withValues(alpha: 0.65 + 0.35 * flash),
         );
       case EbModeGlyph.faulty:
         final double n = _noise(time * 9);

@@ -76,155 +76,159 @@ class _ComponentGalleryState extends State<ComponentGallery> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: AmbientCanvas(
-          child: SafeArea(
-            child: ListView(
-              padding: const EdgeInsets.all(Space.gutter),
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    GlassIconButton(
-                      icon: Icons.chevron_left_rounded,
-                      label: 'Back',
-                      onPressed: () => Navigator.of(context).maybePop(),
-                    ),
-                    const Spacer(),
-                    GlassIconButton(
-                      icon: Icons.power_settings_new_rounded,
-                      label: _on ? 'Turn off' : 'Turn on',
-                      active: _on,
-                      onPressed: () => setState(() => _on = !_on),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: Space.m),
-                Center(
-                  child: LightOrb(
-                    spec: EbModeCatalog.byId(_mode),
-                    color: c,
-                    on: _on,
-                    speed: 0.5 + _speed / 10,
+          // Content scrolls under the status bar and home indicator; the
+          // padding keeps it clear of them at rest.
+          child: ListView(
+            padding: EdgeInsets.fromLTRB(
+              Space.gutter,
+              MediaQuery.paddingOf(context).top + Space.s,
+              Space.gutter,
+              MediaQuery.paddingOf(context).bottom + Space.gutter,
+            ),
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  GlassIconButton(
+                    icon: Icons.chevron_left_rounded,
+                    label: 'Back',
+                    onPressed: () => Navigator.of(context).maybePop(),
                   ),
-                ),
-                const SizedBox(height: Space.m),
-                GlassSlider(
-                  value: _brightness,
-                  semanticLabel: 'Brightness',
-                  leading: Icon(Icons.wb_sunny_outlined, color: fg, size: 20),
-                  trailing: Text(
-                    '${(_brightness * 100).round()}%',
-                    style: TextStyle(
-                      color: fg,
-                      fontFeatures: const <FontFeature>[
-                        FontFeature.tabularFigures(),
-                      ],
-                    ),
+                  const Spacer(),
+                  GlassIconButton(
+                    icon: Icons.power_settings_new_rounded,
+                    label: _on ? 'Turn off' : 'Turn on',
+                    active: _on,
+                    onPressed: () => setState(() => _on = !_on),
                   ),
-                  height: 56,
-                  onChanged: (double v) => setState(() => _brightness = v),
+                ],
+              ),
+              const SizedBox(height: Space.m),
+              Center(
+                child: LightOrb(
+                  spec: EbModeCatalog.byId(_mode),
+                  color: c,
+                  on: _on,
+                  speed: 0.5 + _speed / 10,
                 ),
-                const SizedBox(height: Space.m),
-                GlassSegmented<int>(
-                  segments: const <(int, String)>[
-                    (0, 'Colour'),
-                    (1, 'Effects'),
-                    (2, 'Presets'),
-                  ],
-                  selected: _tab,
-                  onChanged: (int t) => setState(() => _tab = t),
-                ),
-                const SizedBox(height: Space.m),
-                GlassSurface(
-                  padding: const EdgeInsets.all(Space.m),
-                  child: Column(
-                    children: <Widget>[
-                      HueWheel(
-                        value: _hsv,
-                        onChanged: (Hsv v) => setState(() => _hsv = v),
-                      ),
-                      const SizedBox(height: Space.m),
-                      GlassSlider(
-                        value: _white,
-                        semanticLabel: 'White',
-                        track: const <Color>[
-                          Color(0xFF3A3A3A),
-                          Color(0xFFFFF4E0),
-                        ],
-                        onChanged: (double v) => setState(() => _white = v),
-                      ),
-                      const SizedBox(height: Space.s),
-                      GlassSlider(
-                        value: _kelvin,
-                        semanticLabel: 'Colour temperature',
-                        track: const <Color>[
-                          Color(0xFFFFB46B),
-                          Color(0xFFFFF1E0),
-                          Color(0xFFCFE0FF),
-                        ],
-                        onChanged: (double v) => setState(() => _kelvin = v),
-                      ),
-                      const SizedBox(height: Space.s),
-                      GlassSlider(
-                        value: _speed,
-                        min: 1,
-                        max: 10,
-                        divisions: 9,
-                        semanticLabel: 'Stroke Tempo',
-                        valueText: levelText,
-                        leading: Text(
-                          'Stroke Tempo',
-                          style: TextStyle(color: fg),
-                        ),
-                        trailing: Text(
-                          '${_speed.round()}',
-                          style: TextStyle(color: fg),
-                        ),
-                        onChanged: (double v) => setState(() => _speed = v),
-                      ),
+              ),
+              const SizedBox(height: Space.m),
+              GlassSlider(
+                value: _brightness,
+                semanticLabel: 'Brightness',
+                leading: Icon(Icons.wb_sunny_outlined, color: fg, size: 20),
+                trailing: Text(
+                  '${(_brightness * 100).round()}%',
+                  style: TextStyle(
+                    color: fg,
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures(),
                     ],
                   ),
                 ),
-                const SizedBox(height: Space.m),
-                GridView.count(
-                  crossAxisCount: 3,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: Space.s,
-                  crossAxisSpacing: Space.s,
-                  childAspectRatio: 0.95,
+                height: 56,
+                onChanged: (double v) => setState(() => _brightness = v),
+              ),
+              const SizedBox(height: Space.m),
+              GlassSegmented<int>(
+                segments: const <(int, String)>[
+                  (0, 'Colour'),
+                  (1, 'Effects'),
+                  (2, 'Presets'),
+                ],
+                selected: _tab,
+                onChanged: (int t) => setState(() => _tab = t),
+              ),
+              const SizedBox(height: Space.m),
+              GlassSurface(
+                padding: const EdgeInsets.all(Space.m),
+                child: Column(
                   children: <Widget>[
-                    for (final EbModeSpec m in EbModeCatalog.modes)
-                      ModeTile(
-                        spec: m,
-                        selected: m.id == _mode,
-                        color: c,
-                        onTap: () => setState(() => _mode = m.id),
+                    HueWheel(
+                      value: _hsv,
+                      onChanged: (Hsv v) => setState(() => _hsv = v),
+                    ),
+                    const SizedBox(height: Space.m),
+                    GlassSlider(
+                      value: _white,
+                      semanticLabel: 'White',
+                      track: const <Color>[
+                        Color(0xFF3A3A3A),
+                        Color(0xFFFFF4E0),
+                      ],
+                      onChanged: (double v) => setState(() => _white = v),
+                    ),
+                    const SizedBox(height: Space.s),
+                    GlassSlider(
+                      value: _kelvin,
+                      semanticLabel: 'Colour temperature',
+                      track: const <Color>[
+                        Color(0xFFFFB46B),
+                        Color(0xFFFFF1E0),
+                        Color(0xFFCFE0FF),
+                      ],
+                      onChanged: (double v) => setState(() => _kelvin = v),
+                    ),
+                    const SizedBox(height: Space.s),
+                    GlassSlider(
+                      value: _speed,
+                      min: 1,
+                      max: 10,
+                      divisions: 9,
+                      semanticLabel: 'Stroke Tempo',
+                      valueText: levelText,
+                      leading: Text(
+                        'Stroke Tempo',
+                        style: TextStyle(color: fg),
                       ),
+                      trailing: Text(
+                        '${_speed.round()}',
+                        style: TextStyle(color: fg),
+                      ),
+                      onChanged: (double v) => setState(() => _speed = v),
+                    ),
                   ],
                 ),
-                const SizedBox(height: Space.m),
-                GlassSurface(
-                  padding: const EdgeInsets.all(Space.l),
-                  child: TimerDial(
-                    steps: _timerSteps,
-                    index: _timer,
-                    label: _fmt,
-                    onChanged: (int i) => setState(() => _timer = i),
-                  ),
-                ),
-                const SizedBox(height: Space.m),
-                Center(
-                  child: FilledButton(
-                    onPressed: () => showGlassToast(
-                      context,
-                      'Preset saved',
-                      icon: Icons.check_circle_rounded,
+              ),
+              const SizedBox(height: Space.m),
+              GridView.count(
+                crossAxisCount: 3,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: Space.s,
+                crossAxisSpacing: Space.s,
+                childAspectRatio: 0.95,
+                children: <Widget>[
+                  for (final EbModeSpec m in EbModeCatalog.modes)
+                    ModeTile(
+                      spec: m,
+                      selected: m.id == _mode,
+                      color: c,
+                      onTap: () => setState(() => _mode = m.id),
                     ),
-                    child: const Text('Show toast'),
-                  ),
+                ],
+              ),
+              const SizedBox(height: Space.m),
+              GlassSurface(
+                padding: const EdgeInsets.all(Space.l),
+                child: TimerDial(
+                  steps: _timerSteps,
+                  index: _timer,
+                  label: _fmt,
+                  onChanged: (int i) => setState(() => _timer = i),
                 ),
-                const SizedBox(height: 80),
-              ],
-            ),
+              ),
+              const SizedBox(height: Space.m),
+              Center(
+                child: FilledButton(
+                  onPressed: () => showGlassToast(
+                    context,
+                    'Preset saved',
+                    icon: Icons.check_circle_rounded,
+                  ),
+                  child: const Text('Show toast'),
+                ),
+              ),
+            ],
           ),
         ),
       ),
