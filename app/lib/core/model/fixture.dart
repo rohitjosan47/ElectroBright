@@ -1,6 +1,8 @@
 import 'package:meta/meta.dart';
 
+import '../color/led_white_points.dart';
 import 'channel_layout.dart';
+import 'light_capabilities.dart';
 
 /// How the app talks to a light.
 enum DriverKind {
@@ -9,6 +11,86 @@ enum DriverKind {
 
   /// A custom BLE profile (data-driven packet templates).
   profile,
+}
+
+/// What the light's firmware said about itself the last time it connected.
+@immutable
+final class FixtureIdentity {
+  const FixtureIdentity({
+    required this.capabilities,
+    this.model,
+    this.firmwareVersion,
+    this.caps,
+    this.learnedAt,
+    this.assumed = false,
+  });
+
+  /// Not read from the light yet (from its BLE name or an imported record).
+  factory FixtureIdentity.assumed(ChannelLayout layout) => FixtureIdentity(
+    capabilities: LightCapabilities.assumed(layout),
+    assumed: true,
+  );
+
+  final LightCapabilities capabilities;
+
+  /// INFO model id, e.g. EB-C3-RGBCCT-V1.
+  final String? model;
+
+  /// VERSION, e.g. 3.5.0.
+  final String? firmwareVersion;
+
+  /// The raw CAPS reply (shown in "What this light can do").
+  final String? caps;
+  final DateTime? learnedAt;
+  final bool assumed;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'capabilities': capabilities.toJson(),
+    'model': model,
+    'firmwareVersion': firmwareVersion,
+    'caps': caps,
+    'learnedAt': learnedAt?.toUtc().toIso8601String(),
+    'assumed': assumed,
+  };
+
+  static FixtureIdentity? fromJson(Object? json) {
+    if (json is! Map<String, Object?>) return null;
+    final LightCapabilities? caps = LightCapabilities.fromJson(
+      json['capabilities'],
+    );
+    if (caps == null) return null;
+    String? str(String k) => json[k] is String ? json[k]! as String : null;
+    return FixtureIdentity(
+      capabilities: caps,
+      model: str('model'),
+      firmwareVersion: str('firmwareVersion'),
+      caps: str('caps'),
+      learnedAt: json['learnedAt'] == null
+          ? null
+          : DateTime.tryParse('${json['learnedAt']}'),
+      assumed: json['assumed'] == true,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is FixtureIdentity &&
+      other.capabilities == capabilities &&
+      other.model == model &&
+      other.firmwareVersion == firmwareVersion &&
+      other.caps == caps &&
+      other.learnedAt == learnedAt &&
+      other.assumed == assumed;
+
+  @override
+  int get hashCode => Object.hash(
+    capabilities,
+    model,
+    firmwareVersion,
+    caps,
+    learnedAt,
+    assumed,
+  );
 }
 
 /// A saved light.
@@ -21,10 +103,10 @@ final class Fixture {
     required this.layout,
     required this.driver,
     required this.addedAt,
+    this.identity,
+    this.whitePoints = const LedWhitePoints(),
     this.profileId,
-    this.model,
     this.icon = 'bulb',
-    this.whiteTempK = 4000,
     this.favourite = false,
     this.lastConnectedAt,
   });
@@ -39,17 +121,21 @@ final class Fixture {
   /// The light's channel layout (confirmed by its firmware on every connect).
   final ChannelLayout layout;
   final DriverKind driver;
+
+  /// What the firmware reported (null until the first connection).
+  final FixtureIdentity? identity;
+
+  /// Colour temperatures of the light's white LEDs (LED calibration).
+  final LedWhitePoints whitePoints;
   final String? profileId;
-
-  /// Model id reported by the light (e.g. EB-C3-RGBW-V1).
-  final String? model;
   final String icon;
-
-  /// Colour temperature of the dedicated white LED (RGBW), in Kelvin.
-  final int whiteTempK;
   final bool favourite;
   final DateTime addedAt;
   final DateTime? lastConnectedAt;
+
+  /// What the light can do: learned from its firmware, else assumed.
+  LightCapabilities get capabilities =>
+      identity?.capabilities ?? LightCapabilities.assumed(layout);
 
   static const Object _keep = Object();
 
@@ -58,10 +144,10 @@ final class Fixture {
     String? name,
     ChannelLayout? layout,
     DriverKind? driver,
+    Object? identity = _keep,
+    LedWhitePoints? whitePoints,
     Object? profileId = _keep,
-    Object? model = _keep,
     String? icon,
-    int? whiteTempK,
     bool? favourite,
     Object? lastConnectedAt = _keep,
   }) => Fixture(
@@ -71,12 +157,14 @@ final class Fixture {
     layout: layout ?? this.layout,
     driver: driver ?? this.driver,
     addedAt: addedAt,
+    identity: identical(identity, _keep)
+        ? this.identity
+        : identity as FixtureIdentity?,
+    whitePoints: whitePoints ?? this.whitePoints,
     profileId: identical(profileId, _keep)
         ? this.profileId
         : profileId as String?,
-    model: identical(model, _keep) ? this.model : model as String?,
     icon: icon ?? this.icon,
-    whiteTempK: whiteTempK ?? this.whiteTempK,
     favourite: favourite ?? this.favourite,
     lastConnectedAt: identical(lastConnectedAt, _keep)
         ? this.lastConnectedAt
@@ -89,10 +177,10 @@ final class Fixture {
     'name': name,
     'layout': layout.wire,
     'driver': driver.name,
+    'identity': identity?.toJson(),
+    'whitePoints': whitePoints.toJson(),
     'profileId': profileId,
-    'model': model,
     'icon': icon,
-    'whiteTempK': whiteTempK,
     'favourite': favourite,
     'addedAt': addedAt.toUtc().toIso8601String(),
     'lastConnectedAt': lastConnectedAt?.toUtc().toIso8601String(),
@@ -121,7 +209,10 @@ final class Fixture {
         addedAt == null) {
       return null;
     }
-    final Object? temp = json['whiteTempK'];
+    FixtureIdentity? identity = FixtureIdentity.fromJson(json['identity']);
+    if (identity != null && identity.capabilities.layout != layout) {
+      identity = null; // inconsistent record: relearn on the next connect
+    }
     return Fixture(
       id: id,
       deviceId: deviceId,
@@ -129,10 +220,10 @@ final class Fixture {
       layout: layout,
       driver: driver,
       addedAt: addedAt,
+      identity: identity,
+      whitePoints: LedWhitePoints.fromJson(json['whitePoints']),
       profileId: json['profileId'] as String?,
-      model: json['model'] as String?,
       icon: json['icon'] is String ? json['icon']! as String : 'bulb',
-      whiteTempK: temp is int && temp >= 1500 && temp <= 10000 ? temp : 4000,
       favourite: json['favourite'] == true,
       lastConnectedAt: json['lastConnectedAt'] == null
           ? null
@@ -148,10 +239,10 @@ final class Fixture {
       other.name == name &&
       other.layout == layout &&
       other.driver == driver &&
+      other.identity == identity &&
+      other.whitePoints == whitePoints &&
       other.profileId == profileId &&
-      other.model == model &&
       other.icon == icon &&
-      other.whiteTempK == whiteTempK &&
       other.favourite == favourite &&
       other.addedAt == addedAt &&
       other.lastConnectedAt == lastConnectedAt;
@@ -163,10 +254,10 @@ final class Fixture {
     name,
     layout,
     driver,
+    identity,
+    whitePoints,
     profileId,
-    model,
     icon,
-    whiteTempK,
     favourite,
     addedAt,
     lastConnectedAt,

@@ -94,6 +94,22 @@ final class FixtureSession {
   Stream<EbEvent> get events => _events.stream;
   EbSession? get session => _session;
 
+  /// Shows [state] (saved from an earlier connection) until the light is
+  /// connected; ignored when it is for another layout or the light is live.
+  void seedLastKnown(EbDeviceState state) {
+    if (_status.phase == LinkPhase.ready) return;
+    if (state.scene.layout != fixture.layout) return;
+    _set(
+      FixtureStatus(
+        phase: _status.phase,
+        lastKnown: state,
+        attempt: _status.attempt,
+        incompatibility: _status.incompatibility,
+        detail: _status.detail,
+      ),
+    );
+  }
+
   void setPhase(
     LinkPhase phase, {
     int? attempt,
