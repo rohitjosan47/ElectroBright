@@ -11,12 +11,12 @@ CXX      ?= c++
 SRC_DIR  := ../src
 BUILD    := build
 CXXFLAGS := -std=c++17 -O1 -g -Wall -Wextra -Werror -Wshadow -Wconversion -Wno-sign-conversion \
-            -Wno-float-conversion -Wno-implicit-int-float-conversion -fno-omit-frame-pointer -MMD -MP
+            -Wno-float-conversion -Wno-implicit-int-float-conversion -fno-omit-frame-pointer -ffp-contract=off -MMD -MP
 SAN      := -fsanitize=address,undefined -fno-sanitize-recover=undefined
 
 # Everything except the platform layer is portable.
 PORTABLE_SRCS := $(shell find $(SRC_DIR) -name '*.cpp' -not -path '*/platform/*')
-TEST_SRCS     := $(wildcard *.cpp)
+TEST_SRCS     := $(wildcard *.cpp) $(wildcard golden/*.cpp)
 PORTABLE_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(BUILD)/src/%.o,$(PORTABLE_SRCS))
 FWSIM_OBJ  := $(BUILD)/fwsim/SimDevice.o
 FWSIM_MAIN := $(BUILD)/fwsim/main.o
@@ -25,7 +25,7 @@ OBJS := $(PORTABLE_OBJS) $(patsubst %.cpp,$(BUILD)/test/%.o,$(TEST_SRCS)) $(FWSI
 DEPS := $(OBJS:.o=.d) $(FWSIM_MAIN:.o=.d)
 -include $(DEPS)
 
-.PHONY: all run clean portable fwsim
+.PHONY: all run clean portable fwsim golden-record
 
 all: portable run fwsim
 
@@ -51,6 +51,10 @@ fwsim: $(BUILD)/fwsim/fwsim
 
 run: $(BUILD)/tests
 	./$(BUILD)/tests $(T)
+
+# Re-records golden/rgbw_v340.golden. Only when an RGBW behaviour change is intended.
+golden-record: $(BUILD)/tests
+	GOLDEN_RECORD=1 ./$(BUILD)/tests golden_
 
 portable:
 	@! grep -rnE '#include *[<"](Arduino|esp_|freertos|driver/|nvs|NimBLE)' \
