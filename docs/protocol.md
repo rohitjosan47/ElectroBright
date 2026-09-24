@@ -7,6 +7,7 @@ This is the contract between the ElectroBright fixtures (`firmware/`) and the ap
 | RGBW | `firmware/fixtures/ElectroBright_RGBW` | `RGBW` | R, G, B, W (n = 4) | `EB-C3-RGBW-V1` | `ElectroBright_C3_V1` |
 | RGB | `firmware/fixtures/ElectroBright_RGB` | `RGB` | R, G, B (n = 3) | `EB-C3-RGB-V1` | `ElectroBright_C3_RGB_V1` |
 | RGBCCT | `firmware/fixtures/ElectroBright_RGBCCT` | `RGBCCT` | R, G, B, CW, WW (n = 5) | `EB-C3-RGBCCT-V1` | `ElectroBright_C3_RGBCCT_V1` |
+| CCT | `firmware/fixtures/ElectroBright_CCT` | `CCT` | CW, WW (n = 2) | `EB-C3-CCT-V1` | `ElectroBright_C3_CCT_V1` |
 
 Source of truth for each fixture:
 - `firmware/fixtures/<Name>/Fixture.h`: identity, layout, pins and defaults.
@@ -47,7 +48,7 @@ CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,LAYOUT=<LAYOUT>
 
 Every colour below has exactly **n** values, one per layout channel, in the order given by the table above.
 
-On RGBCCT the two whites are raw, gamma-encoded LED levels: CW is cool white and WW is warm white. Colour temperature (Kelvin) is the app's job. It mixes CW and WW in mireds between the two LEDs' temperatures, then encodes each level like any other channel value.
+On RGBCCT and CCT the two whites are raw, gamma-encoded LED levels: CW is cool white and WW is warm white. Colour temperature (Kelvin) is the app's job. It mixes CW and WW in mireds between the two LEDs' temperatures, then encodes each level like any other channel value.
 
 ## 3. Binary colour frames (fast path, no reply)
 
@@ -61,11 +62,12 @@ cs = seq ^ c1 ^ … ^ cn ^ Br ^ salt         salt = 0x55 when n = 4, otherwise 0
 | RGBW | `[AA, seq, R, G, B, W, Br, seq^R^G^B^W^Br^0x55]` (8 bytes) |
 | RGB | `[AA, seq, R, G, B, Br, seq^R^G^B^Br^0x56]` (7 bytes) |
 | RGBCCT | `[AA, seq, R, G, B, CW, WW, Br, seq^R^G^B^CW^WW^Br^0x50]` (9 bytes) |
+| CCT | `[AA, seq, CW, WW, Br, seq^CW^WW^Br^0x57]` (6 bytes) |
 
 - `seq` counts frames. A gap increments `gaps` in DIAG.
 - **Binary vs text:** a write is binary when it starts with `0xAA` and is 6 to 9 bytes long, which covers every frame length in the family. Such a write never reaches the text parser.
   - A binary write whose length or checksum is wrong counts as `binbad` and is not applied.
-- **Why the salt:** a light rejects every other fixture's frames, for example an RGB light rejects RGBW's legacy 7-byte frame even though it has the same length. A mismatched app can't set a wrong colour or corrupt a text command.
+- **Why the salt:** a light rejects every other fixture's frames, even ones of the same length. For example, an RGB light rejects RGBW's legacy 7-byte frame, and a CCT light rejects RGBW's legacy 6-byte frame. A mismatched app can't set a wrong colour or corrupt a text command.
 - **Legacy frames:** RGBW also accepts the pre-3.x forms `[AA, R, G, B, W, Br, cs]` (7 bytes) and `[AA, R, G, B, W, cs]` (6 bytes), with salt 0x55.
 - **Delivery:** a frame is latest-wins. Only the newest pending frame is applied, once per control pass (≤ 50 ms), before any text in the same pass.
 - **Sleep:** frames update colour and brightness while the light sleeps, but never wake it.
@@ -104,7 +106,7 @@ Colour arguments are `v1,…,vn`, each 0–255. The wrong number of values gives
 
 ## 5. STATUS
 
-STATUS has `3n + 11` fields: 23 for RGBW, 20 for RGB, 26 for RGBCCT.
+STATUS has `3n + 11` fields: 23 for RGBW, 20 for RGB, 26 for RGBCCT, 17 for CCT.
 
 ```
 STATUS:<colour>, brightness, mode, speed, freq, fireworkCM, clubCM, policeCM,
@@ -121,6 +123,7 @@ Examples (factory defaults):
 RGBW  STATUS:255,255,255,0,255,1,5,5,0,0,1,0,0,0,1,255,165,0,0,0,0,0,255
 RGB   STATUS:255,255,255,255,1,5,5,0,0,1,0,0,0,1,255,165,0,255,255,255
 RGBCCT STATUS:0,0,0,255,255,255,1,5,5,0,0,1,0,0,0,1,255,165,0,0,0,0,0,0,255,255
+CCT   STATUS:255,255,255,1,5,5,0,0,1,0,0,0,1,0,255,255,0
 ```
 
 ## 6. Behaviour shared by every fixture
@@ -137,8 +140,13 @@ RGBCCT STATUS:0,0,0,255,255,255,1,5,5,0,0,1,0,0,0,1,255,165,0,0,0,0,0,0,255,255
 - **White from effects:** the Club white strobe and the Fireworks flash add white-channel light, which each fixture shows on its white LEDs:
   - RGBW: the W LED.
   - RGBCCT: both CW and WW together, a neutral white.
+  - CCT: both CW and WW together, a neutral white.
   - RGB (no white LED): white mixed from the RGB LEDs, with the same hue and never brighter than full scale.
-- **Storage:** each fixture has its own flash namespace (`eb3` for RGBW, `eb3rgb` for RGB, `eb3rgbcct` for RGBCCT). Reflashing a board with another fixture's firmware starts it with factory defaults.
+- **Coloured effect light on a white-only light (CCT):** Rainbow, TV, Police (auto), and the Fireworks and Club auto palettes make their own colours. The CCT light shows them as white temperature:
+  - Brightness follows the colour's strongest channel.
+  - Warm hues (red, orange, yellow) go to the warm LED, cool hues (blue, cyan) to the cool LED, and neutral ones to both.
+  - So Rainbow sweeps warm to cool, and auto Police alternates warm and cool.
+- **Storage:** each fixture has its own flash namespace (`eb3` for RGBW, `eb3rgb` for RGB, `eb3rgbcct` for RGBCCT, `eb3cct` for CCT). Reflashing a board with another fixture's firmware starts it with factory defaults.
 - **Defaults** (power-up and factory reset):
 
   | Fixture | Colour | Police A / B |
@@ -146,6 +154,7 @@ RGBCCT STATUS:0,0,0,255,255,255,1,5,5,0,0,1,0,0,0,1,255,165,0,0,0,0,0,0,255,255
   | RGBW | RGB white | amber / the W LED |
   | RGB | RGB white | amber / RGB white |
   | RGBCCT | both white LEDs | amber / both white LEDs |
+  | CCT | both white LEDs | warm / cool |
 
 ## 7. Adding a layout
 
@@ -153,4 +162,4 @@ RGBCCT STATUS:0,0,0,255,255,255,1,5,5,0,0,1,0,0,0,1,255,165,0,0,0,0,0,0,255,255
 2. Add a fixture folder with a `Fixture.h` and a sketch.
 3. Register the fixture in `firmware/test/Fixtures.h`.
 
-The invariant tests (`test_layouts.cpp`) and `make conformance` then cover it. The channel roles are R, G, B, W, CW and WW. Layouts without RGB LEDs (white only, CCT only) also need a mapping from coloured effect light to white; see the roadmap in `firmware/README.md`.
+The invariant tests (`test_layouts.cpp`) and `make conformance` then cover it. The channel roles are R, G, B, W, CW and WW. A layout without colour LEDs gets coloured effect light as white temperature (CW + WW). A single-white layout would need that map extended; see the roadmap in `firmware/README.md`.

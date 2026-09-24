@@ -4,9 +4,10 @@ A complete circuit connection, hardware assembly, and migration guide for buildi
 
 The same board also builds two other fixtures:
 - the **3-channel RGB fixture**: leave the white channel unpopulated (see [§7](#7-rgb-fixture-3-channels));
-- the **5-channel RGBCCT fixture**: add a warm-white channel (see [§8](#8-rgbcct-fixture-5-channels)).
+- the **5-channel RGBCCT fixture**: add a warm-white channel (see [§8](#8-rgbcct-fixture-5-channels));
+- the **2-channel CCT fixture**: only the cool-white and warm-white channels (see [§9](#9-cct-fixture-2-channels)).
 
-Each fixture has its own firmware sketch in [`firmware/fixtures/`](../firmware/README.md): `ElectroBright_RGBW`, `ElectroBright_RGB` and `ElectroBright_RGBCCT`.
+Each fixture has its own firmware sketch in [`firmware/fixtures/`](../firmware/README.md): `ElectroBright_RGBW`, `ElectroBright_RGB`, `ElectroBright_RGBCCT` and `ElectroBright_CCT`.
 
 ---
 
@@ -215,4 +216,26 @@ The RGBCCT fixture drives an RGB+CCT ("RGBWW", 6-pin) common-anode strip: three 
   - MOSFET gates protected on GPIO 1, 3, 4, 5 and 10.
   - Strip `R, G, B, CW, WW` go to the matching MOSFET drains.
 - **Separate storage:** the RGBCCT firmware keeps its settings and presets in its own flash area, so a board moved between fixture firmwares never mixes presets.
+
+---
+
+## 9. CCT fixture (2 channels)
+
+The CCT fixture drives a tunable-white (CCT, 3-pin) common-anode strip: cool white and warm white only. It uses the two white positions of the RGBCCT board, so a 5-channel PCB becomes a CCT light by fitting only those two MOSFETs. Flash `firmware/fixtures/ElectroBright_CCT`.
+
+| Function | ESP32-C3 pin | Notes |
+| :--- | :--- | :--- |
+| Cool white | GPIO 5 | MOSFET, 220–470 Ω gate resistor, 10 kΩ pull-down, drain to the strip's `CW-` |
+| Warm white | GPIO 10 | same, drain to the strip's `WW-` |
+| Buzzer | GPIO 6 | unchanged |
+| *(R / G / B positions)* | GPIO 1 / 3 / 4 | **not fitted.** The firmware drives them low anyway |
+
+- **BOM:**
+  - 2 logic-level MOSFETs, 2 gate resistors, 2 pull-downs;
+  - a CCT strip (`+V`, `CW-`, `WW-`).
+- **Current:** the power-up default is both whites at full. Size the supply for the strip's combined CW + WW current.
+- **Checklist deltas** (vs §6):
+  - MOSFET gates protected on GPIO 5 and 10. Nothing is connected to GPIO 1, 3, 4.
+  - Strip `CW, WW` go to the MOSFET drains.
+- **GPIO 10 missing on your board:** change `kPinWarmWhite` in the fixture's `Fixture.h`. The same applies to RGBCCT (§8).
 
