@@ -104,6 +104,7 @@ Future<void> showTimerSheet(
   required FixtureSession session,
 }) => showModalBottomSheet<void>(
   context: context,
+  isScrollControlled: true,
   showDragHandle: true,
   builder: (BuildContext ctx) => ToneScope(
     tone: ToneScope.of(context),
@@ -142,7 +143,7 @@ class _TimerSheetState extends State<_TimerSheet> {
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(
           Space.gutter,
           0,
