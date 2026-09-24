@@ -7,6 +7,7 @@ import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/core/store/json_store.dart';
 import 'package:electrobright/features/control/control_screen.dart';
 import 'package:electrobright/sessions/fixture_session.dart';
+import 'package:electrobright/sim/eb_device_model.dart';
 import 'package:electrobright/sim/sim_central.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -95,11 +96,13 @@ final class DemoApp {
   FixtureSession session(String name) =>
       app.ble.connections.session(idOf(name))!;
 
-  /// The simulated light's scene (what the firmware twin holds).
-  EbScene twin(String name) => services.demoLights!.fixtures
+  /// The simulated light (the firmware twin).
+  EbDeviceModel model(String name) => services.demoLights!.fixtures
       .firstWhere((SimFixture f) => f.id == lights[name]!.$1)
-      .model
-      .scene;
+      .model;
+
+  /// The simulated light's scene.
+  EbScene twin(String name) => model(name).scene;
 
   SimCentral get radio => services.demoLights!;
 

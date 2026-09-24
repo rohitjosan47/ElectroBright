@@ -29,6 +29,8 @@ import '../home/presence.dart';
 import 'colour/colour_editor.dart';
 import 'effects/effects_panel.dart';
 import 'effects/mode_presentation.dart';
+import 'presets/presets_panel.dart';
+import 'timer_sheet.dart';
 
 /// The tabs a light gets, from what it can do.
 enum ControlTab { colour, white, effects, presets }
@@ -64,19 +66,39 @@ class ControlScreen extends ConsumerStatefulWidget {
 class _ControlScreenState extends ConsumerState<ControlScreen> {
   Want? _want;
   ControlTab? _tab;
+  StreamSubscription<EbEvent>? _events;
 
   @override
   void initState() {
     super.initState();
     final AppSession? app = ref.read(appSessionProvider);
-    if (app != null && app.ble.connections.session(widget.fixtureId) != null) {
+    final FixtureSession? s = app?.ble.connections.session(widget.fixtureId);
+    if (app != null && s != null) {
       _want = app.ble.connections.want(widget.fixtureId, WantReason.screen);
+      _events = s.events.listen(_onEvent);
+    }
+  }
+
+  /// Things the light reported that are not state: say them.
+  void _onEvent(EbEvent e) {
+    if (!mounted) return;
+    final AppLocalizations l = AppLocalizations.of(context);
+    final String? message = switch (e) {
+      EbStorageWarning() => l.errorStorage,
+      EbCommandFailed(:final EbResult result)
+          when result.outcome == EbOutcome.failed =>
+        l.errorGeneric,
+      _ => null,
+    };
+    if (message != null) {
+      showGlassToast(context, message, icon: Icons.error_outline_rounded);
     }
   }
 
   @override
   void dispose() {
     _want?.release();
+    unawaited(_events?.cancel());
     super.dispose();
   }
 
@@ -170,6 +192,14 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                   ),
                 ),
               ],
+              const SizedBox(height: Space.s),
+              ControlToolbar(
+                fixtureId: widget.fixtureId,
+                session: session,
+                soundOn: st.state?.soundOn ?? false,
+                sleeping: sleeping,
+                enabled: enabled,
+              ),
               const SizedBox(height: Space.m),
               BrightnessPill(
                 scene: scene,
@@ -201,7 +231,16 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                   session: session,
                   enabled: enabled,
                 ),
-                ControlTab.presets => const SizedBox.shrink(),
+                ControlTab.presets => PresetsPanel(
+                  fixtureId: widget.fixtureId,
+                  scene: scene,
+                  onLight: st.state?.presets ?? const <int>{},
+                  capabilities: caps,
+                  whitePoints: f.whitePoints,
+                  session: session,
+                  // Presets need the light now (no offline replay).
+                  enabled: enabled && ready,
+                ),
               },
             ],
           ),

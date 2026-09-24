@@ -244,6 +244,10 @@ final class ConnectionManager {
       s.retry = null;
       s.idleTimer?.cancel();
       s.idleTimer = null;
+      // Its timers (command timeouts, timer watch) stop now too; closing is
+      // idempotent, so the full dispose later finds nothing left to do.
+      final EbSession? live = s.session.session;
+      if (live != null) unawaited(live.dispose());
     }
   }
 

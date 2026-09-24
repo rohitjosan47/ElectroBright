@@ -303,4 +303,21 @@ final class FixtureSession {
   Future<EbResult> setTimer(int seconds) =>
       _session?.setTimer(seconds) ??
       Future<EbResult>.value(EbResult.disconnected);
+
+  static const EbPresetResult _noPreset = EbPresetResult(EbResult.disconnected);
+
+  /// Saves the current look in [slot]; the result carries the saved scene.
+  Future<EbPresetResult> presetSave(int slot) =>
+      _session?.presetSave(slot) ?? Future<EbPresetResult>.value(_noPreset);
+
+  /// Loads [slot]; the result carries the complete loaded scene.
+  Future<EbPresetResult> presetLoad(int slot) =>
+      _session?.presetLoad(slot) ?? Future<EbPresetResult>.value(_noPreset);
+
+  Future<EbResult> presetDelete(int slot) =>
+      _session?.presetDelete(slot) ??
+      Future<EbResult>.value(EbResult.disconnected);
+
+  Future<EbResult> factoryReset() =>
+      _session?.factoryReset() ?? Future<EbResult>.value(EbResult.disconnected);
 }
