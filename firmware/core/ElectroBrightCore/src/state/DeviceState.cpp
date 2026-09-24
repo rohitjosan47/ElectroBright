@@ -29,7 +29,7 @@ Settings defaultSettings() {
 }
 
 bool isValid(const Scene& s, const ChannelLayout& l) {
-  if (s.mode < 1 || s.mode > cfg::kNumModes) return false;
+  if (!layout::supportsMode(l, s.mode)) return false;
   if (!layout::fits(l, s.color) || !layout::fits(l, s.policeA) || !layout::fits(l, s.policeB)) return false;
   for (uint8_t i = 0; i < cfg::kNumModes; ++i) {
     if (s.speed[i] < cfg::kMinLevel || s.speed[i] > cfg::kMaxLevel) return false;

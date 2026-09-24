@@ -1,7 +1,7 @@
 // fwsim: the real portable firmware core behind a line protocol on
 // stdin/stdout, driven by the Flutter app's tests (app/test/support/fwsim/).
 //
-// Usage: fwsim [--fixture rgbw|rgb|rgbcct|cct]   (default rgbw)
+// Usage: fwsim [--fixture rgbw|rgb|rgbcct|cct|w]   (default rgbw)
 //
 // Every request line produces zero or more event lines, then a line ".".
 //   HELLO            -> I fwsim/1 fw=<version> model=<model>

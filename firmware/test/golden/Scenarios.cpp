@@ -4,8 +4,9 @@
 // the result with golden/rgbw.golden, recorded from firmware v3.4.0 before the
 // firmware-family refactor (tag fw-3.4.0-golden). Intended changes since then:
 //   3.5.0  VERSION, and CAPS gained LAYOUT=RGBW
-//   3.5.0  a 9-byte 0xAA write (an RGBCCT frame) counts as a bad binary frame
-//          (DIAG binbad) instead of going to the text parser
+//   3.5.0  5- and 9-byte 0xAA writes (single-white / RGBCCT frames) count as
+//          bad binary frames (DIAG binbad) instead of going to the text parser,
+//          so the STATUS after them is answered instead of swallowed
 // Any other difference means RGBW behaviour changed.
 //
 //   make golden-record     rewrite the golden file (only when a change is intended)

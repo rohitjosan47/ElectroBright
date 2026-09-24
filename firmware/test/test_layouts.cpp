@@ -2,8 +2,10 @@
 // each entry of kAllFixtures: identity, wiring, protocol widths, binary frame
 // routing and rendering. A new fixture is covered by adding it to Fixtures.h.
 
+#include <stdio.h>
 #include <string.h>
 
+#include <map>
 #include <set>
 #include <string>
 
@@ -25,8 +27,19 @@ size_t fieldCount(const std::string& line) {
   return n;
 }
 
-bool endsWith(const std::string& s, const std::string& tail) {
-  return s.size() >= tail.size() && s.compare(s.size() - tail.size(), tail.size(), tail) == 0;
+// CAPS:KEY=VALUE,... -> map.
+std::map<std::string, std::string> capsFields(const std::string& caps) {
+  std::map<std::string, std::string> out;
+  size_t start = caps.find(':') + 1;
+  while (start < caps.size()) {
+    size_t end = caps.find(',', start);
+    if (end == std::string::npos) end = caps.size();
+    const std::string part = caps.substr(start, end - start);
+    const size_t eq = part.find('=');
+    if (eq != std::string::npos) out[part.substr(0, eq)] = part.substr(eq + 1);
+    start = end + 1;
+  }
+  return out;
 }
 
 }  // namespace
@@ -38,8 +51,17 @@ TEST(fixtures_identity_is_consistent_and_unique) {
     const std::string layoutName = f.layout->name;
     CHECK(f.layout->count >= 1 && f.layout->count <= kMaxChannels);
     CHECK_STR(f.modelId, "EB-C3-" + layoutName + "-V1");
-    CHECK(endsWith(f.capsReply, ",LAYOUT=" + layoutName));
+    const std::map<std::string, std::string> caps = capsFields(f.capsReply);
+    CHECK(caps.count("LAYOUT") == 1 && caps.at("LAYOUT") == layoutName);
     CHECK(strncmp(f.capsReply, "CAPS:PROTOCOL=1,", 16) == 0);
+    // MODES (hex mask) is announced exactly when some mode is unsupported.
+    if (f.layout->modes == kAllModes) {
+      CHECK(caps.count("MODES") == 0);
+    } else {
+      char hex[8];
+      snprintf(hex, sizeof(hex), "%X", f.layout->modes);
+      CHECK(caps.count("MODES") == 1 && caps.at("MODES") == hex);
+    }
     CHECK(strncmp(f.deviceName, "ElectroBright_C3_", 17) == 0);
     CHECK(strlen(f.deviceName) <= 29);  // fits the 31-byte scan response
     CHECK(strlen(f.nvsNamespace) >= 1 && strlen(f.nvsNamespace) <= 15);
@@ -62,7 +84,7 @@ TEST(fixtures_wiring_uses_each_gpio_once) {
     std::set<int> pins;
     for (uint8_t i = 0; i < f.layout->count; ++i) CHECK(pins.insert(f.pins[i]).second);
     CHECK(pins.insert(f.buzzerPin).second);
-    CHECK(f.parkLowCount <= 3);
+    CHECK(f.parkLowCount <= 4);
     for (uint8_t i = 0; i < f.parkLowCount; ++i) CHECK(pins.insert(f.parkLowPins[i]).second);
     for (int p : pins) CHECK(p != 2 && p != 8 && p != 9 && p != 7);  // strapping / old status LED
     // The buzzer's LEDC channel is the first one after the LED outputs.
@@ -134,7 +156,6 @@ TEST(fixtures_binary_frames_round_trip_and_reject_other_layouts) {
 
 TEST(fixtures_binary_writes_never_reach_the_text_parser) {
   for (const NamedFixture& nf : kAllFixtures) {
-    const ChannelLayout& l = *nf.profile->layout;
     SimDevice d(*nf.profile);
     d.boot();
     d.connect();
@@ -143,7 +164,7 @@ TEST(fixtures_binary_writes_never_reach_the_text_parser) {
     d.pass();
     // Every 0xAA write of any family frame length (bad checksums included):
     // frames meant for another fixture must never corrupt the text stream.
-    const size_t lo = binframe::frameLength(l) < 6 ? binframe::frameLength(l) : 6;
+    const size_t lo = binframe::kMinFrame;
     const size_t hi = binframe::kMaxFrame;
     for (size_t len = lo; len <= hi; ++len) {
       uint8_t junk[binframe::kMaxFrame + 1] = {0xAA, 1, 2, 3, 4, 5, 6, 7, 8, 9};
@@ -185,3 +206,29 @@ TEST(fixtures_every_mode_renders_bounded_and_sleeps_dark) {
     }
   }
 }
+
+TEST(fixtures_accept_exactly_their_supported_modes) {
+  for (const NamedFixture& nf : kAllFixtures) {
+    const ChannelLayout& l = *nf.profile->layout;
+    Rig r(*nf.profile);
+    for (int m = 0; m <= cfg::kNumModes + 1; ++m) {
+      const bool ok = layout::supportsMode(l, m);
+      const std::string ms = std::to_string(m);
+      CHECK((parseCommand(("MODE:" + ms).c_str(), l).status == ParseStatus::Ok) == ok);
+      CHECK((parseCommand(("MODE_SPEED:" + ms + ",3").c_str(), l).status == ParseStatus::Ok) == ok);
+      CHECK((parseCommand(("MODE_FREQUENCY:" + ms + ",3").c_str(), l).status == ParseStatus::Ok) == ok);
+      CHECK((parseCommand(("MODE_CAPABILITIES:" + ms).c_str(), l).status == ParseStatus::Ok) == ok);
+      if (m >= 1 && m <= cfg::kNumModes) {
+        Scene s = state::defaultScene(nf.profile->defaults);
+        s.mode = static_cast<uint8_t>(m);
+        CHECK(state::isValid(s, l) == ok);  // a stored unsupported mode is rejected
+      }
+    }
+    // MODE_SETTINGS keeps all 13 pairs on every fixture.
+    r.send("MODE_SETTINGS");
+    size_t pairs = 1;
+    for (char c : r.env.last()) pairs += c == ';';
+    CHECK_EQ(pairs, size_t{cfg::kNumModes});
+  }
+}
+

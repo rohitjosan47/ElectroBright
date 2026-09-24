@@ -6,7 +6,7 @@ Talks to a fixture exactly like the Flutter app does and checks every reply
 against the protocol contract (docs/protocol.md). The fixture's channel layout
 is read from INFO / CAPS (LAYOUT=...), and every colour width, binary frame
 and STATUS field position is derived from it, so the same suite covers the
-RGBW, RGB, RGBCCT, CCT and future fixtures.
+RGBW, RGB, RGBCCT, CCT, W and future fixtures.
 
 On a real fixture over Bluetooth:
 
@@ -44,6 +44,7 @@ LAYOUTS = {
     "RGB": ["R", "G", "B"],
     "RGBCCT": ["R", "G", "B", "CW", "WW"],
     "CCT": ["CW", "WW"],
+    "W": ["W"],
 }
 # Colour slot each role reads (firmware: core/Types.h): r, g, b, w (W or CW), ww.
 SLOT = {"R": 0, "G": 1, "B": 2, "W": 3, "CW": 3, "WW": 4}
@@ -58,7 +59,8 @@ class Layout:
         self.name = name
         self.roles = LAYOUTS[name]
         self.n = len(self.roles)
-        self.has_w = "W" in self.roles  # the RGBW command exists only with a W LED
+        # The RGBW command exists only on layouts with colour LEDs and a W LED.
+        self.has_w = "W" in self.roles and "R" in self.roles
 
     @property
     def status_fields(self):
@@ -181,6 +183,7 @@ class Fixture:
         self.buf = ""
         self.lines = asyncio.Queue()
         self.layout = None
+        self.modes = set(range(1, 14))  # CAPS MODES=<hex mask>; absent = all 13
 
     async def start(self):
         await self.transport.start(self._on_notify)
@@ -202,6 +205,9 @@ class Fixture:
         if caps:
             fields = dict(f.split("=", 1) for f in caps[5:].split(",") if "=" in f)
             layout = fields.get("LAYOUT")
+            if "MODES" in fields:
+                mask = int(fields["MODES"], 16)
+                self.modes = {m for m in range(1, 14) if mask & (1 << (m - 1))}
         if layout is None and m and m.group(1) == "RGBW":
             layout = "RGBW"  # firmware 3.4.0 predates LAYOUT
         self.layout = Layout(layout) if layout in LAYOUTS else None
@@ -321,8 +327,15 @@ async def suite_commands(fx, R):
                      6: "SPEED,FREQUENCY", 8: "SPEED,FREQUENCY", 9: "SPEED,FREQUENCY,COLOR_MODE", 10: "FREQUENCY",
                      12: "SPEED,FREQUENCY,COLOR_MODE", 13: "SPEED,FREQUENCY"}
     for m, cap in expected_caps.items():
+        if m not in fx.modes:
+            continue
         line = await fx.cmd(f"MODE_CAPABILITIES:{m}", "CAPABILITIES:")
         R.check(line == f"CAPABILITIES:{cap}", f"MODE_CAPABILITIES:{m}", line)
+    for m in sorted(set(range(1, 14)) - fx.modes):
+        for cmd, err in ((f"MODE:{m}", "ERROR:MODE_INVALID"), (f"MODE_SPEED:{m},3", "ERROR:MODE_SPEED_INVALID"),
+                         (f"MODE_CAPABILITIES:{m}", "ERROR:MODE_INVALID")):
+            line = await fx.cmd(cmd, "ERROR:")
+            R.check(line == err, f"unsupported mode: {cmd} -> {err}", line)
 
     # Tolerance: lower case, spaces, CRLF.
     R.check(await fx.cmd(" status \r", "STATUS:") is not None, "case/whitespace/CR tolerant")
@@ -511,7 +524,7 @@ async def main():
     ap.add_argument("--name", help="only fixtures whose BLE name contains this text")
     ap.add_argument("--expect-version", help="exact firmware version expected (default: any 3.x)")
     ap.add_argument("--fwsim", help="run against the firmware simulator binary instead of Bluetooth")
-    ap.add_argument("--fixture", default="rgbw", help="fwsim fixture (rgbw, rgb, rgbcct, cct)")
+    ap.add_argument("--fixture", default="rgbw", help="fwsim fixture (rgbw, rgb, rgbcct, cct, w)")
     args = ap.parse_args()
 
     R = Results()

@@ -12,7 +12,8 @@
 //
 // A layout without colour LEDs (CCT: cool + warm white) renders the coloured
 // light of effects (rainbow, TV, police, palettes, embers) as white
-// temperature instead: see colourToWhites().
+// temperature instead: see colourToWhites(). A single white LED (W) shows it
+// as brightness: see colourToWhite().
 
 #include "../core/Types.h"
 #include "../fixture/ChannelLayout.h"
@@ -55,6 +56,15 @@ inline LinColor colourToWhites(const LinColor& c) {
     warm /= peak;
   }
   return {0.0f, 0.0f, 0.0f, cool, warm};
+}
+
+// Coloured light -> a single white LED: the colour's strongest channel adds
+// to the white light (same level rule as colourToWhites), capped at full scale.
+inline LinColor colourToWhite(const LinColor& c) {
+  float level = c.r > c.g ? c.r : c.g;
+  if (c.b > level) level = c.b;
+  const float w = c.w + level;
+  return {0.0f, 0.0f, 0.0f, w > 1.0f ? 1.0f : w, 0.0f};
 }
 
 inline float component(const LinColor& c, Channel ch) {

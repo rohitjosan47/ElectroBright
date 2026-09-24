@@ -121,8 +121,9 @@ ParseResult parseCommand(const char* line, const ChannelLayout& layout) {
     }
   }
   if (spec == nullptr) return fail(ParseStatus::Unknown, "UNKNOWN_CMD");
-  // "RGBW" names a white channel: unknown on fixtures without one ("COLOR" is universal).
-  if (strcmp(spec->name, "RGBW") == 0 && !layout::has(layout, Channel::W)) {
+  // "RGBW" is the RGBW light's own alias of COLOR: unknown on fixtures without
+  // both colour LEDs and a W LED ("COLOR" is universal).
+  if (strcmp(spec->name, "RGBW") == 0 && !(layout::hasColour(layout) && layout::has(layout, Channel::W))) {
     return fail(ParseStatus::Unknown, "UNKNOWN_CMD");
   }
   const uint8_t argc = isColorCommand(spec->id) ? layout.count : spec->argc;
@@ -169,6 +170,10 @@ ParseResult parseCommand(const char* line, const ChannelLayout& layout) {
     }
   }
   if (field != argc) return fail(ParseStatus::Format, spec->errorCode);
+  // A mode this fixture cannot show is out of range, like MODE:14.
+  const bool takesMode = spec->id == CmdId::Mode || spec->id == CmdId::ModeSpeed ||
+                         spec->id == CmdId::ModeFrequency || spec->id == CmdId::ModeCapabilities;
+  if (takesMode && !layout::supportsMode(layout, r.cmd.args[0])) return fail(ParseStatus::Range, spec->errorCode);
   return r;
 }
 

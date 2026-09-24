@@ -8,6 +8,7 @@
 #include "ElectroBright_RGB/Fixture.h"
 #include "ElectroBright_RGBCCT/Fixture.h"
 #include "ElectroBright_RGBW/Fixture.h"
+#include "ElectroBright_W/Fixture.h"
 
 struct NamedFixture {
   const char* name;  // --fixture value
@@ -19,6 +20,7 @@ inline constexpr NamedFixture kAllFixtures[] = {
     {"rgb", &fx::rgb::kProfile},
     {"rgbcct", &fx::rgbcct::kProfile},
     {"cct", &fx::cct::kProfile},
+    {"w", &fx::w::kProfile},
 };
 
 inline const FixtureProfile* findFixture(const char* name) {

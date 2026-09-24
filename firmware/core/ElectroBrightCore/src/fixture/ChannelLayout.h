@@ -14,6 +14,7 @@
 
 #include <initializer_list>
 
+#include "../config/Config.h"
 #include "../core/Types.h"
 
 // Physical LED channels. W and CW both use the `w` slot (the fixture's primary
@@ -23,10 +24,18 @@ enum class Channel : uint8_t { R, G, B, W, CW, WW };
 // Upper bound for every per-channel array (sized for future RGB+CW+WW fixtures).
 constexpr uint8_t kMaxChannels = 5;
 
+// Bit (m - 1) set = mode m is supported.
+constexpr uint16_t kAllModes = static_cast<uint16_t>((1u << cfg::kNumModes) - 1u);
+constexpr uint16_t modeBit(uint8_t mode) { return static_cast<uint16_t>(1u << (mode - 1u)); }
+constexpr uint8_t kModeRainbow = 10;
+
 struct ChannelLayout {
   const char* name;  // CAPS LAYOUT value and model-id segment, e.g. "RGBW"
   uint8_t count;     // channels on the wire and on the board
   Channel roles[kMaxChannels];
+  // Modes this layout can show. A mode that is purely a change of colour at
+  // constant intensity (Rainbow) means nothing on a single white LED.
+  uint16_t modes = kAllModes;
 };
 
 namespace layouts {
@@ -34,6 +43,7 @@ inline constexpr ChannelLayout kRgbw{"RGBW", 4, {Channel::R, Channel::G, Channel
 inline constexpr ChannelLayout kRgb{"RGB", 3, {Channel::R, Channel::G, Channel::B}};
 inline constexpr ChannelLayout kRgbcct{"RGBCCT", 5, {Channel::R, Channel::G, Channel::B, Channel::CW, Channel::WW}};
 inline constexpr ChannelLayout kCct{"CCT", 2, {Channel::CW, Channel::WW}};
+inline constexpr ChannelLayout kW{"W", 1, {Channel::W}, static_cast<uint16_t>(kAllModes & ~modeBit(kModeRainbow))};
 }  // namespace layouts
 
 namespace layout {
@@ -71,6 +81,10 @@ inline uint8_t channel(const Color8& c, Channel ch) {
 
 // True when the layout has an LED on the `w` slot (W or CW).
 inline bool hasPrimaryWhite(const ChannelLayout& l) { return has(l, Channel::W) || has(l, Channel::CW); }
+
+inline bool supportsMode(const ChannelLayout& l, int32_t mode) {
+  return mode >= 1 && mode <= cfg::kNumModes && (l.modes & modeBit(static_cast<uint8_t>(mode))) != 0;
+}
 
 // True when the layout has any colour (R, G or B) LED.
 inline bool hasColour(const ChannelLayout& l) {

@@ -9,7 +9,8 @@
 // the app sees familiar replies.
 //
 // Colour commands (COLOR, POLICE_COLOR_A/B) take exactly one value per channel
-// of the fixture's layout; RGBW exists only on layouts with a white channel.
+// of the fixture's layout; RGBW exists only on layouts with colour LEDs and a
+// W LED (the RGBW light).
 
 #include <stdint.h>
 

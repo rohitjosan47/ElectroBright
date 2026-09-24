@@ -405,6 +405,7 @@ N STATUS:5,6,7,8,55,1,5,5,0,0,1,0,0,0,1,255,165,0,0,0,0,0,255\x0A
 > raw AA01020304
 > raw AA0102030405060708
 > STATUS
+N STATUS:5,6,7,8,55,1,5,5,0,0,1,0,0,0,1,255,165,0,0,0,0,0,255\x0A
 > SLEEP
 N OK\x0A
 S 9
@@ -415,7 +416,7 @@ N STATUS:9,9,9,9,50,1,5,5,0,0,1,1,0,0,1,255,165,0,0,0,0,0,255\x0A
 > raw AA0401020304C89D
 > raw AAC801020304059C
 > DIAG
-N DIAG:rx=6,ovf=0,rej=1,sdrop=0,unk=0,err=0,coal=0,bin=8,binbad=2,gaps=1,nretry=0,edrop=0,nvsw=0,nvsf=0,frames=0,overrun=0,rmaxus=0,heapmin=180000,stkc=3000,stkr=2000,rst=1,up=1\x0A
+N DIAG:rx=7,ovf=0,rej=0,sdrop=0,unk=0,err=0,coal=0,bin=8,binbad=3,gaps=1,nretry=0,edrop=0,nvsw=0,nvsf=0,frames=0,overrun=0,rmaxus=0,heapmin=180000,stkc=3000,stkr=2000,rst=1,up=1\x0A
 > advance 20000
 KV scene=010102030405010505050505050505050505050505050505050505050505050505000001FFA50000000000FF
 P 0102030405010505050505050505050505050505050505050505050505050505000001FFA50000000000FF sleeping=1 fade=400

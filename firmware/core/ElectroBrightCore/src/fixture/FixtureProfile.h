@@ -12,7 +12,7 @@
 // Bumped whenever FixtureProfile or App::start() change shape; every Fixture.h
 // static_asserts the value it was written for, so a stale core copy in the
 // Arduino IDE fails loudly instead of misbehaving.
-constexpr int kCoreApi = 2;
+constexpr int kCoreApi = 3;
 
 struct SceneDefaults {
   Color8 color;    // power-up / factory-reset colour
@@ -28,7 +28,7 @@ struct FixtureProfile {
   const char* nvsNamespace;  // settings + presets (max 15 chars, unique per fixture)
   uint8_t pins[kMaxChannels];  // GPIO for each layout channel, in wire order
   uint8_t buzzerPin;
-  uint8_t parkLowPins[3];      // unused board outputs held low (e.g. unfitted MOSFET positions)
+  uint8_t parkLowPins[4];      // unused board outputs held low (e.g. unfitted MOSFET positions)
   uint8_t parkLowCount;
   SceneDefaults defaults;      // must fit the layout (absent channels 0)
   LinColor whiteMix;           // linear RGB that renders white-channel light on layouts without W

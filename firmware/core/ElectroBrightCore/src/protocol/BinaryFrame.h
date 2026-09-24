@@ -31,6 +31,7 @@ struct ColorFrame {
 namespace binframe {
 
 constexpr uint8_t kMagic = 0xAA;
+constexpr size_t kMinFrame = 5;  // single-white layout
 constexpr size_t kMaxFrame = kMaxChannels + 4;
 
 inline size_t frameLength(const ChannelLayout& l) { return static_cast<size_t>(l.count) + 4; }
@@ -38,13 +39,10 @@ inline uint8_t salt(const ChannelLayout& l) { return l.count == 4 ? 0x55 : stati
 
 // True when the write *looks like* a binary frame, so it must never be fed to
 // the text parser, even if it then fails to decode: every frame length used in
-// the family (6 .. kMaxFrame bytes, plus the layout's own length). A frame
-// meant for another fixture is therefore rejected (binbad) instead of
-// corrupting the next text command.
-inline bool isCandidate(const uint8_t* data, size_t len, const ChannelLayout& l) {
-  const size_t n = frameLength(l);
-  const size_t lo = n < 6 ? n : 6;
-  return data != nullptr && len >= lo && len <= kMaxFrame && data[0] == kMagic;
+// the family (kMinFrame .. kMaxFrame bytes). A frame meant for another fixture
+// is therefore rejected (binbad) instead of corrupting the next text command.
+inline bool isCandidate(const uint8_t* data, size_t len, const ChannelLayout&) {
+  return data != nullptr && len >= kMinFrame && len <= kMaxFrame && data[0] == kMagic;
 }
 
 // Validates and decodes a frame for the layout (`legacy`: also the pre-3.x

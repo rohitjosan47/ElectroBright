@@ -65,7 +65,7 @@ run: $(BUILD)/tests
 golden-record: $(BUILD)/tests
 	GOLDEN_RECORD=1 ./$(BUILD)/tests golden_
 
-FIXTURES := rgbw rgb rgbcct cct
+FIXTURES := rgbw rgb rgbcct cct w
 
 conformance: $(BUILD)/fwsim/fwsim
 	@for f in $(FIXTURES); do \
