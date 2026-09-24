@@ -64,7 +64,7 @@ const char* soundName(SoundId id) {
   return "?";
 }
 
-void printColor(std::string& j, const ChannelLayout& l, const Rgbw8& c) {
+void printColor(std::string& j, const ChannelLayout& l, const Color8& c) {
   uint8_t t[kMaxChannels];
   layout::toTuple(l, c, t);
   j += "[";

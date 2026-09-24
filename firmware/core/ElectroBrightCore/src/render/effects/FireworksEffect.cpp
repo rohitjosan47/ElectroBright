@@ -74,7 +74,7 @@ LinColor FireworksEffect::render(const EffectInput& in) {
         stage_ = Stage::Burst;
         t_ = 0.0f;
       }
-      return LinColor{1.0f, 0.9f, 0.8f, 0.6f};
+      return LinColor{1.0f, 0.9f, 0.8f, 0.6f, 0.6f};  // flash: every white LED (W, or CW + WW)
     }
     case Stage::Burst: {
       if (t_ >= kBurstMs * k) {

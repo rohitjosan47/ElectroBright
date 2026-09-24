@@ -21,7 +21,7 @@ size_t status(char* out, size_t cap, const StatusView& v) {
   auto field = [&](unsigned long x, bool last = false) {
     if (len + 1 < cap) len += clampLen(snprintf(out + len, cap - len, last ? "%lu" : "%lu,", x), cap - len);
   };
-  auto color = [&](const Rgbw8& c, bool last = false) {
+  auto color = [&](const Color8& c, bool last = false) {
     uint8_t t[kMaxChannels];
     layout::toTuple(l, c, t);
     for (uint8_t i = 0; i < l.count; ++i) field(t[i], last && i + 1 == l.count);

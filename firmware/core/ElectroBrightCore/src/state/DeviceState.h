@@ -14,7 +14,7 @@
 #include "../fixture/FixtureProfile.h"
 
 struct Scene {
-  Rgbw8 color;
+  Color8 color;
   uint8_t brightness;
   uint8_t mode;  // 1..13
   uint8_t speed[cfg::kNumModes];
@@ -22,10 +22,10 @@ struct Scene {
   uint8_t fireworkColorMode;  // 0 = manual (base colour), 1 = auto palette
   uint8_t clubColorMode;      // 0 = manual, 1 = auto
   uint8_t policeColorMode;    // 0 = manual (colours A/B), 1 = auto red/blue
-  Rgbw8 policeA;
-  Rgbw8 policeB;
+  Color8 policeA;
+  Color8 policeB;
 };
-static_assert(sizeof(Scene) == 4 + 1 + 1 + 2 * cfg::kNumModes + 3 + 4 + 4, "Scene must be tightly packed");
+static_assert(sizeof(Scene) == 5 + 1 + 1 + 2 * cfg::kNumModes + 3 + 5 + 5, "Scene must be tightly packed");
 
 struct Settings {
   uint8_t soundEnabled;

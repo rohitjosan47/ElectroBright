@@ -18,7 +18,8 @@ namespace {
 constexpr float kWashLevel = 0.12f;       // perceptual level of the dim wash
 constexpr float kBlackoutMaxMs = 120.0f;
 constexpr float kBlackoutBarChance = 0.05f;
-const LinColor kWhite{1.0f, 0.9f, 0.85f, 1.0f};
+// White flash: every white LED of the fixture (W, or CW + WW) plus warm-tinted RGB.
+const LinColor kWhite{1.0f, 0.9f, 0.85f, 1.0f, 1.0f};
 }  // namespace
 
 void ClubEffect::reset(Rng& rng) {

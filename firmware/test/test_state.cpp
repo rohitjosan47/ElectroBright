@@ -1,6 +1,7 @@
 // Persistence policy: defaults, validation, debounce, presets, factory reset.
 
 #include "Fakes.h"
+#include "state/SceneCodec.h"
 #include "TestFramework.h"
 
 TEST(store_empty_flash_gives_defaults_and_no_presets) {
@@ -94,14 +95,14 @@ TEST(store_rejects_corrupt_or_foreign_records) {
   // Wrong size.
   kv.data["scene"] = std::vector<uint8_t>(5, 0);
   // Right size, invalid mode.
-  std::vector<uint8_t> bad(1 + sizeof(Scene), 0);
-  bad[0] = StateStore::kSchema;
+  std::vector<uint8_t> bad(scenecodec::recordSize(layouts::kRgbw), 0);
+  bad[0] = scenecodec::kSchema;
   kv.data["p00"] = bad;
   // Wrong schema.
   Scene good = state::defaultScene(fx::rgbw::kProfile.defaults);
-  std::vector<uint8_t> foreign(1 + sizeof(Scene), 0);
+  std::vector<uint8_t> foreign(scenecodec::recordSize(layouts::kRgbw), 0);
+  scenecodec::pack(good, layouts::kRgbw, foreign.data());
   foreign[0] = 99;
-  memcpy(foreign.data() + 1, &good, sizeof(Scene));
   kv.data["p01"] = foreign;
 
   Scene s;

@@ -92,7 +92,7 @@ TEST(fixtures_colour_commands_take_one_value_per_channel) {
         const ParseResult r = parseCommand(line.c_str(), *nf.profile->layout);
         CHECK((r.status == ParseStatus::Ok) == (k == n));
         if (k == n) {
-          const Rgbw8 c = layout::fromTuple(*nf.profile->layout, r.cmd.args);
+          const Color8 c = layout::fromTuple(*nf.profile->layout, r.cmd.args);
           uint8_t back[kMaxChannels];
           layout::toTuple(*nf.profile->layout, c, back);
           for (uint8_t i = 0; i < n; ++i) CHECK_EQ(back[i], 10 + i);
@@ -109,7 +109,7 @@ TEST(fixtures_binary_frames_round_trip_and_reject_other_layouts) {
     for (int i = 0; i < 500; ++i) {
       uint8_t v[kMaxChannels];
       for (uint8_t k = 0; k < l.count; ++k) v[k] = static_cast<uint8_t>(rng.next());
-      const Rgbw8 c = layout::fromTuple(l, v);
+      const Color8 c = layout::fromTuple(l, v);
       const uint8_t seq = static_cast<uint8_t>(rng.next());
       const uint8_t br = static_cast<uint8_t>(rng.next());
       uint8_t f[binframe::kMaxFrame];

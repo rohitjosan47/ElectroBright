@@ -15,9 +15,9 @@
 constexpr int kCoreApi = 1;
 
 struct SceneDefaults {
-  Rgbw8 color;    // power-up / factory-reset colour
-  Rgbw8 policeA;  // police strobe colours (manual colour mode)
-  Rgbw8 policeB;
+  Color8 color;    // power-up / factory-reset colour
+  Color8 policeA;  // police strobe colours (manual colour mode)
+  Color8 policeB;
 };
 
 struct FixtureProfile {

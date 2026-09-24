@@ -5,8 +5,7 @@
 namespace state {
 
 Scene defaultScene(const SceneDefaults& d) {
-  Scene s;
-  memset(&s, 0, sizeof(s));
+  Scene s{};  // every byte zero (the struct has no padding)
   s.color = d.color;
   s.brightness = 255;
   s.mode = 1;

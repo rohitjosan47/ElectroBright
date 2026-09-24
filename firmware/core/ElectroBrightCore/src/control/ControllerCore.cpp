@@ -159,7 +159,7 @@ void ControllerCore::execute(const Command& c, uint32_t nowMs) {
 
     case CmdId::PoliceColorA:
     case CmdId::PoliceColorB: {
-      Rgbw8& target = c.id == CmdId::PoliceColorA ? scene_.policeA : scene_.policeB;
+      Color8& target = c.id == CmdId::PoliceColorA ? scene_.policeA : scene_.policeB;
       target = layout::fromTuple(*fixture_.layout, a);
       sceneChanged(nowMs);
       publish();

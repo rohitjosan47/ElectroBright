@@ -16,10 +16,12 @@ inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi 
 inline float lerp(float a, float b, float t) { return a + (b - a) * t; }
 
 inline LinColor lerp(const LinColor& a, const LinColor& b, float t) {
-  return {lerp(a.r, b.r, t), lerp(a.g, b.g, t), lerp(a.b, b.b, t), lerp(a.w, b.w, t)};
+  return {lerp(a.r, b.r, t), lerp(a.g, b.g, t), lerp(a.b, b.b, t), lerp(a.w, b.w, t), lerp(a.ww, b.ww, t)};
 }
 
-inline LinColor clamp01(const LinColor& c) { return {clamp01(c.r), clamp01(c.g), clamp01(c.b), clamp01(c.w)}; }
+inline LinColor clamp01(const LinColor& c) {
+  return {clamp01(c.r), clamp01(c.g), clamp01(c.b), clamp01(c.w), clamp01(c.ww)};
+}
 
 // Slider level 1..10 -> 0.0..1.0 (out-of-range input is clamped).
 inline float level01(uint8_t level) {

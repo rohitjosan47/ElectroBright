@@ -17,7 +17,7 @@
 
 class StateStore {
  public:
-  static constexpr uint8_t kSchema = 1;
+  static constexpr uint8_t kSchema = 1;  // settings record (scenes: SceneCodec)
 
   StateStore(IKeyValueStore& kv, Stats& stats, const FixtureProfile& fixture)
       : kv_(kv), stats_(stats), fixture_(fixture) {}
@@ -45,10 +45,6 @@ class StateStore {
   bool factoryReset();
 
  private:
-  struct SceneRecord {
-    uint8_t schema;
-    Scene scene;
-  };
   struct SettingsRecord {
     uint8_t schema;
     Settings settings;
@@ -59,6 +55,8 @@ class StateStore {
   bool noteWrite(bool ok);
 
   bool valid(const Scene& s) const { return state::isValid(s, *fixture_.layout); }
+  bool readScene(const char* key, Scene& out);
+  bool writeSceneRecord(const char* key, const Scene& s);
 
   IKeyValueStore& kv_;
   Stats& stats_;

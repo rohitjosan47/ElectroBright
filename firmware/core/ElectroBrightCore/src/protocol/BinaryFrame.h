@@ -21,7 +21,7 @@
 #include "../fixture/ChannelLayout.h"
 
 struct ColorFrame {
-  Rgbw8 color;
+  Color8 color;
   uint8_t brightness;
   bool hasBrightness;
   bool hasSeq;
@@ -51,14 +51,14 @@ inline bool isCandidate(const uint8_t* data, size_t len, const ChannelLayout& l)
 bool decode(const uint8_t* data, size_t len, const ChannelLayout& l, bool legacy, ColorFrame& out);
 
 // Encodes the layout's current frame into out[0 .. frameLength(l)); returns the length.
-size_t encode(uint8_t seq, const ChannelLayout& l, const Rgbw8& c, uint8_t brightness, uint8_t* out);
+size_t encode(uint8_t seq, const ChannelLayout& l, const Color8& c, uint8_t brightness, uint8_t* out);
 
 // RGBW shorthands (the original fixture; used by tests and tools).
 inline bool isCandidate(const uint8_t* data, size_t len) { return isCandidate(data, len, layouts::kRgbw); }
 inline bool decode(const uint8_t* data, size_t len, ColorFrame& out) {
   return decode(data, len, layouts::kRgbw, true, out);
 }
-inline void encode8(uint8_t seq, const Rgbw8& c, uint8_t brightness, uint8_t out[8]) {
+inline void encode8(uint8_t seq, const Color8& c, uint8_t brightness, uint8_t out[8]) {
   encode(seq, layouts::kRgbw, c, brightness, out);
 }
 

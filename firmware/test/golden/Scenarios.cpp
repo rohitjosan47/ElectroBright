@@ -84,7 +84,7 @@ std::string renderStreams() {
   char name[64];
 
   // Every mode x 3 seeds / slider settings / colours (one with a non-zero W).
-  struct Variant { uint32_t seed; uint8_t speed, freq; Rgbw8 color; uint8_t bright; };
+  struct Variant { uint32_t seed; uint8_t speed, freq; Color8 color; uint8_t bright; };
   const Variant variants[] = {
       {1u, 5, 5, {255, 0, 0, 0}, 255},
       {2u, 1, 10, {10, 200, 90, 0}, 128},
@@ -266,7 +266,7 @@ struct Transcript {
     dev->pass();
     drain();
   }
-  void frame(const Rgbw8& c, uint8_t br) {
+  void frame(const Color8& c, uint8_t br) {
     uint8_t f[8];
     golden::encodeFrame(seq++, c, br, f);
     raw(std::vector<uint8_t>(f, f + 8));
@@ -280,7 +280,8 @@ struct Transcript {
     advance(20000);  // let debounced persistence commit
     for (const auto& kv : dev->flash().data) out += "KV " + kv.first + "=" + hex(kv.second.data(), kv.second.size()) + "\n";
     const RenderParams& p = dev->lastParams();
-    out += "P " + hex(reinterpret_cast<const uint8_t*>(&p.scene), sizeof(p.scene)) + " sleeping=" +
+    const std::vector<uint8_t> scene = golden::sceneBytes(p.scene);
+    out += "P " + hex(scene.data(), scene.size()) + " sleeping=" +
            std::to_string(p.sleeping) + " fade=" + std::to_string(p.fadeMs) + "\n";
     out += "end\n";
     return out;

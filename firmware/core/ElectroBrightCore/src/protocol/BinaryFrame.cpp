@@ -49,7 +49,7 @@ bool decode(const uint8_t* d, size_t len, const ChannelLayout& l, bool legacy, C
   return legacy && l.count == 4 && decodeLegacy(d, len, out);
 }
 
-size_t encode(uint8_t seq, const ChannelLayout& l, const Rgbw8& c, uint8_t br, uint8_t* out) {
+size_t encode(uint8_t seq, const ChannelLayout& l, const Color8& c, uint8_t br, uint8_t* out) {
   const size_t n = frameLength(l);
   out[0] = kMagic;
   out[1] = seq;

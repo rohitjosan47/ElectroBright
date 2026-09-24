@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+#include "SceneCodec.h"
+
 namespace {
 constexpr const char* kSceneKey = "scene";
 constexpr const char* kSettingsKey = "set";
@@ -14,16 +16,28 @@ void StateStore::presetKey(uint8_t id, char out[4]) {
   out[3] = '\0';
 }
 
+bool StateStore::readScene(const char* key, Scene& out) {
+  uint8_t rec[scenecodec::kMaxRecord];
+  const size_t n = scenecodec::recordSize(*fixture_.layout);
+  return kv_.read(key, rec, n) && scenecodec::unpack(rec, n, *fixture_.layout, out);
+}
+
+bool StateStore::writeSceneRecord(const char* key, const Scene& s) {
+  uint8_t rec[scenecodec::kMaxRecord];
+  const size_t n = scenecodec::pack(s, *fixture_.layout, rec);
+  return kv_.write(key, rec, n);
+}
+
 bool StateStore::noteWrite(bool ok) {
   Stats::inc(ok ? stats_.nvsWrites : stats_.nvsFailures);
   return ok;
 }
 
 void StateStore::load(Scene& scene, Settings& settings) {
-  SceneRecord sr;
-  if (kv_.read(kSceneKey, &sr, sizeof(sr)) && sr.schema == kSchema && valid(sr.scene)) {
-    scene = sr.scene;
-    shadow_ = sr.scene;
+  Scene stored;
+  if (readScene(kSceneKey, stored)) {
+    scene = stored;
+    shadow_ = stored;
     shadowValid_ = true;
   } else {
     scene = state::defaultScene(fixture_.defaults);
@@ -41,8 +55,8 @@ void StateStore::load(Scene& scene, Settings& settings) {
   for (uint8_t i = 0; i < cfg::kNumPresets; ++i) {
     char key[4];
     presetKey(i, key);
-    SceneRecord pr;
-    if (kv_.read(key, &pr, sizeof(pr)) && pr.schema == kSchema && valid(pr.scene)) {
+    Scene preset;
+    if (readScene(key, preset)) {
       presetMask_ |= (1u << i);
     }
   }
@@ -70,11 +84,7 @@ bool StateStore::flush(const Scene& scene) {
 }
 
 bool StateStore::writeScene(const Scene& scene) {
-  SceneRecord sr;
-  memset(&sr, 0, sizeof(sr));
-  sr.schema = kSchema;
-  sr.scene = scene;
-  if (!noteWrite(kv_.write(kSceneKey, &sr, sizeof(sr)))) {
+  if (!noteWrite(writeSceneRecord(kSceneKey, scene))) {
     // Keep it dirty so the next tick retries.
     dirty_ = true;
     return false;
@@ -96,11 +106,7 @@ bool StateStore::savePreset(uint8_t id, const Scene& scene) {
   if (id >= cfg::kNumPresets || !valid(scene)) return false;
   char key[4];
   presetKey(id, key);
-  SceneRecord pr;
-  memset(&pr, 0, sizeof(pr));
-  pr.schema = kSchema;
-  pr.scene = scene;
-  if (!noteWrite(kv_.write(key, &pr, sizeof(pr)))) return false;
+  if (!noteWrite(writeSceneRecord(key, scene))) return false;
   presetMask_ |= (1u << id);
   return true;
 }
@@ -109,9 +115,7 @@ bool StateStore::loadPreset(uint8_t id, Scene& out) {
   if (id >= cfg::kNumPresets) return false;
   char key[4];
   presetKey(id, key);
-  SceneRecord pr;
-  if (kv_.read(key, &pr, sizeof(pr)) && pr.schema == kSchema && valid(pr.scene)) {
-    out = pr.scene;
+  if (readScene(key, out)) {
     presetMask_ |= (1u << id);
     return true;
   }

@@ -3,10 +3,12 @@
 // physical channels.
 //
 // Effects are shared by every fixture and may emit white-channel light (the
-// club white strobe, the fireworks flash, a user colour with W). A layout
-// without a W channel renders that light with its RGB LEDs instead: W is
-// replaced by `whiteMix` (linear RGB), and if a channel then exceeds full
-// scale all channels are scaled down together, which keeps the hue.
+// club white strobe, the fireworks flash, a user colour with W). Each LED takes
+// its slot: R/G/B, W or CW <- w, WW <- ww. A layout without any white LED
+// renders the `w` light with its RGB LEDs instead: W is replaced by `whiteMix`
+// (linear RGB), and if a channel then exceeds full scale all channels are
+// scaled down together, which keeps the hue. (`ww` is only ever non-zero on
+// layouts with a WW LED, apart from effect white, which always also sets `w`.)
 
 #include "../core/Types.h"
 #include "../fixture/ChannelLayout.h"
@@ -26,7 +28,9 @@ inline float component(const LinColor& c, Channel ch) {
     case Channel::R: return c.r;
     case Channel::G: return c.g;
     case Channel::B: return c.b;
-    case Channel::W: break;
+    case Channel::WW: return c.ww;
+    case Channel::W:
+    case Channel::CW: break;
   }
   return c.w;
 }

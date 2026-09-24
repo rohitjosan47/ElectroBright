@@ -14,7 +14,7 @@ float linearFromByte(uint8_t v);
 // envelopes do not show 8-bit steps).
 float linearFromLevel(float level);
 
-LinColor linearFrom(const Rgbw8& c);
+LinColor linearFrom(const Color8& c);
 
 // HSV (hue in degrees, s/v 0..1, all perceptual) -> linear RGB, W = 0.
 LinColor hsvToLinear(float hueDeg, float sat, float val);

@@ -8,7 +8,7 @@
 #include <math.h>
 
 RenderEngine::RenderEngine(uint32_t seed, const ChannelLayout& layout, LinColor whiteMix)
-    : layout_(layout), whiteMix_(whiteMix), foldWhite_(!layout::has(layout, Channel::W)), rng_(seed) {}
+    : layout_(layout), whiteMix_(whiteMix), foldWhite_(!layout::hasPrimaryWhite(layout)), rng_(seed) {}
 
 Effect& RenderEngine::effectFor(uint8_t mode) {
   switch (mode) {
@@ -82,7 +82,8 @@ void RenderEngine::frame(const RenderParams& p, uint32_t nowMs, uint16_t* duty) 
   } else {
     const float ac = mathx::smoothingAlpha(dt, cfg::kColorTauMs);
     base_ = {approach(base_.r, targetBase.r, ac), approach(base_.g, targetBase.g, ac),
-             approach(base_.b, targetBase.b, ac), approach(base_.w, targetBase.w, ac)};
+             approach(base_.b, targetBase.b, ac), approach(base_.w, targetBase.w, ac),
+             approach(base_.ww, targetBase.ww, ac)};
     bright_ = approach(bright_, targetBright, mathx::smoothingAlpha(dt, cfg::kBrightnessTauMs));
   }
 

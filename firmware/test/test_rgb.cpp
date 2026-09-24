@@ -14,6 +14,7 @@
 #include "protocol/BinaryFrame.h"
 #include "render/ChannelMap.h"
 #include "render/RenderEngine.h"
+#include "state/SceneCodec.h"
 
 namespace {
 
@@ -141,7 +142,7 @@ TEST(rgb_binary_frame_is_seven_bytes_with_its_own_salt) {
   ColorFrame c{};
   CHECK(binframe::decode(f, n, layouts::kRgb, false, c));
   CHECK(c.hasSeq && c.seq == 5 && c.hasBrightness && c.brightness == 99);
-  CHECK(c.color == (Rgbw8{10, 20, 30, 0}));
+  CHECK(c.color == (Color8{10, 20, 30, 0}));
 }
 
 TEST(rgb_applies_frames_and_rejects_rgbw_ones) {
@@ -152,7 +153,7 @@ TEST(rgb_applies_frames_and_rejects_rgbw_ones) {
   binframe::encode(0, layouts::kRgb, {10, 20, 30, 0}, 128, f);
   d.write(f, 7);
   d.pass();
-  CHECK(d.core().scene().color == (Rgbw8{10, 20, 30, 0}));
+  CHECK(d.core().scene().color == (Color8{10, 20, 30, 0}));
   CHECK_EQ(d.core().scene().brightness, 128);
 
   // An RGBW app's frames: current 8-byte, legacy 7-byte (same length as an RGB
@@ -165,7 +166,7 @@ TEST(rgb_applies_frames_and_rejects_rgbw_ones) {
   const uint8_t legacy6[6] = {0xAA, 5, 6, 7, 8, static_cast<uint8_t>(5 ^ 6 ^ 7 ^ 8 ^ 0x55)};
   d.write(legacy6, 6);
   d.pass();
-  CHECK(d.core().scene().color == (Rgbw8{10, 20, 30, 0}));
+  CHECK(d.core().scene().color == (Color8{10, 20, 30, 0}));
   CHECK_EQ(Stats::get(d.stats().binaryBad), 3u);
   CHECK_EQ(Stats::get(d.stats().binaryOk), 1u);
   // ...and they never reached the text parser: the next command works.
@@ -204,9 +205,9 @@ TEST(rgb_store_rejects_records_with_a_white_value) {
   Stats st;
   Scene bad = state::defaultScene(kRgb.defaults);
   bad.color = {1, 2, 3, 4};
-  std::vector<uint8_t> rec(1 + sizeof(Scene));
-  rec[0] = StateStore::kSchema;
-  memcpy(rec.data() + 1, &bad, sizeof(Scene));
+  // Same record size as RGB (neither has warm white); written with W kept.
+  std::vector<uint8_t> rec(scenecodec::recordSize(layouts::kRgbw));
+  scenecodec::pack(bad, layouts::kRgbw, rec.data());
   kv.data["scene"] = rec;
   kv.data["p02"] = rec;
   StateStore store(kv, st, kRgb);

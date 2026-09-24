@@ -11,7 +11,7 @@ namespace {
 
 void writeText(SimDevice& d, const char* s) { d.write(reinterpret_cast<const uint8_t*>(s), strlen(s)); }
 
-void writeFrame(SimDevice& d, uint8_t seq, Rgbw8 c, uint8_t br) {
+void writeFrame(SimDevice& d, uint8_t seq, Color8 c, uint8_t br) {
   uint8_t f[8];
   binframe::encode8(seq, c, br, f);
   d.write(f, sizeof(f));

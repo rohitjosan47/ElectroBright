@@ -20,8 +20,8 @@ float linearFromLevel(float level) {
   return (a + (b - a) * frac) * (1.0f / 65535.0f);
 }
 
-LinColor linearFrom(const Rgbw8& c) {
-  return {linearFromByte(c.r), linearFromByte(c.g), linearFromByte(c.b), linearFromByte(c.w)};
+LinColor linearFrom(const Color8& c) {
+  return {linearFromByte(c.r), linearFromByte(c.g), linearFromByte(c.b), linearFromByte(c.w), linearFromByte(c.ww)};
 }
 
 LinColor hsvToLinear(float hueDeg, float sat, float val) {
