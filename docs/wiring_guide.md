@@ -2,7 +2,11 @@
 
 A complete circuit connection, hardware assembly, and migration guide for building the **ElectroBright** 4-channel RGBW smart lighting system powered by the **ESP32-C3** microcontroller with native Bluetooth Low Energy (BLE 5.0).
 
-The same board also builds the **3-channel RGB fixture**: leave the white channel unpopulated (see [§7](#7-rgb-fixture-3-channels)). Each fixture has its own firmware sketch in [`firmware/fixtures/`](../firmware/README.md): `ElectroBright_RGBW` and `ElectroBright_RGB`.
+The same board also builds two other fixtures:
+- the **3-channel RGB fixture**: leave the white channel unpopulated (see [§7](#7-rgb-fixture-3-channels));
+- the **5-channel RGBCCT fixture**: add a warm-white channel (see [§8](#8-rgbcct-fixture-5-channels)).
+
+Each fixture has its own firmware sketch in [`firmware/fixtures/`](../firmware/README.md): `ElectroBright_RGBW`, `ElectroBright_RGB` and `ElectroBright_RGBCCT`.
 
 ---
 
@@ -188,4 +192,27 @@ The RGB fixture is this board without the white channel. Flash `firmware/fixture
   - MOSFET gates protected on GPIO 1, 3, 4. Nothing is connected to GPIO 5.
   - Strip `R, G, B` go to the MOSFET drains.
 - **Reusing an RGBW board:** it can run the RGB firmware with an RGB strip. Leave the W output unconnected; the firmware holds its gate low. The RGB firmware keeps its settings and presets in its own flash area, so switching firmwares never mixes RGBW and RGB presets.
+
+---
+
+## 8. RGBCCT fixture (5 channels)
+
+The RGBCCT fixture drives an RGB+CCT ("RGBWW", 6-pin) common-anode strip: three colour channels plus cool white and warm white. It is the RGBW board plus one channel. Flash `firmware/fixtures/ElectroBright_RGBCCT`.
+
+| Function | ESP32-C3 pin | Change from RGBW |
+| :--- | :--- | :--- |
+| Red / Green / Blue | GPIO 1 / 3 / 4 | unchanged |
+| Cool white | GPIO 5 | the RGBW "White" channel, now wired to the strip's `CW-` |
+| **Warm white** | **GPIO 10** | **new:** 5th MOSFET, 220–470 Ω gate resistor, 10 kΩ pull-down, drain to the strip's `WW-` |
+| Buzzer | GPIO 6 | unchanged |
+
+- **BOM changes:**
+  - 5 logic-level MOSFETs, 5 gate resistors and 5 pull-downs;
+  - an RGB+CCT strip (`+V`, `R-`, `G-`, `B-`, `CW-`, `WW-`).
+- **GPIO 10:** not a strapping pin and not used for USB or UART. Most ESP32-C3 boards (SuperMini, DevKitM-1) break it out. On a board without it, pick another free non-strapping GPIO (not 2, 8 or 9) and change `kPinWarmWhite` in the fixture's `Fixture.h`.
+- **Current:** both white channels can run at full together (the power-up default). Size the supply and wiring for the strip's combined CW + WW current, plus RGB if colours are mixed in.
+- **Checklist deltas** (vs §6):
+  - MOSFET gates protected on GPIO 1, 3, 4, 5 and 10.
+  - Strip `R, G, B, CW, WW` go to the matching MOSFET drains.
+- **Separate storage:** the RGBCCT firmware keeps its settings and presets in its own flash area, so a board moved between fixture firmwares never mixes presets.
 

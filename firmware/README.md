@@ -11,8 +11,9 @@ Family version **3.5.0**
 
 | Fixture | Sketch | Channels | Model id | BLE name | Status |
 |---|---|---|---|---|---|
-| RGBW | [`fixtures/ElectroBright_RGBW`](fixtures/ElectroBright_RGBW/README.md) | R, G, B, W | `EB-C3-RGBW-V1` | `ElectroBright_C3_V1` | shipping (byte-identical to 3.4.0 apart from VERSION/CAPS) |
+| RGBW | [`fixtures/ElectroBright_RGBW`](fixtures/ElectroBright_RGBW/README.md) | R, G, B, W | `EB-C3-RGBW-V1` | `ElectroBright_C3_V1` | shipping. Same behaviour as 3.4.0 except VERSION/CAPS and the DIAG count for a malformed 9-byte write |
 | RGB | [`fixtures/ElectroBright_RGB`](fixtures/ElectroBright_RGB/README.md) | R, G, B | `EB-C3-RGB-V1` | `ElectroBright_C3_RGB_V1` | new; host-tested, awaiting a hardware run |
+| RGBCCT | [`fixtures/ElectroBright_RGBCCT`](fixtures/ElectroBright_RGBCCT/README.md) | R, G, B, cool white, warm white | `EB-C3-RGBCCT-V1` | `ElectroBright_C3_RGBCCT_V1` | new; host-tested, awaiting a hardware run |
 
 ```
 firmware/
@@ -51,7 +52,7 @@ firmware/tools/build.sh RGB        # one fixture (folder suffix)
 
 Reference build (3.5.0), per fixture: ≈655 KB flash (49 %) and 31.0 KB static RAM (9 %), with zero compiler warnings under `--warnings all`.
 
-**First boot starts clean.** Each fixture stores its settings and presets in its own NVS namespace: `eb3` for RGBW and `eb3rgb` for RGB.
+**First boot starts clean.** Each fixture stores its settings and presets in its own NVS namespace: `eb3` for RGBW, `eb3rgb` for RGB and `eb3rgbcct` for RGBCCT.
 - An RGBW light updated from 3.4.0 keeps its presets, because the namespace and the byte layout are unchanged.
 - Data from the original pre-3.x firmware (namespace `eeprom`) is erased once.
 
@@ -64,22 +65,24 @@ A fixture is described by a `FixtureProfile` (`core/ElectroBrightCore/src/fixtur
 - **Channel layout:** which LED channels exist, in wire order.
 - **Wiring:** one GPIO per channel, the buzzer pin, and unused outputs that must be held low.
 - **Scene defaults:** colour and police colours.
-- **White mix:** the linear RGB that stands in for white-channel light on a layout without W.
+- **White mix:** the linear RGB that stands in for white-channel light on a layout with no white LED.
 - **Legacy frames:** whether the pre-3.x binary frames are accepted.
 
-The layout sets the width of every colour on the wire. `COLOR`, `POLICE_COLOR_A/B`, the binary frame and STATUS all carry one value per channel. See [`docs/protocol.md`](../docs/protocol.md).
+Every colour in the core has five slots: `r, g, b`, `w` (the primary white LED: W, or cool white) and `ww` (warm white). The layout says which LEDs exist and which slot drives each one. The layout sets the width of every colour on the wire. `COLOR`, `POLICE_COLOR_A/B`, the binary frame and STATUS all carry one value per channel. See [`docs/protocol.md`](../docs/protocol.md).
 
 What differs between fixtures:
 
-| | RGBW | RGB |
-|---|---|---|
-| **Outputs** | GPIO 1, 3, 4, 5 → R, G, B, W | GPIO 1, 3, 4 → R, G, B; GPIO 5 held low (W not fitted) |
-| **Colour command** | `COLOR:r,g,b,w` (alias `RGBW:`) | `COLOR:r,g,b` (`RGBW:` → `ERROR:UNKNOWN_CMD`) |
-| **Binary frame** | 8 bytes, salt 0x55, plus the legacy 7/6-byte frames | 7 bytes, salt 0x56 |
-| **STATUS** | 23 fields | 20 fields |
-| **White-channel light from effects** | drives the W LED | mixed from R+G+B (hue kept) |
-| **Police colour B default** | W LED `0,0,0,255` | RGB white `255,255,255` |
-| **Buzzer LEDC channel** | 4 | 3 |
+| | RGBW | RGB | RGBCCT |
+|---|---|---|---|
+| **Outputs** | GPIO 1, 3, 4, 5 → R, G, B, W | GPIO 1, 3, 4 → R, G, B; GPIO 5 held low (W not fitted) | GPIO 1, 3, 4, 5, 10 → R, G, B, CW, WW |
+| **Colour command** | `COLOR:r,g,b,w` (alias `RGBW:`) | `COLOR:r,g,b` (`RGBW:` → `ERROR:UNKNOWN_CMD`) | `COLOR:r,g,b,cw,ww` (`RGBW:` → `ERROR:UNKNOWN_CMD`) |
+| **Binary frame** | 8 bytes, salt 0x55, plus the legacy 7/6-byte frames | 7 bytes, salt 0x56 | 9 bytes, salt 0x50 |
+| **STATUS** | 23 fields | 20 fields | 26 fields |
+| **White-channel light from effects** | drives the W LED | mixed from R+G+B (hue kept) | both white LEDs (neutral) |
+| **Default colour** | RGB white | RGB white | both white LEDs |
+| **Police colour B default** | W LED `0,0,0,255` | RGB white `255,255,255` | both white LEDs `0,0,0,255,255` |
+| **Flash record** | 44 bytes (3.4.0 format) | 44 bytes | 47 bytes (+ warm white of colour and police A/B) |
+| **Buzzer LEDC channel** | 4 | 3 | 5 |
 
 ### Adding a fixture
 1. **Layout.** If the layout is new, add it to `fixture/ChannelLayout.h`.
@@ -103,6 +106,7 @@ CONTROL task (prio 6) ── the ONLY owner of device state (actor model)
                                                                   │ SeqLock snapshot
 esp_timer 200 Hz ─► RENDER task (prio 10)
    RenderEngine: smoothing → effect (+ crossfade) → channel map → brightness → sleep fade → LEDC
+   (all in five colour slots: r, g, b, w, ww)
    SoundSequencer tick → buzzer
 ```
 
@@ -145,7 +149,7 @@ All paths are under `core/ElectroBrightCore/src/` unless noted.
 | `fixture/` | ✓ | `ChannelLayout` (channels in wire order), `FixtureProfile` (what a sketch passes to `App::start`) |
 | `core/` | ✓ | Types, math, RNG, noise, seqlock, stats |
 | `protocol/` | ✓ | Line assembler, parser, binary frames, reply formats, egress packing |
-| `state/` | ✓ | Scene/settings schema, persistence policy |
+| `state/` | ✓ | Scene/settings schema, flash record codec (`SceneCodec`), persistence policy |
 | `control/ControllerCore.*` | ✓ | Command semantics, sleep timer, presets |
 | `render/` | ✓ | Colour pipeline, render engine, channel map, mode registry, 13 effects |
 | `feedback/` | ✓ | Buzzer melodies and sequencer |
@@ -243,7 +247,7 @@ How this firmware differs from the original (pre-3.x) firmware:
 
 ## 6. Tests
 
-**Host tests** (`test/`: portable core, ASan + UBSan, `-Werror`): 114 tests.
+**Host tests** (`test/`: portable core, ASan + UBSan, `-Werror`): 134 tests.
 ```bash
 make -C firmware/test                 # portable check, all tests, fwsim
 make -C firmware/test run T=rgb       # filter by name
@@ -258,21 +262,28 @@ What they cover:
   - darkness in every mode while asleep;
   - instant parameter changes;
   - bounded, NaN-free output.
-- **Golden baseline:** `golden/rgbw.golden` holds render hashes for 64 streams, plus protocol transcripts with flash contents. It was recorded from 3.4.0 before the family refactor, so any change in RGBW behaviour fails the build. Re-record it only with `make golden-record`.
+- **Golden baseline:** `golden/rgbw.golden` holds render hashes for 64 streams, plus protocol transcripts with flash contents. It was recorded from 3.4.0 before the family refactor, so any change in RGBW behaviour fails the build. Its header lists the intended changes since then. Re-record it only with `make golden-record`.
 - **RGB fixture** (`test_rgb.cpp`):
   - widths, identity, frames and the salt;
   - rejection of RGBW frames;
   - defaults, storage validation, and presets across a reboot;
   - hue-preserving white fold;
   - effects identical to RGBW.
+- **RGBCCT fixture** (`test_rgbcct.cpp`):
+  - widths, identity, frames, defaults and 47-byte records;
+  - presets across a reboot;
+  - warm/cool white symmetry in every mode, through smoothing, crossfades, fades and brightness;
+  - effect white on both whites;
+  - effects identical to RGBW.
+- **Scene codec** (`test_state.cpp`): the legacy flash format, byte for byte, plus round trips for every fixture.
 - **Per-fixture invariants** (`test_layouts.cpp`): identity and wiring, `3n + 11` STATUS fields, colour arity, frame round trips, binary data never reaching the text parser, and bounded rendering. These run for every fixture in `test/Fixtures.h`.
 
-**fwsim** (`test/fwsim`) runs the real core behind a stdin/stdout protocol for the app's firmware-in-the-loop tests. Select the fixture with `--fixture rgbw|rgb` (the default is rgbw).
+**fwsim** (`test/fwsim`) runs the real core behind a stdin/stdout protocol for the app's firmware-in-the-loop tests. Select the fixture with `--fixture rgbw|rgb|rgbcct` (the default is rgbw).
 
 **On-device suite** (`pip install bleak`). It reads the layout from INFO/CAPS:
 ```bash
 python3 firmware/tools/fw_conformance.py                 # contract + 30 s stress
-python3 firmware/tools/fw_conformance.py --name RGB      # pick a fixture by name
+python3 firmware/tools/fw_conformance.py --name RGBCCT   # pick a fixture by BLE-name substring
 python3 firmware/tools/fw_conformance.py --stress 600 --cycles 100
 python3 firmware/tools/fw_conformance.py --persist       # power-cycle check
 ```
@@ -304,7 +315,7 @@ python3 firmware/tools/fw_conformance.py --persist       # power-cycle check
 - task priorities and stack sizes;
 - `kConnectChirp` (beep on connect).
 
-**Per-fixture settings** are in `fixtures/<Name>/Fixture.h`: pins, defaults and `whiteMix`.
+**Per-fixture settings** are in `fixtures/<Name>/Fixture.h`: pins, defaults and `whiteMix`. The white light that effects add is set in two constants: Club `kWhite` and the Fireworks burst flash.
 
 Regenerate the gamma table with `tools/gen_gamma_lut.py`.
 
@@ -312,8 +323,8 @@ Regenerate the gamma table with `tools/gen_gamma_lut.py`.
 
 ## 9. Roadmap: more fixtures
 
-The core is sized for up to 5 channels (`kMaxChannels`, `Command::args`, frame routing up to 9 bytes). The buzzer uses the first LEDC channel after the LED outputs (the C3 has 6 channels).
+The core is sized for up to 5 channels (`kMaxChannels`, `Command::args`, frames up to 9 bytes). The buzzer uses the first LEDC channel after the LED outputs; the C3 has 6 channels, so 5 LED channels is the maximum while the buzzer is fitted. The channel roles R, G, B, W, CW and WW already exist.
 
-- **W (single white), n = 1:** needs a `W`-only layout. Effects render RGBW, so the channel map must turn colour into white brightness (for example, luminance).
-- **CCT (cool + warm white) and RGBCCT (RGB + CW + WW, n = 5):** need `CW`/`WW` channel roles. Colour temperature has to be carried from the scene to the channel map, which means widening `Scene` colours beyond `Rgbw8`. That change needs a new NVS schema. The new fixtures get their own namespaces, so existing RGBW/RGB presets are unaffected.
-- **App:** the app must accept `LAYOUT=RGB` (and later layouts), size colours and STATUS by `n`, and use the salted frame. See [`docs/protocol.md`](../docs/protocol.md).
+- **Done:** RGBW, RGB, RGBCCT.
+- **W (single white, n = 1) and CCT (CW + WW, n = 2):** effects emit coloured light, so these layouts need a channel map that turns RGB into white. For example, luminance goes to the white LED(s), and for CCT the hue picks the warm/cool balance. Frames for n = 1 and n = 2 are 5 and 6 bytes long; a 5-byte frame falls below today's 6-byte binary window, so that routing needs checking.
+- **App:** the app must accept `LAYOUT=RGB` / `RGBCCT` (and later layouts), size colours and STATUS by `n`, and use the salted frame. For RGBCCT it should offer a Kelvin control that mixes CW/WW. See [`docs/protocol.md`](../docs/protocol.md).
