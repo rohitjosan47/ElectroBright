@@ -9,6 +9,7 @@ import '../../core/model/fixture.dart';
 import '../../design/canvas/ambient_canvas.dart';
 import '../../design/components/fixture_type.dart';
 import '../../design/components/glass_controls.dart';
+import '../../design/components/name_dialog.dart';
 import '../../design/gallery/gallery.dart';
 import '../../design/tokens/tokens.dart';
 import '../../design/tone/tone_scope.dart';
@@ -22,6 +23,7 @@ import '../control/control_screen.dart';
 import 'light_tile.dart';
 import '../diagnostics/ble_lab.dart';
 import '../firmware_update/firmware_update_screen.dart';
+import '../fixture_settings/light_settings_screen.dart';
 
 /// Home: every saved light with its type and state, plus lights nearby that
 /// are not added yet.
@@ -136,6 +138,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onTap: () => Navigator.of(ctx).pop('identify'),
             ),
             ListTile(
+              leading: const Icon(Icons.tune_rounded),
+              title: Text(l.lightSettings),
+              onTap: () => Navigator.of(ctx).pop('settings'),
+            ),
+            ListTile(
               leading: const Icon(Icons.delete_outline_rounded),
               title: Text(l.forgetLight),
               onTap: () => Navigator.of(ctx).pop('forget'),
@@ -157,35 +164,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         final FixtureStatus ready = await s!.statuses
             .firstWhere((FixtureStatus x) => x.isReady)
             .timeout(const Duration(seconds: 10), onTimeout: () => s.status);
-        if (ready.isReady) await s.session?.identify();
+        if (ready.isReady) await s.identify();
         w.release();
+      case 'settings':
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => LightSettingsScreen(fixtureId: f.id),
+          ),
+        );
       case 'forget':
         _wants.remove(f.id)?.release();
         await app.registry.forget(f.id);
     }
   }
 
-  Future<String?> _askName(String current) {
-    final AppLocalizations l = AppLocalizations.of(context);
-    final TextEditingController c = TextEditingController(text: current);
-    return showDialog<String>(
-      context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(l.rename),
-        content: TextField(controller: c, autofocus: true),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(l.cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(c.text.trim()),
-            child: Text(l.addSave),
-          ),
-        ],
-      ),
-    ).whenComplete(c.dispose);
-  }
+  Future<String?> _askName(String current) => showNameDialog(
+    context,
+    title: AppLocalizations.of(context).rename,
+    current: current,
+  );
 
   Future<void> _settings() async {
     final AppLocalizations l = AppLocalizations.of(context);

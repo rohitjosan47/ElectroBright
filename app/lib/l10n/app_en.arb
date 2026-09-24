@@ -291,5 +291,33 @@
   "done": "Done",
   "errorStorage": "The light couldn't save this (storage).",
   "errorGeneric": "The light didn't accept that.",
-  "errorOffline": "Not connected."
+  "errorOffline": "Not connected.",
+  "favourite": "Favourite",
+  "favouriteHint": "Kept connected while the app is open",
+  "forgetConfirm": "Forget {name}? Its presets stay on the light.",
+  "@forgetConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "forget": "Forget",
+  "resetDefaults": "Reset to defaults",
+  "ledSpanNote": "The cool white LED must be at least 500 K cooler than the warm white LED.",
+  "copied": "Copied",
+  "capYes": "Yes",
+  "capMissing": "Not on this light: {modes}",
+  "@capMissing": {
+    "placeholders": {
+      "modes": {
+        "type": "String"
+      }
+    }
+  },
+  "version": "Version",
+  "factoryLook": "Factory look",
+  "channelTestHint": "Lights each LED on its own, then puts your look back.",
+  "identifyHint": "Blinks the light three times.",
+  "tools": "Tools"
 }

@@ -25,6 +25,7 @@ import '../../drivers/electrobright/eb_types.dart';
 import '../../l10n/app_localizations.dart';
 import '../../sessions/connection_manager.dart';
 import '../../sessions/fixture_session.dart';
+import '../fixture_settings/light_settings_screen.dart';
 import '../home/presence.dart';
 import 'colour/colour_editor.dart';
 import 'effects/effects_panel.dart';
@@ -199,6 +200,14 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                 soundOn: st.state?.soundOn ?? false,
                 sleeping: sleeping,
                 enabled: enabled,
+                onSettings: () => unawaited(
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          LightSettingsScreen(fixtureId: widget.fixtureId),
+                    ),
+                  ),
+                ),
               ),
               const SizedBox(height: Space.m),
               BrightnessPill(

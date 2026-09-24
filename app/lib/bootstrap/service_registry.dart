@@ -41,11 +41,15 @@ final class BleStack {
 
 /// App-wide services (one instance, overridden into Riverpod in main).
 final class AppServices {
-  AppServices({PlatformBridge? platform, Haptics? haptics})
-    : platform = platform ?? PlatformBridge(),
-      haptics = haptics ?? Haptics();
+  AppServices({
+    PlatformBridge? platform,
+    Haptics? haptics,
+    Scheduler? scheduler,
+  }) : platform = platform ?? PlatformBridge(),
+       haptics = haptics ?? Haptics(),
+       scheduler = scheduler ?? SystemScheduler();
 
-  final Scheduler scheduler = SystemScheduler();
+  final Scheduler scheduler;
   final PlatformBridge platform;
   final Haptics haptics;
   final BleTrace trace = BleTrace();

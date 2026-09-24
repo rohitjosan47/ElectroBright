@@ -86,8 +86,13 @@ final class FixtureSession {
   EbSession? _session;
   StreamSubscription<EbView>? _viewSub;
   StreamSubscription<EbEvent>? _eventSub;
-  final Map<String, (Duration, void Function(EbSession))> _offline =
-      <String, (Duration, void Function(EbSession))>{};
+
+  /// Offline changes per setting: when made, how long to keep, the action.
+  final Map<String, (Duration, Duration, void Function(EbSession))> _offline =
+      <String, (Duration, Duration, void Function(EbSession))>{};
+
+  /// Time source of the session (timed rituals use it too).
+  Scheduler get scheduler => _scheduler;
 
   FixtureStatus get status => _status;
   Stream<FixtureStatus> get statuses => _statuses.stream;
@@ -209,37 +214,48 @@ final class FixtureSession {
   // While ready they go straight to the session. While reconnecting the newest
   // change per setting is kept for [offlineWindow] and replayed on connect.
 
+  // A link that just dropped counts as reconnecting: the manager has not
+  // moved the phase on yet, but changes made now must not be lost.
   bool get _reconnecting =>
       _status.phase == LinkPhase.waiting ||
       _status.phase == LinkPhase.connecting ||
-      _status.phase == LinkPhase.handshaking;
+      _status.phase == LinkPhase.handshaking ||
+      _status.phase == LinkPhase.ready;
 
   Future<EbResult> _intent(
     String key,
-    Future<EbResult> Function(EbSession s) action,
-  ) {
+    Future<EbResult> Function(EbSession s) action, {
+    Duration keep = offlineWindow,
+  }) {
     final EbSession? s = _session;
-    if (s != null && _status.phase == LinkPhase.ready) return action(s);
+    if (s != null &&
+        s.phase != EbPhase.closed &&
+        _status.phase == LinkPhase.ready) {
+      return action(s);
+    }
     if (_reconnecting) {
-      _offline[key] = (_scheduler.now, (EbSession x) => unawaited(action(x)));
-      return Future<EbResult>.value(EbResult.disconnected);
+      _offline[key] = (
+        _scheduler.now,
+        keep,
+        (EbSession x) => unawaited(action(x)),
+      );
     }
     return Future<EbResult>.value(EbResult.disconnected);
   }
 
   void _replayOffline(EbSession s) {
     final Duration now = _scheduler.now;
-    final List<(Duration, void Function(EbSession))> fresh =
+    final List<(Duration, Duration, void Function(EbSession))> fresh =
         _offline.values
             .where(
-              ((Duration, void Function(EbSession)) e) =>
-                  now - e.$1 <= offlineWindow,
+              ((Duration, Duration, void Function(EbSession)) e) =>
+                  now - e.$1 <= e.$2,
             )
             .toList()
           ..sort((a, b) => a.$1.compareTo(b.$1));
     _offline.clear();
-    for (final (Duration, void Function(EbSession)) e in fresh) {
-      e.$2(s);
+    for (final (Duration, Duration, void Function(EbSession)) e in fresh) {
+      e.$3(s);
     }
   }
 
@@ -259,16 +275,21 @@ final class FixtureSession {
   );
 
   /// Colour and brightness in one frame (see [EbSession.setLook]).
-  void setLook({ChannelColor? color, int? brightness, bool live = false}) =>
-      unawaited(
-        _intent(EbKeys.color, (EbSession s) {
-          if (color != null && color.layout != s.layout) {
-            return Future<EbResult>.value(wrongLayout);
-          }
-          s.setLook(color: color, brightness: brightness, live: live);
-          return Future<EbResult>.value(EbResult.ok);
-        }),
-      );
+  /// [keepOffline]: how long the change waits for a dropped link.
+  void setLook({
+    ChannelColor? color,
+    int? brightness,
+    bool live = false,
+    Duration keepOffline = offlineWindow,
+  }) => unawaited(
+    _intent(EbKeys.color, (EbSession s) {
+      if (color != null && color.layout != s.layout) {
+        return Future<EbResult>.value(wrongLayout);
+      }
+      s.setLook(color: color, brightness: brightness, live: live);
+      return Future<EbResult>.value(EbResult.ok);
+    }, keep: keepOffline),
+  );
 
   void setBrightness(int b, {bool live = false}) => unawaited(
     _intent(EbKeys.brightness, (EbSession s) {
@@ -280,10 +301,16 @@ final class FixtureSession {
   void beginGesture(String key) => _session?.beginGesture(key);
   void endGesture(String key) => _session?.endGesture(key);
 
-  Future<EbResult> setPower({required bool on}) =>
-      _intent(EbKeys.power, (EbSession s) => s.setPower(on: on));
-  Future<EbResult> setMode(int mode) =>
-      _intent(EbKeys.mode, (EbSession s) => s.setMode(mode));
+  Future<EbResult> setPower({
+    required bool on,
+    Duration keepOffline = offlineWindow,
+  }) => _intent(
+    EbKeys.power,
+    (EbSession s) => s.setPower(on: on),
+    keep: keepOffline,
+  );
+  Future<EbResult> setMode(int mode, {Duration keepOffline = offlineWindow}) =>
+      _intent(EbKeys.mode, (EbSession s) => s.setMode(mode), keep: keepOffline);
   Future<EbResult> setSpeed(int mode, int v) =>
       _intent(EbKeys.speed(mode), (EbSession s) => s.setSpeed(mode, v));
   Future<EbResult> setFrequency(int mode, int v) =>

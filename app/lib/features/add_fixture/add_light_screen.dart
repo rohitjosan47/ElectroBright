@@ -155,7 +155,7 @@ class _AddLightScreenState extends ConsumerState<AddLightScreen> {
         : _app.ble.connections.session(id);
     if (s?.session == null) return;
     setState(() => _identifying = true);
-    await s!.session!.identify();
+    await s!.identify();
     if (mounted) setState(() => _identifying = false);
   }
 

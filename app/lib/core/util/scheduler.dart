@@ -15,14 +15,24 @@ abstract interface class Scheduler {
 }
 
 final class SystemScheduler implements Scheduler {
-  final Stopwatch _clock = Stopwatch()..start();
+  /// [elapsed]: the time source (default: a monotonic stopwatch). Widget
+  /// tests pass one that follows their fake timers.
+  SystemScheduler({Duration Function()? elapsed})
+    : _elapsed = elapsed ?? (Stopwatch()..start()).elapsedFn;
+
+  final Duration Function() _elapsed;
 
   @override
-  Duration get now => _clock.elapsed;
+  Duration get now => _elapsed();
 
   @override
   Cancelable after(Duration delay, void Function() callback) =>
       _TimerHandle(Timer(delay, callback));
+}
+
+extension on Stopwatch {
+  Duration Function() get elapsedFn =>
+      () => elapsed;
 }
 
 final class _TimerHandle implements Cancelable {

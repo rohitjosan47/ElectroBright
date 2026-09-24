@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:electrobright/app.dart';
 import 'package:electrobright/app/app_session.dart';
 import 'package:electrobright/bootstrap/service_registry.dart';
@@ -5,6 +6,7 @@ import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/model/fixture.dart';
 import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/core/store/json_store.dart';
+import 'package:electrobright/core/util/scheduler.dart';
 import 'package:electrobright/features/control/control_screen.dart';
 import 'package:electrobright/sessions/fixture_session.dart';
 import 'package:electrobright/sim/eb_device_model.dart';
@@ -39,7 +41,11 @@ final class DemoApp {
 
   /// Starts demo mode, adds every light and returns on Home.
   static Future<DemoApp> start(WidgetTester t) async {
-    final AppServices services = AppServices();
+    // App time follows the test's fake timers.
+    final Stopwatch watch = clock.stopwatch()..start();
+    final AppServices services = AppServices(
+      scheduler: SystemScheduler(elapsed: () => watch.elapsed),
+    );
     await t.pumpWidget(
       ProviderScope(
         retry: (int retryCount, Object error) => null,

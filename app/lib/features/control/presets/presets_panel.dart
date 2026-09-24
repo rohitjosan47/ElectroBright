@@ -10,6 +10,7 @@ import '../../../core/model/light_capabilities.dart';
 import '../../../core/protocol/eb/eb_scene.dart';
 import '../../../core/protocol/eb/mode_catalog.dart';
 import '../../../design/components/glass_controls.dart';
+import '../../../design/components/name_dialog.dart';
 import '../../../design/glass/glass_surface.dart';
 import '../../../design/haptics/haptics.dart';
 import '../../../design/haptics/haptics_scope.dart';
@@ -229,75 +230,17 @@ class PresetsPanel extends ConsumerWidget {
   }
 
   /// Name for a preset (null = cancelled), with suggestions.
-  static Future<String?> _askName(BuildContext context, String? current) =>
-      showDialog<String>(
-        context: context,
-        builder: (BuildContext ctx) => _NameDialog(current: current),
-      );
-}
-
-/// Owns its text controller: it must outlive the dialog's exit animation.
-class _NameDialog extends StatefulWidget {
-  const _NameDialog({required this.current});
-  final String? current;
-
-  @override
-  State<_NameDialog> createState() => _NameDialogState();
-}
-
-class _NameDialogState extends State<_NameDialog> {
-  late final TextEditingController _c = TextEditingController(
-    text: widget.current,
-  );
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  static Future<String?> _askName(BuildContext context, String? current) {
     final AppLocalizations l = AppLocalizations.of(context);
-    return AlertDialog(
-      title: Text(l.presetName),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            TextField(
-              controller: _c,
-              autofocus: true,
-              textCapitalization: TextCapitalization.words,
-              onSubmitted: (String v) => Navigator.pop(context, v.trim()),
-            ),
-            const SizedBox(height: Space.s),
-            Wrap(
-              spacing: Space.xs,
-              runSpacing: Space.xs,
-              children: <Widget>[
-                for (final String s in <String>[
-                  l.presetSuggestCozy,
-                  l.presetSuggestCinema,
-                  l.presetSuggestFocus,
-                  l.presetSuggestParty,
-                ])
-                  ActionChip(label: Text(s), onPressed: () => _c.text = s),
-              ],
-            ),
-          ],
-        ),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(l.cancel),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, _c.text.trim()),
-          child: Text(l.addSave),
-        ),
+    return showNameDialog(
+      context,
+      title: l.presetName,
+      current: current,
+      suggestions: <String>[
+        l.presetSuggestCozy,
+        l.presetSuggestCinema,
+        l.presetSuggestFocus,
+        l.presetSuggestParty,
       ],
     );
   }
