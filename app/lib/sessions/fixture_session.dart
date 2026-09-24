@@ -4,7 +4,7 @@ import 'package:meta/meta.dart';
 
 import '../core/ble/ble_link.dart';
 import '../core/model/fixture.dart';
-import '../core/model/rgbw.dart';
+import '../core/model/channel_color.dart';
 import '../core/protocol/eb/eb_scene.dart';
 import '../core/util/scheduler.dart';
 import '../drivers/electrobright/eb_session.dart';
@@ -109,6 +109,7 @@ final class FixtureSession {
       link: link,
       scheduler: _scheduler,
       options: options ?? const EbSessionOptions(),
+      expectedLayout: fixture.layout,
     );
     _session = s;
     setPhase(LinkPhase.handshaking);
@@ -212,12 +213,32 @@ final class FixtureSession {
     }
   }
 
-  void setColor(Rgbw c, {bool live = false}) => unawaited(
+  /// Result for a colour meant for another layout (e.g. an offline change
+  /// replayed after the light was reflashed as another fixture type).
+  static const EbResult wrongLayout = EbResult(
+    EbOutcome.failed,
+    code: 'LAYOUT_CHANGED',
+  );
+
+  void setColor(ChannelColor c, {bool live = false}) => unawaited(
     _intent(EbKeys.color, (EbSession s) {
+      if (c.layout != s.layout) return Future<EbResult>.value(wrongLayout);
       s.setColor(c, live: live);
       return Future<EbResult>.value(EbResult.ok);
     }),
   );
+
+  /// Colour and brightness in one frame (see [EbSession.setLook]).
+  void setLook({ChannelColor? color, int? brightness, bool live = false}) =>
+      unawaited(
+        _intent(EbKeys.color, (EbSession s) {
+          if (color != null && color.layout != s.layout) {
+            return Future<EbResult>.value(wrongLayout);
+          }
+          s.setLook(color: color, brightness: brightness, live: live);
+          return Future<EbResult>.value(EbResult.ok);
+        }),
+      );
 
   void setBrightness(int b, {bool live = false}) => unawaited(
     _intent(EbKeys.brightness, (EbSession s) {
@@ -239,8 +260,12 @@ final class FixtureSession {
       _intent(EbKeys.frequency(mode), (EbSession s) => s.setFrequency(mode, v));
   Future<EbResult> setColorMode(EbColorModeKind k, int v) =>
       _intent(EbKeys.colorMode(k), (EbSession s) => s.setColorMode(k, v));
-  Future<EbResult> setPoliceColor(EbPoliceSlot slot, Rgbw c) =>
-      _intent(EbKeys.police(slot), (EbSession s) => s.setPoliceColor(slot, c));
+  Future<EbResult> setPoliceColor(EbPoliceSlot slot, ChannelColor c) => _intent(
+    EbKeys.police(slot),
+    (EbSession s) => c.layout != s.layout
+        ? Future<EbResult>.value(wrongLayout)
+        : s.setPoliceColor(slot, c),
+  );
   Future<EbResult> setSound({required bool on}) =>
       _intent(EbKeys.sound, (EbSession s) => s.setSound(on: on));
 

@@ -1,6 +1,7 @@
 import 'package:electrobright/core/ble/ble_central.dart';
 import 'package:electrobright/core/model/fixture.dart';
-import 'package:electrobright/core/model/rgbw.dart';
+import 'package:electrobright/core/model/channel_color.dart';
+import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/util/scheduler.dart';
 import 'package:electrobright/sessions/connection_manager.dart';
 import 'package:electrobright/sessions/discovery.dart';
@@ -39,7 +40,7 @@ final class _World {
           id: 'f$i',
           deviceId: 'dev$i',
           name: 'Light $i',
-          kind: FixtureKind.rgbw,
+          layout: ChannelLayout.rgbw,
           driver: DriverKind.electroBright,
           addedAt: DateTime(2026),
         ),
@@ -110,7 +111,7 @@ void main() {
         isNotNull,
         reason: 'last state kept for the UI',
       );
-      w.s(0).setColor(const Rgbw(9, 8, 7, 6)); // made while reconnecting
+      w.s(0).setColor(ChannelColor.rgbw(9, 8, 7, 6)); // made while reconnecting
       unawaited(w.s(0).setMode(7));
       await w.run(const Duration(seconds: 3));
       w.central.setAvailable('dev0', available: true);
@@ -118,7 +119,7 @@ void main() {
       expect(w.s(0).status.phase, LinkPhase.ready);
       await w.run(const Duration(seconds: 1));
       final model = w.central.fixtures.first.model;
-      expect(model.scene.color, const Rgbw(9, 8, 7, 6));
+      expect(model.scene.color, ChannelColor.rgbw(9, 8, 7, 6));
       expect(model.scene.mode, 7);
       await w.dispose();
     },

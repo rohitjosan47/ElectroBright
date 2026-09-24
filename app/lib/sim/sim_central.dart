@@ -4,17 +4,22 @@ import 'dart:typed_data';
 import '../core/ble/ble_central.dart';
 import '../core/ble/ble_link.dart';
 import '../core/protocol/eb/eb_constants.dart';
+import '../core/protocol/eb/eb_fixture_catalog.dart';
 import '../core/util/scheduler.dart';
 import 'eb_device_model.dart';
 
 /// A simulated light for Demo mode and tests: the firmware twin plus radio
 /// behaviour (advertising, range, power).
 final class SimFixture {
+  /// A light running the [fixture] firmware (advertised under its BLE name
+  /// unless [name] overrides it).
   SimFixture.electroBright({
     required this.id,
-    this.name = 'ElectroBright_C3_V1',
+    EbFixtureSpec fixture = EbFixtureCatalog.rgbw,
+    String? name,
     this.rssi = -58,
-  }) : model = EbDeviceModel();
+  }) : name = name ?? fixture.bleName,
+       model = EbDeviceModel(fixture: fixture);
 
   final String id;
   final String name;

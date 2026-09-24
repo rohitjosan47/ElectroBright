@@ -30,8 +30,8 @@ void main() {
 
   test('the Dart firmware twin reports the firmware identity', () {
     expect(EbDeviceModel.firmwareVersion, c['kFirmwareVersion']);
-    expect(EbDeviceModel.modelId, c['kModelId']);
-    expect(EbDeviceModel.capsReply, c['kCapsReply']);
+    expect(EbDeviceModel().modelId, c['kModelId']);
+    expect(EbDeviceModel().capsReply, c['kCapsReply']);
   });
 
   test('typed commands accept exactly the firmware parser ranges', () {

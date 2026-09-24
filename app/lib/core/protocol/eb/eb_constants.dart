@@ -25,7 +25,9 @@ abstract final class Eb {
   static const int maxLevel = 10;
   static const int timerMaxSeconds = 86400;
   static const int maxLineLength = 96;
-  static const int statusFields = 23;
+
+  /// Every mode supported (CAPS carries no MODES key then).
+  static const int allModesMask = 0x1FFF;
   static const int protocolVersion = 1;
   static const int minFirmwareMajor = 3;
 

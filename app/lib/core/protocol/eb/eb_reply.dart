@@ -1,6 +1,7 @@
 import 'package:meta/meta.dart';
 
-import '../../model/rgbw.dart';
+import '../../model/channel_color.dart';
+import '../../model/channel_layout.dart';
 import 'eb_constants.dart';
 import 'eb_scene.dart';
 
@@ -32,6 +33,8 @@ final class EbError extends EbReply {
   static const String unknownCommand = 'UNKNOWN_CMD';
   static const String format = 'FORMAT';
   static const String modeInvalid = 'MODE_INVALID';
+  static const String modeSpeedInvalid = 'MODE_SPEED_INVALID';
+  static const String modeFrequencyInvalid = 'MODE_FREQUENCY_INVALID';
 
   @override
   String toString() =>
@@ -59,6 +62,18 @@ final class EbCaps extends EbReply {
   const EbCaps(this.fields);
   final Map<String, String> fields;
   int? get protocol => int.tryParse(fields['PROTOCOL'] ?? '');
+
+  /// `LAYOUT=` (absent on RGBW firmware 3.4.0).
+  String? get layout => fields['LAYOUT'];
+
+  /// `MODES=<hex mask>`; null when absent (all modes) or not strict hex.
+  int? get modesMask {
+    final String? v = fields['MODES'];
+    if (v == null || !RegExp(r'^[0-9A-F]{1,4}$').hasMatch(v)) return null;
+    return int.parse(v, radix: 16);
+  }
+
+  bool get hasModes => fields.containsKey('MODES');
   @override
   String toString() => 'CAPS:$fields';
 }
@@ -139,8 +154,10 @@ int? _uintIn(String s, int lo, int hi) {
   return v >= lo && v <= hi ? v : null;
 }
 
-/// Parses one reply line (without its terminator).
-EbReply parseEbReply(String line) {
+/// Parses one reply line (without its terminator). STATUS is decoded with
+/// [layout] (its colours have n values); without one, the layout is inferred
+/// from the field count (only for lines before the handshake identified it).
+EbReply parseEbReply(String line, {ChannelLayout? layout}) {
   if (line == 'OK') return const EbOk();
   final int colon = line.indexOf(':');
   if (colon <= 0) return EbMalformed(line, 'no prefix');
@@ -151,7 +168,7 @@ EbReply parseEbReply(String line) {
     'INFO' => body.isNotEmpty ? EbInfo(body) : EbMalformed(line, 'empty model'),
     'VERSION' => _versionReply(line, body),
     'CAPS' => _caps(line, body),
-    'STATUS' => _status(line, body),
+    'STATUS' => _status(line, body, layout),
     'MODE_SETTINGS' => _modeSettings(line, body),
     'PRESETS' => _presets(line, body),
     'CAPABILITIES' => _capabilities(line, body),
@@ -199,22 +216,32 @@ EbReply _caps(String line, String body) {
   return EbCaps(Map<String, String>.unmodifiable(fields));
 }
 
-EbReply _status(String line, String body) {
+EbReply _status(String line, String body, ChannelLayout? expected) {
   final List<String> f = body.split(',');
-  if (f.length != Eb.statusFields) return EbMalformed(line, 'field count');
-  final List<int> v = <int>[];
-  const List<(int, int)> ranges = <(int, int)>[
-    (0, 255), (0, 255), (0, 255), (0, 255), // colour
-    (0, 255), // brightness
+  final ChannelLayout? layout =
+      expected ?? ChannelLayout.fromStatusFieldCount(f.length);
+  if (layout == null || f.length != layout.statusFields) {
+    return EbMalformed(line, 'field count');
+  }
+  final int n = layout.n;
+  // colour (n), brightness, mode, speed, freq, 3 colour modes, sleeping,
+  // timerActive, timerRemaining, sound, police A (n), police B (n)
+  final List<(int, int)> ranges = <(int, int)>[
+    for (int i = 0; i < n; i++) (0, 255),
+    (0, 255),
     (1, Eb.numModes),
-    (Eb.minLevel, Eb.maxLevel), (Eb.minLevel, Eb.maxLevel),
-    (0, 1), (0, 1), (0, 1), // colour modes
-    (0, 1), (0, 1), // sleeping, timerActive
+    (Eb.minLevel, Eb.maxLevel),
+    (Eb.minLevel, Eb.maxLevel),
+    (0, 1),
+    (0, 1),
+    (0, 1),
+    (0, 1),
+    (0, 1),
     (0, Eb.timerMaxSeconds),
-    (0, 1), // sound
-    (0, 255), (0, 255), (0, 255), (0, 255), // police A
-    (0, 255), (0, 255), (0, 255), (0, 255), // police B
+    (0, 1),
+    for (int i = 0; i < 2 * n; i++) (0, 255),
   ];
+  final List<int> v = <int>[];
   for (int i = 0; i < f.length; i++) {
     final int? x = _uintIn(f[i], ranges[i].$1, ranges[i].$2);
     if (x == null) return EbMalformed(line, 'field $i');
@@ -222,20 +249,20 @@ EbReply _status(String line, String body) {
   }
   return EbStatusReply(
     EbStatus(
-      color: Rgbw(v[0], v[1], v[2], v[3]),
-      brightness: v[4],
-      mode: v[5],
-      speed: v[6],
-      frequency: v[7],
-      fireworkColorMode: v[8],
-      clubColorMode: v[9],
-      policeColorMode: v[10],
-      sleeping: v[11] == 1,
-      timerActive: v[12] == 1,
-      timerRemainingSec: v[13],
-      soundOn: v[14] == 1,
-      policeA: Rgbw(v[15], v[16], v[17], v[18]),
-      policeB: Rgbw(v[19], v[20], v[21], v[22]),
+      color: ChannelColor(layout, v.sublist(0, n)),
+      brightness: v[n],
+      mode: v[n + 1],
+      speed: v[n + 2],
+      frequency: v[n + 3],
+      fireworkColorMode: v[n + 4],
+      clubColorMode: v[n + 5],
+      policeColorMode: v[n + 6],
+      sleeping: v[n + 7] == 1,
+      timerActive: v[n + 8] == 1,
+      timerRemainingSec: v[n + 9],
+      soundOn: v[n + 10] == 1,
+      policeA: ChannelColor(layout, v.sublist(n + 11, 2 * n + 11)),
+      policeB: ChannelColor(layout, v.sublist(2 * n + 11, 3 * n + 11)),
     ),
   );
 }

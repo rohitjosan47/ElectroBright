@@ -1,6 +1,7 @@
 import 'dart:math';
 
-import 'package:electrobright/core/model/rgbw.dart';
+import 'package:electrobright/core/model/channel_color.dart';
+import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/protocol/eb/eb_command.dart';
 import 'package:electrobright/core/protocol/eb/eb_frame.dart';
 import 'package:electrobright/core/protocol/eb/eb_reply.dart';
@@ -18,7 +19,7 @@ void main() {
       );
       expect(r, isA<EbStatusReply>());
       final EbStatus s = (r as EbStatusReply).status;
-      expect(s.color, const Rgbw(1, 2, 3, 4));
+      expect(s.color, ChannelColor.rgbw(1, 2, 3, 4));
       expect(s.brightness, 77);
       expect(s.mode, 11);
       expect((s.speed, s.frequency), (8, 3));
@@ -26,8 +27,8 @@ void main() {
       expect(s.sleeping && s.timerActive, isTrue);
       expect(s.timerRemainingSec, 42);
       expect(s.soundOn, isFalse);
-      expect(s.policeA, const Rgbw(9, 8, 7, 6));
-      expect(s.policeB, const Rgbw(5, 4, 3, 2));
+      expect(s.policeA, ChannelColor.rgbw(9, 8, 7, 6));
+      expect(s.policeB, ChannelColor.rgbw(5, 4, 3, 2));
     });
 
     test('STATUS rejects wrong field counts and out-of-range values', () {
@@ -149,7 +150,7 @@ void main() {
 
   group('writes', () {
     test('binary frame matches the firmware encoder', () {
-      expect(EbFrame.encode(0x12, const Rgbw(1, 2, 3, 4), 5), <int>[
+      expect(EbFrame.encode(0x12, ChannelColor.rgbw(1, 2, 3, 4), 5), <int>[
         0xAA,
         0x12,
         1,
@@ -159,7 +160,10 @@ void main() {
         5,
         0x12 ^ 1 ^ 2 ^ 3 ^ 4 ^ 5 ^ 0x55,
       ]);
-      expect(EbFrame.encode(256 + 7, Rgbw.black, 0)[1], 7);
+      expect(
+        EbFrame.encode(256 + 7, ChannelColor.black(ChannelLayout.rgbw), 0)[1],
+        7,
+      );
     });
 
     test('commands are chunked to the MTU and never below 20 bytes', () {
@@ -183,11 +187,11 @@ void main() {
       expect(() => SetModeSpeed(3, 11), throwsRangeError);
       expect(SetModeFrequency(12, 1).wire, 'MODE_FREQUENCY:12,1');
       expect(
-        SetPoliceColor(EbPoliceSlot.b, const Rgbw(0, 0, 0, 255)).wire,
+        SetPoliceColor(EbPoliceSlot.b, ChannelColor.rgbw(0, 0, 0, 255)).wire,
         'POLICE_COLOR_B:0,0,0,255',
       );
       expect(
-        () => SetPoliceColor(EbPoliceSlot.a, const Rgbw(0, 0, 0, 256)),
+        () => SetPoliceColor(EbPoliceSlot.a, ChannelColor.rgbw(0, 0, 0, 256)),
         throwsArgumentError,
       );
       expect(SetColorMode(EbColorModeKind.club, 1).wire, 'CLUB_COLOR_MODE:1');
@@ -197,7 +201,7 @@ void main() {
       expect(const SetSound(on: true).wire, 'SOUND_ON');
       for (final EbCommand c in <EbCommand>[
         SetMode(1),
-        SetPoliceColor(EbPoliceSlot.a, const Rgbw(255, 255, 255, 255)),
+        SetPoliceColor(EbPoliceSlot.a, ChannelColor.rgbw(255, 255, 255, 255)),
         SetTimer(86400),
         const FactoryReset(),
       ]) {
@@ -251,7 +255,7 @@ void main() {
     test('PRESET_LOAD tells its STATUS from the timer push', () {
       EbStatusReply status({required bool sleeping}) => EbStatusReply(
         EbStatus(
-          color: Rgbw.black,
+          color: ChannelColor.black(ChannelLayout.rgbw),
           brightness: 0,
           mode: 1,
           speed: 5,
@@ -263,8 +267,8 @@ void main() {
           timerActive: false,
           timerRemainingSec: 0,
           soundOn: true,
-          policeA: Rgbw.black,
-          policeB: Rgbw.black,
+          policeA: ChannelColor.black(ChannelLayout.rgbw),
+          policeB: ChannelColor.black(ChannelLayout.rgbw),
         ),
       );
       expect(
@@ -296,10 +300,10 @@ void main() {
 
   group('scene', () {
     test('JSON round trip and strict decoding', () {
-      final EbScene s = EbScene.defaults()
+      final EbScene s = EbScene.defaults(ChannelLayout.rgbw)
           .withSpeed(6, 9)
           .withColorMode(EbColorModeKind.police, 0)
-          .withPolice(EbPoliceSlot.b, const Rgbw(1, 2, 3, 4));
+          .withPolice(EbPoliceSlot.b, ChannelColor.rgbw(1, 2, 3, 4));
       expect(EbScene.fromJson(s.toJson()), s);
       final Map<String, Object> bad = s.toJson()..['mode'] = 14;
       expect(EbScene.fromJson(bad), isNull);

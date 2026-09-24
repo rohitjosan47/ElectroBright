@@ -2,11 +2,11 @@ import 'dart:async';
 
 import '../../core/ble/ble_link.dart';
 import '../../core/ble/link_writer.dart';
-import '../../core/model/rgbw.dart';
+import '../../core/model/channel_color.dart';
 import '../../core/protocol/eb/eb_frame.dart';
 import '../../core/util/scheduler.dart';
 
-typedef StreamValue = ({Rgbw color, int brightness});
+typedef StreamValue = ({ChannelColor color, int brightness});
 
 /// Colour and master brightness as binary frames. The firmware keeps only the
 /// newest frame (a one-deep mailbox), so this lane is latest-wins: a frame is

@@ -10,7 +10,7 @@ library;
 import 'dart:io';
 import 'dart:math';
 
-import 'package:electrobright/core/model/rgbw.dart';
+import 'package:electrobright/core/model/channel_color.dart';
 import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/drivers/electrobright/eb_session.dart';
 import 'package:electrobright/drivers/electrobright/eb_types.dart';
@@ -147,8 +147,12 @@ Future<String> _act(
   int level() => 1 + r.nextInt(10);
   int mode() => 1 + r.nextInt(13);
   int slot() => r.nextInt(5);
-  Rgbw rgbw() =>
-      Rgbw(r.nextInt(256), r.nextInt(256), r.nextInt(256), r.nextInt(256));
+  ChannelColor rgbw() => ChannelColor.rgbw(
+    r.nextInt(256),
+    r.nextInt(256),
+    r.nextInt(256),
+    r.nextInt(256),
+  );
   void keep(Future<Object?> f) => results.add(f);
 
   final int pick = r.nextInt(100);
@@ -175,7 +179,7 @@ Future<String> _act(
     return 'brightness drag (ends $b)';
   }
   if (pick < 30) {
-    final Rgbw c = rgbw();
+    final ChannelColor c = rgbw();
     s.setColor(c);
     return 'colour tap $c';
   }

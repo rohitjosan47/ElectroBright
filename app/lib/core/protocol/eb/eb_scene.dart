@@ -1,8 +1,10 @@
 import 'package:collection/collection.dart';
 import 'package:meta/meta.dart';
 
-import '../../model/rgbw.dart';
+import '../../model/channel_color.dart';
+import '../../model/channel_layout.dart';
 import 'eb_constants.dart';
+import 'eb_fixture_catalog.dart';
 
 const ListEquality<int> _listEq = ListEquality<int>();
 
@@ -30,7 +32,7 @@ enum EbPoliceSlot {
 
 /// Everything a preset captures (firmware Scene): the light's look, including
 /// every mode's slider pair. Colour modes: 0 = picked colour / custom A-B,
-/// 1 = auto palette / red-blue.
+/// 1 = auto palette / red-blue. All three colours share the light's layout.
 @immutable
 final class EbScene {
   EbScene({
@@ -45,23 +47,31 @@ final class EbScene {
     required this.policeA,
     required this.policeB,
   }) : speeds = List<int>.unmodifiable(speeds),
-       frequencies = List<int>.unmodifiable(frequencies);
+       frequencies = List<int>.unmodifiable(frequencies) {
+    if (policeA.layout != color.layout || policeB.layout != color.layout) {
+      throw ArgumentError('scene colours of different layouts');
+    }
+  }
 
-  /// Firmware defaults (state::defaultScene).
-  factory EbScene.defaults() => EbScene(
-    color: const Rgbw(255, 255, 255, 0),
-    brightness: 255,
-    mode: 1,
-    speeds: List<int>.filled(Eb.numModes, 5),
-    frequencies: List<int>.filled(Eb.numModes, 5),
-    fireworkColorMode: 0,
-    clubColorMode: 0,
-    policeColorMode: 1,
-    policeA: const Rgbw(255, 165, 0, 0),
-    policeB: const Rgbw(0, 0, 0, 255),
-  );
+  /// Firmware defaults of the fixture with [layout] (state::defaultScene with
+  /// the fixture's SceneDefaults).
+  factory EbScene.defaults(ChannelLayout layout) {
+    final EbFixtureSpec spec = EbFixtureCatalog.forLayout(layout);
+    return EbScene(
+      color: spec.color,
+      brightness: 255,
+      mode: 1,
+      speeds: List<int>.filled(Eb.numModes, 5),
+      frequencies: List<int>.filled(Eb.numModes, 5),
+      fireworkColorMode: 0,
+      clubColorMode: 0,
+      policeColorMode: 1,
+      policeA: spec.policeA,
+      policeB: spec.policeB,
+    );
+  }
 
-  final Rgbw color;
+  final ChannelColor color;
   final int brightness;
   final int mode;
   final List<int> speeds;
@@ -69,8 +79,10 @@ final class EbScene {
   final int fireworkColorMode;
   final int clubColorMode;
   final int policeColorMode;
-  final Rgbw policeA;
-  final Rgbw policeB;
+  final ChannelColor policeA;
+  final ChannelColor policeB;
+
+  ChannelLayout get layout => color.layout;
 
   int get speed => speeds[mode - 1];
   int get frequency => frequencies[mode - 1];
@@ -81,10 +93,11 @@ final class EbScene {
     EbColorModeKind.police => policeColorMode,
   };
 
-  Rgbw police(EbPoliceSlot slot) => slot == EbPoliceSlot.a ? policeA : policeB;
+  ChannelColor police(EbPoliceSlot slot) =>
+      slot == EbPoliceSlot.a ? policeA : policeB;
 
   EbScene copyWith({
-    Rgbw? color,
+    ChannelColor? color,
     int? brightness,
     int? mode,
     List<int>? speeds,
@@ -92,8 +105,8 @@ final class EbScene {
     int? fireworkColorMode,
     int? clubColorMode,
     int? policeColorMode,
-    Rgbw? policeA,
-    Rgbw? policeB,
+    ChannelColor? policeA,
+    ChannelColor? policeB,
   }) => EbScene(
     color: color ?? this.color,
     brightness: brightness ?? this.brightness,
@@ -119,11 +132,12 @@ final class EbScene {
     EbColorModeKind.police => copyWith(policeColorMode: value),
   };
 
-  EbScene withPolice(EbPoliceSlot slot, Rgbw c) =>
+  EbScene withPolice(EbPoliceSlot slot, ChannelColor c) =>
       slot == EbPoliceSlot.a ? copyWith(policeA: c) : copyWith(policeB: c);
 
   Map<String, Object> toJson() => <String, Object>{
-    'color': color.toList(),
+    'layout': layout.wire,
+    'color': color.toJson(),
     'brightness': brightness,
     'mode': mode,
     'speeds': speeds,
@@ -131,27 +145,18 @@ final class EbScene {
     'fireworkColorMode': fireworkColorMode,
     'clubColorMode': clubColorMode,
     'policeColorMode': policeColorMode,
-    'policeA': policeA.toList(),
-    'policeB': policeB.toList(),
+    'policeA': policeA.toJson(),
+    'policeB': policeB.toJson(),
   };
 
   /// Strict: returns null when anything is missing or out of range.
   static EbScene? fromJson(Object? json) {
     if (json is! Map<String, Object?>) return null;
-    Rgbw? rgbw(Object? v) {
-      if (v is! List<Object?> ||
-          v.length != 4 ||
-          v.any((Object? e) => e is! int)) {
-        return null;
-      }
-      final Rgbw c = Rgbw(
-        v[0]! as int,
-        v[1]! as int,
-        v[2]! as int,
-        v[3]! as int,
-      );
-      return c.isValid ? c : null;
-    }
+    final ChannelLayout? layout = json['layout'] is String
+        ? ChannelLayout.fromWire(json['layout']! as String)
+        : null;
+    if (layout == null) return null;
+    ChannelColor? colour(Object? v) => ChannelColor.fromJson(layout, v);
 
     List<int>? levels(Object? v) {
       if (v is! List<Object?> || v.length != Eb.numModes) return null;
@@ -166,7 +171,7 @@ final class EbScene {
     int? inRange(Object? v, int lo, int hi) =>
         v is int && v >= lo && v <= hi ? v : null;
 
-    final Rgbw? color = rgbw(json['color']);
+    final ChannelColor? color = colour(json['color']);
     final int? brightness = inRange(json['brightness'], 0, 255);
     final int? mode = inRange(json['mode'], 1, Eb.numModes);
     final List<int>? speeds = levels(json['speeds']);
@@ -174,8 +179,8 @@ final class EbScene {
     final int? fw = inRange(json['fireworkColorMode'], 0, 1);
     final int? club = inRange(json['clubColorMode'], 0, 1);
     final int? police = inRange(json['policeColorMode'], 0, 1);
-    final Rgbw? a = rgbw(json['policeA']);
-    final Rgbw? b = rgbw(json['policeB']);
+    final ChannelColor? a = colour(json['policeA']);
+    final ChannelColor? b = colour(json['policeB']);
     if (color == null ||
         brightness == null ||
         mode == null ||
@@ -257,7 +262,7 @@ final class EbStatus {
     required this.policeB,
   });
 
-  final Rgbw color;
+  final ChannelColor color;
   final int brightness;
   final int mode;
   final int speed;
@@ -269,8 +274,8 @@ final class EbStatus {
   final bool timerActive;
   final int timerRemainingSec;
   final bool soundOn;
-  final Rgbw policeA;
-  final Rgbw policeB;
+  final ChannelColor policeA;
+  final ChannelColor policeB;
 
   /// [base] with every field STATUS carries (other modes' pairs unchanged).
   EbScene applyTo(EbScene base) => base

@@ -1,28 +1,30 @@
 import 'dart:typed_data';
 
-import '../../model/rgbw.dart';
+import '../../model/channel_color.dart';
 
 /// Binary colour fast path (firmware/core/ElectroBrightCore/src/protocol/BinaryFrame.h):
-/// `[0xAA, seq, R, G, B, W, Br, seq^R^G^B^W^Br^0x55]`. The firmware sends no
-/// reply; the frame sets colour and master brightness but never wakes a
-/// sleeping light. Each frame must be its own BLE write.
+/// `[0xAA, seq, c1..cn, Br, seq^c1^..^cn^Br^salt]`, one value per channel of
+/// the light's layout (n + 4 bytes; salt 0x55 for 4-channel layouts, 0x55^n
+/// otherwise, so a frame for one fixture never passes another's checksum).
+/// The firmware sends no reply; the frame sets colour and master brightness
+/// but never wakes a sleeping light. Each frame must be its own BLE write.
 abstract final class EbFrame {
   static const int magic = 0xAA;
-  static const int length = 8;
 
-  static Uint8List encode(int seq, Rgbw color, int brightness) {
-    assert(color.isValid, 'colour out of range: $color');
+  static Uint8List encode(int seq, ChannelColor color, int brightness) {
     assert(brightness >= 0 && brightness <= 255, 'brightness $brightness');
     final int s = seq & 0xFF;
-    return Uint8List.fromList(<int>[
-      magic,
-      s,
-      color.r,
-      color.g,
-      color.b,
-      color.w,
-      brightness,
-      s ^ color.r ^ color.g ^ color.b ^ color.w ^ brightness ^ 0x55,
-    ]);
+    final int n = color.layout.n;
+    final Uint8List out = Uint8List(color.layout.frameLength);
+    out[0] = magic;
+    out[1] = s;
+    int sum = color.layout.salt ^ s ^ brightness;
+    for (int i = 0; i < n; i++) {
+      out[2 + i] = color[i];
+      sum ^= color[i];
+    }
+    out[2 + n] = brightness;
+    out[3 + n] = sum & 0xFF;
+    return out;
   }
 }

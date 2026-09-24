@@ -3,7 +3,8 @@
 @Tags(<String>['fwsim'])
 library;
 
-import 'package:electrobright/core/model/rgbw.dart';
+import 'package:electrobright/core/model/channel_color.dart';
+import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/drivers/electrobright/eb_session.dart';
 import 'package:electrobright/drivers/electrobright/eb_types.dart';
@@ -24,7 +25,7 @@ void main() {
       expect(fw.version.version, '3.5.0');
       expect(fw.modeCount, 13);
       expect(h.session.phase, EbPhase.ready);
-      expect(h.view.scene, EbScene.defaults());
+      expect(h.view.scene, EbScene.defaults(ChannelLayout.rgbw));
       await h.expectConverged();
     });
 
@@ -42,7 +43,7 @@ void main() {
       final EbResult r = await h.run(
         h.session.setPoliceColor(
           EbPoliceSlot.a,
-          const Rgbw(255, 255, 255, 255),
+          ChannelColor.rgbw(255, 255, 255, 255),
         ),
       );
       expect(r.outcome, EbOutcome.ok);
@@ -56,12 +57,15 @@ void main() {
       h = await EbHarness.start();
       h.session.beginGesture(EbKeys.color);
       for (int i = 0; i < 40; i++) {
-        h.session.setColor(Rgbw(i * 6, 255 - i * 6, 10, 0), live: true);
+        h.session.setColor(
+          ChannelColor.rgbw(i * 6, 255 - i * 6, 10, 0),
+          live: true,
+        );
         await h.wait(const Duration(milliseconds: 7));
       }
       h.session.endGesture(EbKeys.color);
       await h.settle();
-      expect(h.view.scene.color, const Rgbw(234, 21, 10, 0));
+      expect(h.view.scene.color, ChannelColor.rgbw(234, 21, 10, 0));
       expect(h.link.writesWithoutResponse, greaterThan(5));
       expect(h.link.writesWithoutResponse, lessThan(40)); // paced, not 1:1
       await h.expectConverged();
@@ -73,7 +77,7 @@ void main() {
         h = await EbHarness.start();
         h.session.setBrightness(100);
         await h.settle();
-        h.session.setColor(const Rgbw(1, 2, 3, 4));
+        h.session.setColor(ChannelColor.rgbw(1, 2, 3, 4));
         await h.settle();
         final Map<String, Object?> dev = await h.link.deviceState();
         expect((dev['scene']! as Map<String, Object?>)['brightness'], 100);
@@ -135,7 +139,10 @@ void main() {
       );
       await h.run(h.session.setColorMode(EbColorModeKind.club, 1));
       await h.run(
-        h.session.setPoliceColor(EbPoliceSlot.b, const Rgbw(0, 0, 40, 255)),
+        h.session.setPoliceColor(
+          EbPoliceSlot.b,
+          ChannelColor.rgbw(0, 0, 40, 255),
+        ),
       );
       await h.settle();
       expect(h.view.scene.mode, 6);
@@ -182,17 +189,17 @@ void main() {
         await h.run(h.session.setMode(8));
         await h.run(h.session.setSpeed(3, 2));
         h.session.beginGesture(EbKeys.color);
-        h.session.setColor(const Rgbw(10, 20, 30, 40), live: true);
-        h.session.setColor(const Rgbw(11, 21, 31, 41), live: true);
+        h.session.setColor(ChannelColor.rgbw(10, 20, 30, 40), live: true);
+        h.session.setColor(ChannelColor.rgbw(11, 21, 31, 41), live: true);
         h.session.endGesture(EbKeys.color);
         final EbPresetResult saved = await h.run(h.session.presetSave(4));
         expect(saved.result.outcome, EbOutcome.ok);
-        expect(saved.scene!.color, const Rgbw(11, 21, 31, 41));
+        expect(saved.scene!.color, ChannelColor.rgbw(11, 21, 31, 41));
         expect(saved.scene!.speeds[2], 2);
 
         await h.run(h.session.setMode(1));
         await h.run(h.session.setSpeed(3, 7));
-        h.session.setColor(const Rgbw(255, 0, 0, 0));
+        h.session.setColor(ChannelColor.rgbw(255, 0, 0, 0));
         await h.run(h.session.setPower(on: false));
         await h.settle();
 
@@ -294,7 +301,7 @@ void main() {
       await h.run(h.session.setSound(on: false));
       expect((await h.run(h.session.factoryReset())).outcome, EbOutcome.ok);
       await h.settle();
-      expect(h.view.scene, EbScene.defaults());
+      expect(h.view.scene, EbScene.defaults(ChannelLayout.rgbw));
       expect(h.view.presets, isEmpty);
       expect(h.view.soundOn, isTrue);
       await h.expectConverged();

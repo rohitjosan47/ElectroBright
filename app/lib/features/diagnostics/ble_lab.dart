@@ -7,7 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../bootstrap/service_registry.dart';
 import '../../core/model/fixture.dart';
-import '../../core/model/rgbw.dart';
+import '../../core/model/channel_color.dart';
+import '../../core/model/channel_layout.dart';
+import '../../core/model/light_capabilities.dart';
+import '../../core/protocol/eb/eb_fixture_catalog.dart';
 import '../../design/platform/platform_bridge.dart';
 import '../../drivers/electrobright/eb_session.dart';
 import '../../drivers/electrobright/eb_types.dart';
@@ -95,7 +98,8 @@ class _BleLabScreenState extends ConsumerState<BleLabScreen> {
       id: 'lab-${d.id}',
       deviceId: d.id,
       name: d.name,
-      kind: FixtureKind.rgbw,
+      // A hint from the advertised name; the handshake confirms it.
+      layout: EbFixtureCatalog.layoutFromBleName(d.name) ?? ChannelLayout.rgbw,
       driver: DriverKind.electroBright,
       addedAt: DateTime.now(),
     );
@@ -118,6 +122,16 @@ class _BleLabScreenState extends ConsumerState<BleLabScreen> {
     _say('${ready.phase.name} in ${sw.elapsedMilliseconds} ms');
   }
 
+  /// The next mode this light supports (e.g. W skips Rainbow).
+  int _nextMode(EbView v) {
+    final LightCapabilities caps =
+        v.firmware?.capabilities ??
+        LightCapabilities.assumed(_eb?.layout ?? ChannelLayout.rgbw);
+    final List<int> modes = caps.modes;
+    final int at = modes.indexOf(v.state.scene.mode);
+    return modes[(at + 1) % modes.length];
+  }
+
   EbSession? get _eb => _session?.session;
 
   Future<void> _run(String name, Future<void> Function() body) async {
@@ -137,15 +151,14 @@ class _BleLabScreenState extends ConsumerState<BleLabScreen> {
     final EbSession s = _eb!;
     final Map<String, int>? before = await s.diag();
     s.beginGesture(EbKeys.color);
-    Rgbw last = Rgbw.black;
+    final ChannelLayout layout = s.layout;
+    ChannelColor last = ChannelColor.black(layout);
     for (int i = 0; i < 400; i++) {
       final double h = i / 400 * 2 * pi;
-      last = Rgbw(
-        (127 + 127 * sin(h)).round(),
-        (127 + 127 * sin(h + 2.1)).round(),
-        (127 + 127 * sin(h + 4.2)).round(),
-        0,
-      );
+      last = ChannelColor(layout, <int>[
+        for (int c = 0; c < layout.n; c++)
+          (127 + 127 * sin(h + c * 2.1)).round(),
+      ]);
       s.setColor(last, live: true);
       await Future<void>.delayed(const Duration(milliseconds: 25));
     }
@@ -310,8 +323,7 @@ class _BleLabScreenState extends ConsumerState<BleLabScreen> {
                     child: Text(v.state.sleeping ? 'Power on' : 'Power off'),
                   ),
                   OutlinedButton(
-                    onPressed: () =>
-                        _session!.setMode(v.state.scene.mode % 13 + 1),
+                    onPressed: () => _session!.setMode(_nextMode(v)),
                     child: const Text('Next mode'),
                   ),
                 ],

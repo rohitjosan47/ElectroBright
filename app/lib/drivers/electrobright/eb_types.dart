@@ -1,9 +1,14 @@
 import 'package:collection/collection.dart';
 import 'package:meta/meta.dart';
 
+import '../../core/model/channel_layout.dart';
+import '../../core/model/light_capabilities.dart';
 import '../../core/protocol/eb/eb_command.dart';
+import '../../core/protocol/eb/eb_identity.dart';
 import '../../core/protocol/eb/eb_reply.dart';
 import '../../core/protocol/eb/eb_scene.dart';
+
+export '../../core/protocol/eb/eb_identity.dart' show EbIncompatibility;
 
 const SetEquality<int> _setEq = SetEquality<int>();
 
@@ -76,11 +81,17 @@ final class EbFirmware {
     required this.version,
     required this.caps,
     required this.modeCount,
+    required this.capabilities,
   });
   final String model;
   final EbVersion version;
   final EbCaps caps;
   final int modeCount;
+
+  /// What the light can do; every screen adapts to this.
+  final LightCapabilities capabilities;
+
+  ChannelLayout get layout => capabilities.layout;
 }
 
 enum EbPhase { connecting, handshaking, ready, resyncing, closed }
@@ -206,15 +217,16 @@ final class EbUnresponsive extends EbEvent {
   const EbUnresponsive();
 }
 
-/// The light runs firmware this app cannot drive (pre-3.x or another model).
+/// The light runs firmware this app cannot drive.
 final class EbIncompatible implements Exception {
-  const EbIncompatible(this.reason, {this.legacy = false});
+  const EbIncompatible(this.kind, this.reason);
+  final EbIncompatibility kind;
   final String reason;
 
   /// True for the original ElectroBright firmware: show "update firmware".
-  final bool legacy;
+  bool get legacy => kind == EbIncompatibility.legacyFirmware;
   @override
-  String toString() => 'EbIncompatible($reason, legacy: $legacy)';
+  String toString() => 'EbIncompatible(${kind.name}: $reason)';
 }
 
 /// The light never answered the handshake.

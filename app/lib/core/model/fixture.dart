@@ -1,18 +1,6 @@
 import 'package:meta/meta.dart';
 
-/// Channel layout of a light.
-enum FixtureKind {
-  /// Single white channel (dimmer).
-  white,
-
-  /// Tunable white: cool + warm white.
-  cct,
-  rgb,
-  rgbw,
-
-  /// RGB + cool white + warm white.
-  rgbcct,
-}
+import 'channel_layout.dart';
 
 /// How the app talks to a light.
 enum DriverKind {
@@ -30,7 +18,7 @@ final class Fixture {
     required this.id,
     required this.deviceId,
     required this.name,
-    required this.kind,
+    required this.layout,
     required this.driver,
     required this.addedAt,
     this.profileId,
@@ -47,7 +35,9 @@ final class Fixture {
   /// Platform peripheral id (iOS UUID / Android MAC); changes on a new phone.
   final String deviceId;
   final String name;
-  final FixtureKind kind;
+
+  /// The light's channel layout (confirmed by its firmware on every connect).
+  final ChannelLayout layout;
   final DriverKind driver;
   final String? profileId;
 
@@ -66,7 +56,7 @@ final class Fixture {
   Fixture copyWith({
     String? deviceId,
     String? name,
-    FixtureKind? kind,
+    ChannelLayout? layout,
     DriverKind? driver,
     Object? profileId = _keep,
     Object? model = _keep,
@@ -78,7 +68,7 @@ final class Fixture {
     id: id,
     deviceId: deviceId ?? this.deviceId,
     name: name ?? this.name,
-    kind: kind ?? this.kind,
+    layout: layout ?? this.layout,
     driver: driver ?? this.driver,
     addedAt: addedAt,
     profileId: identical(profileId, _keep)
@@ -97,7 +87,7 @@ final class Fixture {
     'id': id,
     'deviceId': deviceId,
     'name': name,
-    'kind': kind.name,
+    'layout': layout.wire,
     'driver': driver.name,
     'profileId': profileId,
     'model': model,
@@ -114,9 +104,9 @@ final class Fixture {
     final Object? id = json['id'];
     final Object? deviceId = json['deviceId'];
     final Object? name = json['name'];
-    final FixtureKind? kind = FixtureKind.values
-        .where((FixtureKind k) => k.name == json['kind'])
-        .firstOrNull;
+    final ChannelLayout? layout = json['layout'] is String
+        ? ChannelLayout.fromWire(json['layout']! as String)
+        : null;
     final DriverKind? driver = DriverKind.values
         .where((DriverKind d) => d.name == json['driver'])
         .firstOrNull;
@@ -126,7 +116,7 @@ final class Fixture {
         deviceId is! String ||
         deviceId.isEmpty ||
         name is! String ||
-        kind == null ||
+        layout == null ||
         driver == null ||
         addedAt == null) {
       return null;
@@ -136,7 +126,7 @@ final class Fixture {
       id: id,
       deviceId: deviceId,
       name: name,
-      kind: kind,
+      layout: layout,
       driver: driver,
       addedAt: addedAt,
       profileId: json['profileId'] as String?,
@@ -156,7 +146,7 @@ final class Fixture {
       other.id == id &&
       other.deviceId == deviceId &&
       other.name == name &&
-      other.kind == kind &&
+      other.layout == layout &&
       other.driver == driver &&
       other.profileId == profileId &&
       other.model == model &&
@@ -171,7 +161,7 @@ final class Fixture {
     id,
     deviceId,
     name,
-    kind,
+    layout,
     driver,
     profileId,
     model,
@@ -183,5 +173,5 @@ final class Fixture {
   );
 
   @override
-  String toString() => 'Fixture($name, ${kind.name}, $deviceId)';
+  String toString() => 'Fixture($name, ${layout.wire}, $deviceId)';
 }

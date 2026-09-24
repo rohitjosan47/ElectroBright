@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:electrobright/core/model/rgbw.dart';
+import 'package:electrobright/core/model/channel_color.dart';
 import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/core/util/scheduler.dart';
 import 'package:electrobright/drivers/electrobright/eb_session.dart';
@@ -171,8 +171,8 @@ final class EbHarness {
     await sim.close();
   }
 
-  static Rgbw _rgbw(Object? v) {
+  static ChannelColor _rgbw(Object? v) {
     final List<int> c = (v! as List<Object?>).cast<int>();
-    return Rgbw(c[0], c[1], c[2], c[3]);
+    return ChannelColor.rgbw(c[0], c[1], c[2], c[3]);
   }
 }

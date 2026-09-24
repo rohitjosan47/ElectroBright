@@ -1,6 +1,6 @@
 import 'package:meta/meta.dart';
 
-import '../../model/rgbw.dart';
+import '../../model/channel_color.dart';
 import 'eb_constants.dart';
 import 'eb_scene.dart';
 
@@ -65,10 +65,6 @@ sealed class EbCommand {
 
 void _range(int v, int lo, int hi, String name) {
   if (v < lo || v > hi) throw RangeError.range(v, lo, hi, name);
-}
-
-void _rgbw(Rgbw c) {
-  if (!c.isValid) throw ArgumentError.value(c, 'color', 'channels are 0..255');
 }
 
 // ---- Queries (typed replies) ----------------------------------------------------
@@ -207,14 +203,12 @@ final class SetColorMode extends EbCommand {
 }
 
 final class SetPoliceColor extends EbCommand {
-  SetPoliceColor(this.slot, this.color) {
-    _rgbw(color);
-  }
+  /// One value per channel of the light's layout (validated by ChannelColor).
+  const SetPoliceColor(this.slot, this.color);
   final EbPoliceSlot slot;
-  final Rgbw color;
+  final ChannelColor color;
   @override
-  String get wire =>
-      '${slot.command}:${color.r},${color.g},${color.b},${color.w}';
+  String get wire => '${slot.command}:${color.values.join(',')}';
   @override
   EbExpect get expect => EbExpect.ok;
   @override

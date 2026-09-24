@@ -3,9 +3,12 @@ import 'dart:typed_data';
 
 import '../../core/ble/ble_link.dart';
 import '../../core/ble/link_writer.dart';
-import '../../core/model/rgbw.dart';
+import '../../core/model/channel_color.dart';
+import '../../core/model/channel_layout.dart';
+import '../../core/model/light_capabilities.dart';
 import '../../core/protocol/eb/eb_command.dart';
 import '../../core/protocol/eb/eb_constants.dart';
+import '../../core/protocol/eb/eb_identity.dart';
 import '../../core/protocol/eb/eb_reply.dart';
 import '../../core/protocol/eb/eb_scene.dart';
 import '../../core/protocol/eb/line_reassembler.dart';
@@ -62,12 +65,19 @@ final class EbPresetResult {
 /// divergence (a write the light lost) is repaired by re-sending the app's
 /// value and counted in diagnostics.
 final class EbSession {
+  /// [expectedLayout]: what the light is believed to be (saved from an earlier
+  /// connection, or guessed from its name). The handshake replaces it with
+  /// what the firmware reports before anything is sent.
   EbSession({
     required BleLink link,
     required Scheduler scheduler,
     this.options = const EbSessionOptions(),
+    ChannelLayout expectedLayout = ChannelLayout.rgbw,
   }) : _link = link,
-       _scheduler = scheduler {
+       _scheduler = scheduler,
+       _layout = expectedLayout {
+    _shadow = _defaultState(expectedLayout);
+    _desired = _shadow;
     _writer = LinkWriter(link);
     _stream = StreamLane(
       writer: _writer,
@@ -101,8 +111,12 @@ final class EbSession {
 
   EbPhase _phase = EbPhase.connecting;
   EbFirmware? _firmware;
-  EbDeviceState _shadow = _defaultState();
-  EbDeviceState _desired = _defaultState();
+  ChannelLayout _layout;
+  late EbDeviceState _shadow;
+  late EbDeviceState _desired;
+
+  /// Set when a STATUS line of the wrong shape arrived during the handshake.
+  bool _statusShapeMismatch = false;
 
   /// Key -> sequence number of the newest unconfirmed change to it.
   final Map<String, int> _latest = <String, int>{};
@@ -136,6 +150,13 @@ final class EbSession {
 
   EbPhase get phase => _phase;
   EbFirmware? get firmware => _firmware;
+
+  /// The light's layout (the expected one until the handshake identified it).
+  ChannelLayout get layout => _layout;
+
+  /// What the light can do (assumed from the layout until the handshake).
+  LightCapabilities get capabilities =>
+      _firmware?.capabilities ?? LightCapabilities.assumed(_layout);
   EbView get view => EbView(
     phase: _phase,
     state: _desired,
@@ -155,8 +176,8 @@ final class EbSession {
   bool get isIdle =>
       _commands.isIdle && _stream.isIdle && !_writer.isBusy && !_resyncQueued;
 
-  static EbDeviceState _defaultState() => EbDeviceState(
-    scene: EbScene.defaults(),
+  static EbDeviceState _defaultState(ChannelLayout layout) => EbDeviceState(
+    scene: EbScene.defaults(layout),
     sleeping: false,
     soundOn: true,
     presets: const <int>{},
@@ -183,13 +204,16 @@ final class EbSession {
     _throwIfClosed(info);
     if (!info.isSuccess) throw const EbNoResponse();
     final String model = (info.reply! as EbInfo).model;
-    if (model == Eb.legacyInfo) {
-      throw const EbIncompatible('original firmware', legacy: true);
+    // The model id names the layout, so the pipelined STATUS below is parsed
+    // with the right shape (CAPS only confirms it).
+    try {
+      _layout = EbIdentity.layoutFromModel(model);
+    } on EbIdentityError catch (e) {
+      throw EbIncompatible(e.kind, e.reason);
     }
-    final RegExpMatch? m = Eb.modelPattern.firstMatch(model);
-    if (m == null || m.group(1) != 'RGBW') {
-      throw EbIncompatible('unsupported model $model');
-    }
+    _shadow = _defaultState(_layout);
+    _desired = _shadow;
+    _changed();
 
     final List<EbResult> r = await Future.wait(<Future<EbResult>>[
       for (final EbQuery q in const <EbQuery>[
@@ -203,24 +227,36 @@ final class EbSession {
     ]);
     for (final EbResult x in r) {
       _throwIfClosed(x);
-      if (!x.isSuccess) throw const EbNoResponse();
+      if (!x.isSuccess) {
+        if (_statusShapeMismatch) {
+          throw EbIncompatible(
+            EbIncompatibility.statusShape,
+            'STATUS does not match layout ${_layout.wire}',
+          );
+        }
+        throw const EbNoResponse();
+      }
     }
     final EbVersion version = r[0].reply! as EbVersion;
     final EbCaps caps = r[1].reply! as EbCaps;
     final EbStatus status = (r[2].reply! as EbStatusReply).status;
     final EbModeSettings levels = r[3].reply! as EbModeSettings;
     final EbPresets presets = r[4].reply! as EbPresets;
-    if (version.major < Eb.minFirmwareMajor ||
-        caps.protocol != Eb.protocolVersion) {
-      throw EbIncompatible('firmware ${version.version}', legacy: true);
-    }
-    if (levels.levels.length != Eb.numModes) {
-      throw EbIncompatible('${levels.levels.length} modes');
+    final LightCapabilities capabilities;
+    try {
+      capabilities = EbIdentity.capabilities(
+        fromModel: _layout,
+        version: version,
+        caps: caps,
+        modeSettingsPairs: levels.levels.length,
+      );
+    } on EbIdentityError catch (e) {
+      throw EbIncompatible(e.kind, e.reason);
     }
 
     // Sync point: the light is authoritative for everything.
     _shadow = EbDeviceState(
-      scene: status.applyTo(_withLevels(EbScene.defaults(), levels)),
+      scene: status.applyTo(_withLevels(EbScene.defaults(_layout), levels)),
       sleeping: status.sleeping,
       soundOn: status.soundOn,
       presets: presets.slots,
@@ -237,6 +273,7 @@ final class EbSession {
       version: version,
       caps: caps,
       modeCount: levels.levels.length,
+      capabilities: capabilities,
     );
     _phase = EbPhase.ready;
     _armTimerWatch();
@@ -310,7 +347,9 @@ final class EbSession {
   }
 
   /// Sets the base colour; [live] while dragging (unreliable, paced frames).
-  void setColor(Rgbw color, {bool live = false}) {
+  /// [color] must have the light's layout.
+  void setColor(ChannelColor color, {bool live = false}) {
+    _checkLayout(color);
     if (_phase != EbPhase.ready && _phase != EbPhase.resyncing) return;
     if (!live && _desired.sleeping) unawaited(setPower(on: true));
     _desired = _desired.copyWith(scene: _desired.scene.copyWith(color: color));
@@ -318,6 +357,42 @@ final class EbSession {
     _stream.submit(terminal: !live);
     _changed();
   }
+
+  /// Colour and brightness in one frame (one gesture): used where both must
+  /// change together without a visible step, e.g. "use full range" on a
+  /// single-white light, identify and the channel test.
+  void setLook({ChannelColor? color, int? brightness, bool live = false}) {
+    if (color != null) _checkLayout(color);
+    if (_phase != EbPhase.ready && _phase != EbPhase.resyncing) return;
+    final int br = brightness ?? _desired.scene.brightness;
+    if (br > 0) _lastLitBrightness = br;
+    if (!live && br > 0 && _desired.sleeping) unawaited(setPower(on: true));
+    _desired = _desired.copyWith(
+      scene: _desired.scene.copyWith(color: color, brightness: br),
+    );
+    if (color != null) _latest[EbKeys.color] = ++_seq;
+    if (brightness != null) _latest[EbKeys.brightness] = ++_seq;
+    if (!live && br == 0) {
+      _offAtZero();
+    } else {
+      _stream.submit(terminal: !live);
+    }
+    _changed();
+  }
+
+  void _checkLayout(ChannelColor color) {
+    if (color.layout != _layout) {
+      throw ArgumentError(
+        'colour for ${color.layout.wire} on a ${_layout.wire} light',
+      );
+    }
+  }
+
+  /// Result for a mode this light cannot show (nothing is sent).
+  static const EbResult unsupportedMode = EbResult(
+    EbOutcome.failed,
+    code: 'MODE_UNSUPPORTED',
+  );
 
   /// Sets master brightness (0..255). Released at 0 it turns the light off.
   void setBrightness(int brightness, {bool live = false}) {
@@ -353,6 +428,9 @@ final class EbSession {
   }
 
   Future<EbResult> setMode(int mode) {
+    if (!capabilities.supportsMode(mode)) {
+      return Future<EbResult>.value(unsupportedMode);
+    }
     if (_desired.scene.mode == mode) {
       return _desired.sleeping ? setPower(on: true) : _skipped;
     }
@@ -365,12 +443,18 @@ final class EbSession {
   }
 
   Future<EbResult> setSpeed(int mode, int value) {
+    if (!capabilities.supportsMode(mode)) {
+      return Future<EbResult>.value(unsupportedMode);
+    }
     if (_desired.scene.speeds[mode - 1] == value) return _skipped;
     _desired = _desired.copyWith(scene: _desired.scene.withSpeed(mode, value));
     return _send(SetModeSpeed(mode, value), <String>[EbKeys.speed(mode)]);
   }
 
   Future<EbResult> setFrequency(int mode, int value) {
+    if (!capabilities.supportsMode(mode)) {
+      return Future<EbResult>.value(unsupportedMode);
+    }
     if (_desired.scene.frequencies[mode - 1] == value) return _skipped;
     _desired = _desired.copyWith(
       scene: _desired.scene.withFrequency(mode, value),
@@ -388,7 +472,9 @@ final class EbSession {
     return _send(SetColorMode(kind, value), <String>[EbKeys.colorMode(kind)]);
   }
 
-  Future<EbResult> setPoliceColor(EbPoliceSlot slot, Rgbw color) {
+  /// One police beacon colour (the light's layout; e.g. a level on W).
+  Future<EbResult> setPoliceColor(EbPoliceSlot slot, ChannelColor color) {
+    _checkLayout(color);
     if (_desired.scene.police(slot) == color) return _skipped;
     _desired = _desired.copyWith(scene: _desired.scene.withPolice(slot, color));
     return _send(SetPoliceColor(slot, color), <String>[EbKeys.police(slot)]);
@@ -546,7 +632,7 @@ final class EbSession {
       _shadow.scene.frequencies[mode - 1] == value,
     SetColorMode(:final EbColorModeKind kind, :final int value) =>
       _shadow.scene.colorMode(kind) == value,
-    SetPoliceColor(:final EbPoliceSlot slot, :final Rgbw color) =>
+    SetPoliceColor(:final EbPoliceSlot slot, :final ChannelColor color) =>
       _shadow.scene.police(slot) == color,
     SetSound(:final bool on) => _shadow.soundOn == on,
     SetPower(:final bool on) =>
@@ -614,7 +700,7 @@ final class EbSession {
         _shadow = _shadow.copyWith(scene: s.withFrequency(mode, value));
       case SetColorMode(:final EbColorModeKind kind, :final int value):
         _shadow = _shadow.copyWith(scene: s.withColorMode(kind, value));
-      case SetPoliceColor(:final EbPoliceSlot slot, :final Rgbw color):
+      case SetPoliceColor(:final EbPoliceSlot slot, :final ChannelColor color):
         _shadow = _shadow.copyWith(scene: s.withPolice(slot, color));
       case SetPower(:final bool on):
         _shadow = _shadow.copyWith(
@@ -656,7 +742,7 @@ final class EbSession {
           atHead: true,
         );
       case FactoryReset():
-        _shadow = _defaultState();
+        _shadow = _defaultState(_layout);
         _adoptSyncPoint(seq);
         _presetScenes.clear();
       case ModeSettingsQuery():
@@ -724,9 +810,12 @@ final class EbSession {
 
   void _onBytes(Uint8List bytes) {
     for (final String line in _lines.add(bytes)) {
-      final EbReply reply = parseEbReply(line);
+      final EbReply reply = parseEbReply(line, layout: _layout);
       if (reply is EbMalformed) {
         malformedLines++;
+        if (_phase == EbPhase.handshaking && line.startsWith('STATUS:')) {
+          _statusShapeMismatch = true;
+        }
         continue;
       }
       if (!_commands.onReply(reply)) _onUnsolicited(reply);

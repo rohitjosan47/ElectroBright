@@ -1,9 +1,12 @@
 import 'dart:typed_data';
 
-import '../core/model/rgbw.dart';
+import '../core/model/channel_color.dart';
+import '../core/model/channel_layout.dart';
+import '../core/protocol/eb/eb_fixture_catalog.dart';
 import '../core/protocol/eb/eb_scene.dart';
 
-/// Dart twin of the ElectroBright firmware (v3.5.0, RGBW fixture): the command parser,
+/// Dart twin of the ElectroBright firmware (v3.5.0, every fixture of the
+/// family via [EbFixtureSpec]): the command parser,
 /// controller, persistence policy, reply buffer and the BLE/control-task glue,
 /// ported line for line from firmware/core/ElectroBrightCore/src and
 /// firmware/test/fwsim/SimDevice.cpp.
@@ -15,18 +18,21 @@ import '../core/protocol/eb/eb_scene.dart';
 ///
 /// Time is virtual: nothing happens between calls (see [pass], [advance]).
 final class EbDeviceModel {
-  EbDeviceModel() {
+  /// Simulates [fixture] (`firmware/fixtures/<folder>/Fixture.h`).
+  EbDeviceModel({this.fixture = EbFixtureCatalog.rgbw}) {
     _rig = _Rig(this);
     boot();
   }
+
+  final EbFixtureSpec fixture;
+  ChannelLayout get layout => fixture.layout;
 
   /// Makes flash writes fail (like fwsim `KVFAIL`), for fault tests.
   set flashWritesFail(bool fail) => _flash.failWrites = fail;
 
   static const String firmwareVersion = '3.5.0';
-  static const String modelId = 'EB-C3-RGBW-V1';
-  static const String capsReply =
-      'CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,LAYOUT=RGBW';
+  String get modelId => fixture.modelId;
+  String get capsReply => fixture.capsReply;
 
   // cfg (Config.h)
   static const int _numModes = 13;
@@ -101,7 +107,7 @@ final class EbDeviceModel {
   void write(List<int> data) {
     if (data.isEmpty) return;
     if (_isFrameCandidate(data)) {
-      final _ColorFrame? frame = _decodeFrame(data);
+      final _ColorFrame? frame = _decodeFrame(data, fixture);
       if (frame != null) {
         _mailbox = frame;
         _rig.stats.binaryOk++;
@@ -227,7 +233,7 @@ final class EbDeviceModel {
     final _Stats st = _rig.stats;
     return <String, Object>{
       'scene': <String, Object>{
-        'color': s.color.toList(),
+        'color': s.color.values,
         'brightness': s.brightness,
         'mode': s.mode,
         'speed': s.speeds,
@@ -235,8 +241,8 @@ final class EbDeviceModel {
         'fireworkColorMode': s.fireworkColorMode,
         'clubColorMode': s.clubColorMode,
         'policeColorMode': s.policeColorMode,
-        'policeA': s.policeA.toList(),
-        'policeB': s.policeB.toList(),
+        'policeA': s.policeA.values,
+        'policeB': s.policeB.values,
       },
       'sleeping': _rig.core.sleeping ? 1 : 0,
       'timer': <String, Object>{
@@ -306,13 +312,17 @@ final class _Params {
 /// Everything a reboot recreates (flash lives in [EbDeviceModel.flash]).
 final class _Rig {
   _Rig(this.device) {
-    store = _StateStore(device._flash, stats);
+    store = _StateStore(device._flash, stats, device.layout);
     core = _Controller(this);
   }
   final EbDeviceModel device;
   final _Stats stats = _Stats();
   final List<String> sounds = <String>[];
-  _Params params = _Params(EbScene.defaults(), sleeping: false, fadeMs: 400);
+  late _Params params = _Params(
+    EbScene.defaults(device.layout),
+    sleeping: false,
+    fadeMs: 400,
+  );
   late final _StateStore store;
   late final _Controller core;
 
@@ -324,29 +334,39 @@ final class _Rig {
 // ---- BinaryFrame.cpp -------------------------------------------------------------------
 final class _ColorFrame {
   const _ColorFrame(this.color, this.brightness, this.seq);
-  final Rgbw color;
+  final ChannelColor color;
   final int? brightness;
   final int? seq;
 }
 
+// Every frame length in the family (binframe::kMinFrame .. kMaxFrame).
 bool _isFrameCandidate(List<int> d) =>
-    d.length >= 6 && d.length <= 8 && d[0] == 0xAA;
+    d.length >= 5 && d.length <= 9 && d[0] == 0xAA;
 
-_ColorFrame? _decodeFrame(List<int> d) {
+_ColorFrame? _decodeFrame(List<int> d, EbFixtureSpec fixture) {
   if (!_isFrameCandidate(d)) return null;
-  if (d.length == 8) {
-    final int sum = d[1] ^ d[2] ^ d[3] ^ d[4] ^ d[5] ^ d[6] ^ 0x55;
-    if (sum != d[7]) return null;
-    return _ColorFrame(Rgbw(d[2], d[3], d[4], d[5]), d[6], d[1]);
+  final ChannelLayout l = fixture.layout;
+  final int n = l.frameLength;
+  if (d.length == n) {
+    int sum = l.salt;
+    for (int i = 1; i + 1 < n; i++) {
+      sum ^= d[i];
+    }
+    if (sum != d[n - 1]) return null;
+    return _ColorFrame(ChannelColor(l, d.sublist(2, 2 + l.n)), d[n - 2], d[1]);
   }
+  if (!fixture.legacyFrames || l.n != 4) return null;
   if (d.length == 7) {
     final int sum = d[1] ^ d[2] ^ d[3] ^ d[4] ^ d[5] ^ 0x55;
     if (sum != d[6]) return null;
-    return _ColorFrame(Rgbw(d[1], d[2], d[3], d[4]), d[5], null);
+    return _ColorFrame(ChannelColor(l, d.sublist(1, 5)), d[5], null);
   }
-  final int sum = d[1] ^ d[2] ^ d[3] ^ d[4] ^ 0x55;
-  if (sum != d[5]) return null;
-  return _ColorFrame(Rgbw(d[1], d[2], d[3], d[4]), null, null);
+  if (d.length == 6) {
+    final int sum = d[1] ^ d[2] ^ d[3] ^ d[4] ^ 0x55;
+    if (sum != d[5]) return null;
+    return _ColorFrame(ChannelColor(l, d.sublist(1, 5)), null, null);
+  }
+  return null;
 }
 
 // ---- LineAssembler.h --------------------------------------------------------------------
@@ -470,7 +490,8 @@ final class _Flash {
 }
 
 final class _StateStore {
-  _StateStore(this.kv, this.stats);
+  _StateStore(this.kv, this.stats, this.layout);
+  final ChannelLayout layout;
   final _Flash kv;
   final _Stats stats;
   EbScene? _shadow;
@@ -494,7 +515,7 @@ final class _StateStore {
       scene = kv.scene!;
       _shadow = kv.scene;
     } else {
-      scene = EbScene.defaults();
+      scene = EbScene.defaults(layout);
       _shadow = null;
     }
     final bool sound = kv.soundEnabled ?? true;
@@ -780,7 +801,18 @@ bool _isSpace(int c) => c == 0x20 || c == 0x09;
   return (0, v);
 }
 
-_Parsed _parseCommand(String line) {
+/// Colour commands take one value per layout channel (CommandParser.cpp).
+bool _isColorCommand(_Cmd id) =>
+    id == _Cmd.rgbw || id == _Cmd.policeColorA || id == _Cmd.policeColorB;
+
+bool _takesMode(_Cmd id) =>
+    id == _Cmd.mode ||
+    id == _Cmd.modeSpeed ||
+    id == _Cmd.modeFrequency ||
+    id == _Cmd.modeCapabilities;
+
+_Parsed _parseCommand(String line, EbFixtureSpec fixture) {
+  final ChannelLayout layout = fixture.layout;
   int begin = 0;
   while (begin < line.length && _isSpace(line.codeUnitAt(begin))) {
     begin++;
@@ -806,6 +838,11 @@ _Parsed _parseCommand(String line) {
   if (spec == null) {
     return const _Parsed.fail(_ParseStatus.unknown, 'UNKNOWN_CMD');
   }
+  // RGBW is the RGBW light's own alias of COLOR.
+  if (spec.name == 'RGBW' && !layout.acceptsRgbwAlias) {
+    return const _Parsed.fail(_ParseStatus.unknown, 'UNKNOWN_CMD');
+  }
+  final int argc = _isColorCommand(spec.id) ? layout.n : spec.argc;
 
   final int args = colon != null ? colon + 1 : end;
   int p = args;
@@ -814,7 +851,7 @@ _Parsed _parseCommand(String line) {
   }
   final bool noArgText = p == end;
 
-  if (spec.argc == 0) {
+  if (argc == 0) {
     return noArgText
         ? _Parsed.ok(spec.id, const <int>[])
         : _Parsed.fail(_ParseStatus.format, spec.error);
@@ -827,7 +864,7 @@ _Parsed _parseCommand(String line) {
   int fieldStart = args;
   for (int q = args; ; q++) {
     if (q == end || line.codeUnitAt(q) == 0x2C) {
-      if (values.length == spec.argc) {
+      if (values.length == argc) {
         int t = fieldStart;
         while (t < q && _isSpace(line.codeUnitAt(t))) {
           t++;
@@ -850,8 +887,12 @@ _Parsed _parseCommand(String line) {
       fieldStart = q + 1;
     }
   }
-  if (values.length != spec.argc) {
+  if (values.length != argc) {
     return _Parsed.fail(_ParseStatus.format, spec.error);
+  }
+  // A mode this fixture cannot show is out of range, like MODE:14.
+  if (_takesMode(spec.id) && (fixture.modeMask >> (values[0] - 1)) & 1 == 0) {
+    return _Parsed.fail(_ParseStatus.range, spec.error);
   }
   return _Parsed.ok(spec.id, values);
 }
@@ -867,7 +908,7 @@ final class _Controller {
   _Controller(this._rig);
   final _Rig _rig;
 
-  EbScene scene = EbScene.defaults();
+  late EbScene scene = EbScene.defaults(_rig.device.layout);
   bool soundEnabled = true;
   bool sleeping = false;
   int _fadeMs = EbDeviceModel._sleepFadeMs;
@@ -931,7 +972,8 @@ final class _Controller {
           ? lines.length - i
           : EbDeviceModel._maxLinesPerBatch;
       final List<_Parsed> results = <_Parsed>[
-        for (int k = 0; k < n; k++) _parseCommand(lines[i + k]),
+        for (int k = 0; k < n; k++)
+          _parseCommand(lines[i + k], _rig.device.fixture),
       ];
       for (int k = 0; k < n; k++) {
         _rig.stats.rxLines++;
@@ -962,7 +1004,7 @@ final class _Controller {
   void _execute(_Cmd id, List<int> a, int now) {
     switch (id) {
       case _Cmd.rgbw:
-        scene = scene.copyWith(color: Rgbw(a[0], a[1], a[2], a[3]));
+        scene = scene.copyWith(color: ChannelColor(_rig.device.layout, a));
         _sceneChanged(now);
         _publish();
       case _Cmd.brightness:
@@ -1010,12 +1052,12 @@ final class _Controller {
         _publish();
         _rig.sendLine('OK');
       case _Cmd.policeColorA:
-        scene = scene.copyWith(policeA: Rgbw(a[0], a[1], a[2], a[3]));
+        scene = scene.copyWith(policeA: ChannelColor(_rig.device.layout, a));
         _sceneChanged(now);
         _publish();
         _rig.sendLine('OK');
       case _Cmd.policeColorB:
-        scene = scene.copyWith(policeB: Rgbw(a[0], a[1], a[2], a[3]));
+        scene = scene.copyWith(policeB: ChannelColor(_rig.device.layout, a));
         _sceneChanged(now);
         _publish();
         _rig.sendLine('OK');
@@ -1090,7 +1132,7 @@ final class _Controller {
         _rig.sendLine('OK');
       case _Cmd.factoryReset:
         _checkStorage(_rig.store.factoryReset());
-        scene = EbScene.defaults();
+        scene = EbScene.defaults(_rig.device.layout);
         soundEnabled = true;
         timerActive = false;
         _wake();
@@ -1098,11 +1140,11 @@ final class _Controller {
         _sound('FactoryReset');
         _rig.sendLine('OK');
       case _Cmd.info:
-        _rig.sendLine('INFO:${EbDeviceModel.modelId}');
+        _rig.sendLine('INFO:${_rig.device.modelId}');
       case _Cmd.version:
         _rig.sendLine('VERSION:${EbDeviceModel.firmwareVersion}');
       case _Cmd.caps:
-        _rig.sendLine(EbDeviceModel.capsReply);
+        _rig.sendLine(_rig.device.capsReply);
       case _Cmd.ping:
         _rig.sendLine('OK');
       case _Cmd.diag:
@@ -1163,7 +1205,7 @@ final class _Controller {
   void _sendStatus(int now) {
     final EbScene s = scene;
     final List<int> v = <int>[
-      ...s.color.toList(),
+      ...s.color.values,
       s.brightness,
       s.mode,
       s.speed,
@@ -1175,8 +1217,8 @@ final class _Controller {
       if (timerActive) 1 else 0,
       timerRemainingSec(now),
       if (soundEnabled) 1 else 0,
-      ...s.policeA.toList(),
-      ...s.policeB.toList(),
+      ...s.policeA.values,
+      ...s.policeB.values,
     ];
     _rig.sendLine('STATUS:${v.join(',')}');
   }

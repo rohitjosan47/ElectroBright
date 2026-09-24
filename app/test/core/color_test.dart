@@ -1,6 +1,7 @@
 import 'package:electrobright/core/color/color_science.dart';
 import 'package:electrobright/core/color/light_tone.dart';
-import 'package:electrobright/core/model/rgbw.dart';
+import 'package:electrobright/core/model/channel_color.dart';
+import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -44,9 +45,8 @@ void main() {
   });
 
   test('display colour follows the scene', () {
-    final EbScene red = EbScene.defaults().copyWith(
-      color: const Rgbw(255, 0, 0, 0),
-    );
+    final EbScene red = EbScene.defaults(ChannelLayout.rgbw)
+        .copyWith(color: ChannelColor.rgbw(255, 0, 0, 0));
     final DisplayColor d = DisplayColor.ofScene(red, sleeping: false);
     expect(d.color.r, 1);
     expect(d.color.g, lessThan(0.01));

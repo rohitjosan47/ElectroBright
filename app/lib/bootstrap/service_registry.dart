@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/protocol/eb/eb_fixture_catalog.dart';
 import '../core/ble/ble_central.dart';
 import '../core/ble/ble_link.dart';
 import '../core/ble/ble_trace.dart';
@@ -61,12 +62,28 @@ final class AppServices {
     final BleCentral inner = demo
         ? SimCentral(
             scheduler: scheduler,
+            // One demo light of every fixture type.
             fixtures: <SimFixture>[
-              SimFixture.electroBright(id: 'demo-1'),
+              SimFixture.electroBright(id: 'demo-rgbw'),
               SimFixture.electroBright(
-                id: 'demo-2',
-                name: 'ElectroBright_C3_V1',
-                rssi: -71,
+                id: 'demo-rgb',
+                fixture: EbFixtureCatalog.rgb,
+                rssi: -64,
+              ),
+              SimFixture.electroBright(
+                id: 'demo-rgbcct',
+                fixture: EbFixtureCatalog.rgbcct,
+                rssi: -61,
+              ),
+              SimFixture.electroBright(
+                id: 'demo-cct',
+                fixture: EbFixtureCatalog.cct,
+                rssi: -70,
+              ),
+              SimFixture.electroBright(
+                id: 'demo-w',
+                fixture: EbFixtureCatalog.w,
+                rssi: -74,
               ),
             ],
           )

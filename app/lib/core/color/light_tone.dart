@@ -2,13 +2,16 @@ import 'dart:math' as math;
 
 import 'package:meta/meta.dart';
 
+import '../model/channel_color.dart';
+import '../model/channel_layout.dart';
 import '../protocol/eb/eb_scene.dart';
 import '../protocol/eb/mode_catalog.dart';
 import 'color_science.dart';
+import 'led_white_points.dart';
 
-/// What a light looks like to the eye: the sum of its emitters (RGB + the
-/// white LED at its colour temperature), at full intensity; brightness is
-/// carried separately so dim lights keep their hue in the UI.
+/// What a light looks like to the eye: the sum of its emitters (R, G, B and
+/// every white LED at its own colour temperature), at full intensity;
+/// brightness is carried separately so dim lights keep their hue in the UI.
 @immutable
 final class DisplayColor {
   const DisplayColor(this.color, this.brightness, {this.off = false});
@@ -16,35 +19,96 @@ final class DisplayColor {
   /// Normalised linear colour (max channel 1), black when nothing emits.
   final LinearRgb color;
 
-  /// 0..1 perceptual output level.
+  /// 0..1 perceptual output level (master brightness).
   final double brightness;
   final bool off;
 
   static DisplayColor ofScene(
     EbScene s, {
     required bool sleeping,
-    int whiteTempK = 4000,
+    LedWhitePoints whitePoints = const LedWhitePoints(),
   }) {
+    final ChannelLayout layout = s.layout;
     LinearRgb c;
     if (EbModeCatalog.usesPickedColor(s)) {
-      final LinearRgb rgb = LinearRgb(
-        ColorScience.levelToLinear(s.color.r),
-        ColorScience.levelToLinear(s.color.g),
-        ColorScience.levelToLinear(s.color.b),
-      );
-      c =
-          rgb +
-          ColorScience.kelvinToLinear(whiteTempK.toDouble()) *
-              ColorScience.levelToLinear(s.color.w);
+      c = emitted(s.color, whitePoints);
     } else {
-      // The effect has its own colours: represent it by its accent gradient.
-      c = ColorScience.fromArgb(EbModeCatalog.byId(s.mode).gradient.first);
+      // The effect makes its own colours: represent it by its accent colour,
+      // shown the way this light renders colour (white temperature or
+      // brightness on lights without colour LEDs).
+      final LinearRgb accent = ColorScience.fromArgb(
+        EbModeCatalog.byId(s.mode).gradient.first,
+      );
+      c = LayoutPreview.render(accent, layout, whitePoints);
     }
     return DisplayColor(
       c.normalized(),
       s.brightness / 255,
       off: sleeping || c.max <= 1e-6 || s.brightness == 0,
     );
+  }
+
+  /// Linear light of [color] on its fixture: each channel's LED at full scale
+  /// scaled by the channel value.
+  static LinearRgb emitted(ChannelColor color, LedWhitePoints wp) {
+    LinearRgb sum = const LinearRgb(0, 0, 0);
+    for (int i = 0; i < color.layout.n; i++) {
+      final double level = ColorScience.levelToLinear(color[i]);
+      if (level <= 0) continue;
+      sum = sum + LayoutPreview.ledColour(color.layout.roles[i], wp) * level;
+    }
+    return sum;
+  }
+}
+
+/// Dart mirror of the firmware's final render stage
+/// (firmware/core/ElectroBrightCore/src/render/ChannelMap.h) for previews:
+/// what coloured effect light looks like on a light's LEDs.
+abstract final class LayoutPreview {
+  /// Colour of one LED at full output (linear, max channel 1).
+  static LinearRgb ledColour(ChannelRole role, LedWhitePoints wp) =>
+      switch (role) {
+        ChannelRole.r => const LinearRgb(1, 0, 0),
+        ChannelRole.g => const LinearRgb(0, 1, 0),
+        ChannelRole.b => const LinearRgb(0, 0, 1),
+        ChannelRole.w => ColorScience.kelvinToLinear(wp.wK.toDouble()),
+        ChannelRole.cw => ColorScience.kelvinToLinear(wp.cwK.toDouble()),
+        ChannelRole.ww => ColorScience.kelvinToLinear(wp.wwK.toDouble()),
+      };
+
+  /// [c] (linear RGB) as the light shows it: unchanged on lights with colour
+  /// LEDs; as white temperature on CCT (ChannelMap::colourToWhites); as
+  /// brightness on a single white LED (ChannelMap::colourToWhite).
+  static LinearRgb render(
+    LinearRgb c,
+    ChannelLayout layout,
+    LedWhitePoints wp,
+  ) {
+    if (layout.hasColour) return c;
+    final double level = math.max(c.r, math.max(c.g, c.b));
+    if (layout.white == WhiteKind.single) {
+      return ledColour(ChannelRole.w, wp) * math.min(1, level);
+    }
+    final (double cool, double warm) = colourToWhites(c.r, c.g, c.b);
+    return ledColour(ChannelRole.cw, wp) * cool +
+        ledColour(ChannelRole.ww, wp) * warm;
+  }
+
+  /// ChannelMap::colourToWhites for coloured light only (no white slots):
+  /// returns the cool and warm LED levels (linear 0..1).
+  static (double, double) colourToWhites(double r, double g, double b) {
+    final double level = math.max(r, math.max(g, b));
+    if (level <= 0) return (0, 0);
+    final double rb = math.max(r, b);
+    final double warmth = rb > 0 ? 0.5 + 0.5 * (r - b) / rb : 0.5;
+    double cool = level * math.min(1, 2 * (1 - warmth));
+    double warm = level * math.min(1, 2 * warmth);
+    final double peak = math.max(cool, warm);
+    if (peak > 1) {
+      cool /= peak;
+      warm /= peak;
+    }
+    return (cool, warm);
   }
 }
 
