@@ -65,16 +65,20 @@ class FakeEnv : public IControllerEnv {
   int publishes = 0;
 };
 
-// Bundles a controller with its fakes.
+// Bundles a controller with its fakes (default: the RGBW fixture).
 struct Rig {
+  const FixtureProfile& fixture;
   MockKv kv;
   Stats stats;
-  StateStore store{kv, stats, fx::rgbw::kProfile};
+  StateStore store{kv, stats, fixture};
   FakeEnv env;
-  ControllerCore core{env, store, stats, fx::rgbw::kProfile};
+  ControllerCore core{env, store, stats, fixture};
   uint32_t now = 1000;
 
-  Rig() { core.begin(now); env.clear(); }
+  explicit Rig(const FixtureProfile& f = fx::rgbw::kProfile) : fixture(f) {
+    core.begin(now);
+    env.clear();
+  }
   void send(const char* line) { core.handleLine(line, now); }
   void advance(uint32_t ms) {
     for (uint32_t t = 0; t < ms; t += 50) {

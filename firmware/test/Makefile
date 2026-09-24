@@ -5,6 +5,8 @@
 #   make portable   verify portable sources never include Arduino / ESP-IDF headers
 #   make fwsim      build build/fwsim/fwsim: the real core behind a stdin/stdout
 #                   protocol, used by the app's firmware-in-the-loop tests
+#   make conformance   run tools/fw_conformance.py against fwsim for every fixture
+#   make golden-record re-record golden/rgbw.golden (only for intended RGBW changes)
 
 .DEFAULT_GOAL := all   # the -include of *.d files below must not change the default target
 
@@ -27,7 +29,7 @@ OBJS := $(PORTABLE_OBJS) $(patsubst %.cpp,$(BUILD)/test/%.o,$(TEST_SRCS)) $(FWSI
 DEPS := $(OBJS:.o=.d) $(FWSIM_MAIN:.o=.d)
 -include $(DEPS)
 
-.PHONY: all run clean portable fwsim golden-record
+.PHONY: all run clean portable fwsim golden-record conformance
 
 all: portable run fwsim
 
@@ -62,6 +64,15 @@ run: $(BUILD)/tests
 # Re-records golden/rgbw.golden. Only when an RGBW behaviour change is intended.
 golden-record: $(BUILD)/tests
 	GOLDEN_RECORD=1 ./$(BUILD)/tests golden_
+
+FIXTURES := rgbw rgb
+
+conformance: $(BUILD)/fwsim/fwsim
+	@for f in $(FIXTURES); do \
+	  echo "== conformance: $$f"; \
+	  out=$$(python3 ../tools/fw_conformance.py --fwsim $(BUILD)/fwsim/fwsim --fixture $$f --stress 3 --factory-reset); \
+	  rc=$$?; echo "$$out" | grep -E "FAIL|passed"; [ $$rc -eq 0 ] || exit 1; \
+	done
 
 portable:
 	@! grep -rnE '#include *[<"](Arduino|esp_|freertos|driver/|nvs|NimBLE)' \
