@@ -85,6 +85,8 @@ final class AppServices {
                 fixture: EbFixtureCatalog.w,
                 rssi: -74,
               ),
+              // A light that still needs the 3.x firmware.
+              SimFixture.legacy(id: 'demo-legacy'),
             ],
           )
         : ReactiveBleCentral();

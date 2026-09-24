@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import '../core/ble/ble_central.dart';
 import '../core/ble/ble_link.dart';
+import '../core/model/channel_layout.dart';
 import '../core/protocol/eb/eb_constants.dart';
 import '../core/protocol/eb/eb_fixture_catalog.dart';
 import '../core/util/scheduler.dart';
@@ -20,6 +21,28 @@ final class SimFixture {
     this.rssi = -58,
   }) : name = name ?? fixture.bleName,
        model = EbDeviceModel(fixture: fixture);
+
+  /// A light still running the original (pre-3.x) ElectroBright firmware:
+  /// it advertises `ElectroBright_BLE` and answers INFO with the old model
+  /// name, so the app shows "Firmware update needed".
+  SimFixture.legacy({required this.id, this.rssi = -66})
+    : name = Eb.legacyName,
+      model = EbDeviceModel(fixture: _legacyFirmware);
+
+  static const EbFixtureSpec _legacyFirmware = EbFixtureSpec(
+    folder: '(original firmware)',
+    fwsimName: 'legacy',
+    layout: ChannelLayout.rgbw,
+    modelId: Eb.legacyInfo,
+    bleName: Eb.legacyName,
+    capsReply: 'CAPS:PROTOCOL=0',
+    nvsNamespace: 'eeprom',
+    modeMask: 0x1FFF,
+    colorValues: <int>[255, 255, 255, 0],
+    policeAValues: <int>[255, 165, 0, 0],
+    policeBValues: <int>[0, 0, 0, 255],
+    legacyFrames: true,
+  );
 
   final String id;
   final String name;

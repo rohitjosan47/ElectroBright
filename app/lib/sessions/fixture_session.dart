@@ -40,7 +40,7 @@ final class FixtureStatus {
     this.view,
     this.lastKnown,
     this.attempt = 0,
-    this.legacyFirmware = false,
+    this.incompatibility,
     this.detail,
   });
 
@@ -52,8 +52,14 @@ final class FixtureStatus {
   /// The last confirmed state (shown dimmed while not connected).
   final EbDeviceState? lastKnown;
   final int attempt;
-  final bool legacyFirmware;
+
+  /// Why the light cannot be driven (phase [LinkPhase.incompatible]).
+  final EbIncompatibility? incompatibility;
   final String? detail;
+
+  /// The original firmware: show "Firmware update needed".
+  bool get legacyFirmware =>
+      incompatibility == EbIncompatibility.legacyFirmware;
 
   bool get isReady => phase == LinkPhase.ready && view != null;
 
@@ -88,14 +94,21 @@ final class FixtureSession {
   Stream<EbEvent> get events => _events.stream;
   EbSession? get session => _session;
 
-  void setPhase(LinkPhase phase, {int? attempt, bool? legacy, String? detail}) {
+  void setPhase(
+    LinkPhase phase, {
+    int? attempt,
+    EbIncompatibility? incompatibility,
+    String? detail,
+  }) {
     _set(
       FixtureStatus(
         phase: phase,
         view: phase == LinkPhase.ready ? _session?.view : null,
         lastKnown: _status.lastKnown,
         attempt: attempt ?? _status.attempt,
-        legacyFirmware: legacy ?? _status.legacyFirmware,
+        incompatibility: phase == LinkPhase.incompatible
+            ? incompatibility ?? _status.incompatibility
+            : null,
         detail: detail,
       ),
     );

@@ -11,37 +11,47 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:electrobright/core/model/channel_color.dart';
+import 'package:electrobright/core/protocol/eb/eb_fixture_catalog.dart';
 import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/drivers/electrobright/eb_session.dart';
 import 'package:electrobright/drivers/electrobright/eb_types.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../support/fixtures.dart';
 import '../support/fwsim/eb_harness.dart';
 import '../support/fwsim/fwsim_link.dart';
 
 void main() {
-  final int seeds =
-      int.tryParse(Platform.environment['FUZZ_SEEDS'] ?? '') ?? 25;
+  // Seeds per fixture.
+  final int seeds = int.tryParse(Platform.environment['FUZZ_SEEDS'] ?? '') ?? 8;
   final int from = int.tryParse(Platform.environment['FUZZ_FROM'] ?? '') ?? 1;
 
-  test('schedule fuzz: $seeds seeds x 40 actions converge', () async {
-    for (int seed = from; seed < from + seeds; seed++) {
-      await _fuzz(seed, faults: false);
-    }
-  }, timeout: const Timeout(Duration(minutes: 60)));
+  for (final EbFixtureSpec fixture in fixturesUnderTest()) {
+    final String name = fixture.layout.wire;
+    test('$name schedule fuzz: $seeds seeds x 40 actions converge', () async {
+      for (int seed = from; seed < from + seeds; seed++) {
+        await _fuzz(fixture, seed, faults: false);
+      }
+    }, timeout: const Timeout(Duration(minutes: 60)));
 
-  test('fault fuzz: $seeds seeds x 40 actions converge', () async {
-    for (int seed = from; seed < from + seeds; seed++) {
-      await _fuzz(1000 + seed, faults: true);
-    }
-  }, timeout: const Timeout(Duration(minutes: 60)));
+    test('$name fault fuzz: $seeds seeds x 40 actions converge', () async {
+      for (int seed = from; seed < from + seeds; seed++) {
+        await _fuzz(fixture, 1000 + seed, faults: true);
+      }
+    }, timeout: const Timeout(Duration(minutes: 60)));
+  }
 }
 
-Future<void> _fuzz(int seed, {required bool faults}) async {
+Future<void> _fuzz(
+  EbFixtureSpec fixture,
+  int seed, {
+  required bool faults,
+}) async {
   // ignore: avoid_print
   if (Platform.environment['FUZZ_TRACE'] != null) print('seed $seed');
   final Random r = Random(seed);
   final EbHarness h = await EbHarness.start(
+    fixture: fixture,
     timing: PassTiming.adversarial,
     seed: seed,
     mtu: r.nextBool() ? 247 : 23,
@@ -94,9 +104,12 @@ Future<void> _fuzz(int seed, {required bool faults}) async {
       };
       if (res == null) continue;
       if (!faults) {
-        // Without faults the only legitimate failure is an empty preset slot.
+        // Without faults the only legitimate failures are an empty preset
+        // slot and a mode this light does not have (refused locally).
         expect(
-          res.isSuccess || res.code == 'PRESET_EMPTY',
+          res.isSuccess ||
+              res.code == 'PRESET_EMPTY' ||
+              (res.code == 'MODE_UNSUPPORTED' && fixture.modeMask != 0x1FFF),
           isTrue,
           reason: 'seed $seed: unexpected $res',
         );
@@ -147,12 +160,10 @@ Future<String> _act(
   int level() => 1 + r.nextInt(10);
   int mode() => 1 + r.nextInt(13);
   int slot() => r.nextInt(5);
-  ChannelColor rgbw() => ChannelColor.rgbw(
-    r.nextInt(256),
-    r.nextInt(256),
-    r.nextInt(256),
-    r.nextInt(256),
-  );
+  // A random colour of the light's layout.
+  ChannelColor rgbw() => ChannelColor(s.layout, <int>[
+    for (int i = 0; i < s.layout.n; i++) r.nextInt(256),
+  ]);
   void keep(Future<Object?> f) => results.add(f);
 
   final int pick = r.nextInt(100);

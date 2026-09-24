@@ -11,38 +11,53 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
+import 'package:electrobright/core/model/channel_color.dart';
+import 'package:electrobright/core/model/channel_layout.dart';
+import 'package:electrobright/core/protocol/eb/eb_fixture_catalog.dart';
+import 'package:electrobright/core/protocol/eb/eb_frame.dart';
 import 'package:electrobright/sim/eb_device_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../support/fixtures.dart';
 import '../support/fwsim/fwsim_process.dart';
 
 const DeepCollectionEquality _deep = DeepCollectionEquality();
 
 void main() {
+  // Seeds per fixture.
   final int seeds =
-      int.tryParse(Platform.environment['FWSIM_SEEDS'] ?? '') ?? 40;
+      int.tryParse(Platform.environment['FWSIM_SEEDS'] ?? '') ?? 12;
   const int opsPerSeed = 500;
 
-  test('firmware twin matches fwsim on $seeds random traffic runs', () async {
-    for (int seed = 1; seed <= seeds; seed++) {
-      final FwSim sim = await FwSim.start(); // fresh device per seed
-      try {
-        await _runSeed(sim, seed, opsPerSeed);
-      } finally {
-        await sim.close();
+  for (final EbFixtureSpec fixture in fixturesUnderTest()) {
+    test('${fixture.layout.wire}: firmware twin matches fwsim on $seeds random '
+        'traffic runs', () async {
+      for (int seed = 1; seed <= seeds; seed++) {
+        // Fresh device per seed.
+        final FwSim sim = await FwSim.start(fixture: fixture.fwsimName);
+        try {
+          await _runSeed(sim, fixture, seed, opsPerSeed);
+        } finally {
+          await sim.close();
+        }
       }
-    }
-  }, timeout: const Timeout(Duration(minutes: 20)));
+    }, timeout: const Timeout(Duration(minutes: 20)));
+  }
 }
 
-Future<void> _runSeed(FwSim sim, int seed, int ops) async {
+Future<void> _runSeed(
+  FwSim sim,
+  EbFixtureSpec fixture,
+  int seed,
+  int ops,
+) async {
   // Both sides start freshly booted at t = 1000 ms with empty flash; the test
   // schedules every control pass explicitly.
   await sim.request('AUTO 0');
-  final EbDeviceModel model = EbDeviceModel()..takeSounds();
+  final EbDeviceModel model = EbDeviceModel(fixture: fixture)..takeSounds();
   expect(model.now, (await sim.state())['now']);
 
-  final _Traffic traffic = _Traffic(seed);
+  final _Traffic traffic = _Traffic(seed, fixture);
   final List<String> log = <String>[];
   bool splitOpen = false;
 
@@ -195,9 +210,11 @@ final class _CheckState extends _Op {
 }
 
 final class _Traffic {
-  _Traffic(int seed) : _r = Random(seed);
+  _Traffic(int seed, this._fixture) : _r = Random(seed);
 
   final Random _r;
+  final EbFixtureSpec _fixture;
+  int get _n => _fixture.layout.n;
   final List<List<int>> _pendingFragments = <List<int>>[];
   bool _subscribed = false;
 
@@ -262,7 +279,13 @@ final class _Traffic {
       _pendingFragments.addAll(parts.skip(1));
       return parts.first;
     }
-    if (x < 0.70) return _frame8();
+    if (x < 0.66) return _frame(_fixture.layout);
+    if (x < 0.70) {
+      // A frame meant for another fixture (every length and salt).
+      return _frame(
+        ChannelLayout.values[_r.nextInt(ChannelLayout.values.length)],
+      );
+    }
     if (x < 0.74) return _legacyFrame();
     if (x < 0.78) return _badFrame();
     if (x < 0.83) {
@@ -318,11 +341,19 @@ final class _Traffic {
 
   int _b() => _r.nextInt(256);
   int _lvl() => 1 + _r.nextInt(10);
-  int _mode() => 1 + _r.nextInt(13);
+  // Modes; weighted towards 10 (Rainbow, unsupported on the W light).
+  int _mode() => _r.nextDouble() < 0.15 ? 10 : 1 + _r.nextInt(13);
   int _slot() => _r.nextInt(25);
 
+  /// One colour for this fixture (n values), sometimes n ± 1 (FORMAT).
+  String _colour({bool exact = true}) {
+    int count = _n;
+    if (!exact) count += _r.nextBool() ? 1 : -1;
+    return List<String>.generate(max(1, count), (_) => '${_b()}').join(',');
+  }
+
   String _coalescible() => switch (_r.nextInt(4)) {
-    0 => 'RGBW:${_b()},${_b()},${_b()},${_b()}',
+    0 => 'COLOR:${_colour()}',
     1 => 'BRIGHTNESS:${_b()}',
     2 => 'SPEED:${_lvl()}',
     _ => 'FREQUENCY:${_lvl()}',
@@ -330,8 +361,9 @@ final class _Traffic {
 
   String _validCommand() {
     final String cmd = switch (_r.nextInt(32)) {
+      // RGBW exists only on the RGBW light (UNKNOWN_CMD elsewhere).
       0 => 'RGBW:${_b()},${_b()},${_b()},${_b()}',
-      1 => 'COLOR:${_b()},${_b()},${_b()},${_b()}',
+      1 => 'COLOR:${_colour()}',
       2 => 'BRIGHTNESS:${_b()}',
       3 => 'MODE:${_mode()}',
       4 => 'SPEED:${_lvl()}',
@@ -339,8 +371,8 @@ final class _Traffic {
       6 => 'FIREWORK_COLOR_MODE:${_r.nextInt(2)}',
       7 => 'CLUB_COLOR_MODE:${_r.nextInt(2)}',
       8 => 'POLICE_COLOR_MODE:${_r.nextInt(2)}',
-      9 => 'POLICE_COLOR_A:${_b()},${_b()},${_b()},${_b()}',
-      10 => 'POLICE_COLOR_B:${_b()},${_b()},${_b()},${_b()}',
+      9 => 'POLICE_COLOR_A:${_colour()}',
+      10 => 'POLICE_COLOR_B:${_colour()}',
       11 => 'PRESET_SAVE:${_slot()}',
       12 => 'PRESET_LOAD:${_slot()}',
       13 => 'PRESET_DELETE:${_slot()}',
@@ -383,8 +415,8 @@ final class _Traffic {
     0 => 'MODE:${_r.nextBool() ? 0 : 14 + _r.nextInt(100)}',
     1 => 'SPEED:${_r.nextBool() ? 0 : 11}',
     2 => 'BRIGHTNESS:256',
-    3 => 'RGBW:1,2,3',
-    4 => 'RGBW:1,2,3,4,5',
+    3 => 'COLOR:${_colour(exact: false)}',
+    4 => 'POLICE_COLOR_B:${_colour(exact: false)}',
     5 => 'STATUS:5',
     6 => 'MODE:x',
     7 => 'MODE:-1',
@@ -392,20 +424,16 @@ final class _Traffic {
     9 => 'NOT_A_COMMAND',
     10 => 'MODE_SPEED:3',
     11 => 'PRESET_LOAD:25',
-    12 => 'POLICE_COLOR_A:1,2,3,256',
+    12 => 'POLICE_COLOR_A:${List<String>.filled(_n, '256').join(',')}',
     _ => 'MODE:',
   };
 
-  List<int> _frame8() {
-    final int seq = _r.nextInt(256);
-    final List<int> v = <int>[_b(), _b(), _b(), _b(), _b()];
-    return <int>[
-      0xAA,
-      seq,
-      ...v,
-      seq ^ v[0] ^ v[1] ^ v[2] ^ v[3] ^ v[4] ^ 0x55,
-    ];
-  }
+  /// A valid frame for [layout] (n + 4 bytes, that layout's salt).
+  List<int> _frame(ChannelLayout layout) => EbFrame.encode(
+    _r.nextInt(256),
+    ChannelColor(layout, List<int>.generate(layout.n, (_) => _b())),
+    _b(),
+  );
 
   List<int> _legacyFrame() {
     if (_r.nextBool()) {
@@ -417,8 +445,8 @@ final class _Traffic {
   }
 
   List<int> _badFrame() {
-    final List<int> f = _frame8();
-    f[7] ^= 1 + _r.nextInt(255);
+    final List<int> f = _frame(_fixture.layout);
+    f[f.length - 1] ^= 1 + _r.nextInt(255);
     return f;
   }
 }

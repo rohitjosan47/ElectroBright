@@ -26,10 +26,14 @@ final class FwSim {
   final Process _process;
   final StreamIterator<String> _lines;
 
-  /// Builds fwsim if needed (make is incremental) and starts it.
-  static Future<FwSim> start() async {
+  /// Builds fwsim if needed (make is incremental) and starts it simulating
+  /// [fixture] (`fwsim --fixture`, e.g. rgbw, rgb, rgbcct, cct, w).
+  static Future<FwSim> start({String fixture = 'rgbw'}) async {
     await _ensureBuilt();
-    final Process p = await Process.start(fwsimBinary, const <String>[]);
+    final Process p = await Process.start(fwsimBinary, <String>[
+      '--fixture',
+      fixture,
+    ]);
     unawaited(p.stderr.drain<void>()); // sanitizer banners, never protocol
     final StreamIterator<String> lines = StreamIterator<String>(
       p.stdout.transform(utf8.decoder).transform(const LineSplitter()),

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:electrobright/core/model/channel_color.dart';
+import 'package:electrobright/core/protocol/eb/eb_fixture_catalog.dart';
 import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/core/util/scheduler.dart';
 import 'package:electrobright/drivers/electrobright/eb_session.dart';
@@ -16,7 +17,10 @@ final class EbHarness {
     _eventSub = session.events.listen(events.add);
   }
 
+  /// [fixture]: which firmware fixture fwsim runs (the session learns the
+  /// layout in its handshake, starting from the RGBW guess).
   static Future<EbHarness> start({
+    EbFixtureSpec fixture = EbFixtureCatalog.rgbw,
     PassTiming timing = PassTiming.immediate,
     int seed = 1,
     int mtu = 247,
@@ -24,7 +28,7 @@ final class EbHarness {
     bool handshake = true,
     List<String> deviceSetup = const <String>[],
   }) async {
-    final FwSim sim = await FwSim.start();
+    final FwSim sim = await FwSim.start(fixture: fixture.fwsimName);
     for (final String request in deviceSetup) {
       await sim.request(request);
     }
@@ -171,8 +175,7 @@ final class EbHarness {
     await sim.close();
   }
 
-  static ChannelColor _rgbw(Object? v) {
-    final List<int> c = (v! as List<Object?>).cast<int>();
-    return ChannelColor.rgbw(c[0], c[1], c[2], c[3]);
-  }
+  /// A colour of the device STATE (one value per channel of the light).
+  ChannelColor _rgbw(Object? v) =>
+      ChannelColor(session.layout, (v! as List<Object?>).cast<int>());
 }

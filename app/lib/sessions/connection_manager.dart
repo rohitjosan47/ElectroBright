@@ -179,6 +179,18 @@ final class ConnectionManager {
     await s?.link?.disconnect();
   }
 
+  /// Tries a light again that was given up on (e.g. "Firmware update needed"
+  /// after the user flashed it, or "unavailable" after they powered it on).
+  void retry(String fixtureId) {
+    final _Slot? s = _slots[fixtureId];
+    if (s == null || s.link != null || s.connecting) return;
+    s.retry?.cancel();
+    s.retry = null;
+    s.attempt = 0;
+    s.session.setPhase(s.wants.isEmpty ? LinkPhase.idle : LinkPhase.waiting);
+    _evaluate();
+  }
+
   // ---- lifecycle -------------------------------------------------------------------
 
   Future<void> onBackground() async {
@@ -391,10 +403,15 @@ final class ConnectionManager {
       s.lastUsed = _scheduler.now;
       _eventsFor(s);
     } on EbIncompatible catch (e) {
+      // Detach first so the closed link is not taken for a drop (which would
+      // reconnect forever): an incompatible light stays incompatible until
+      // the user retries it.
+      s.link = null;
+      await s.session.linkClosed();
       await link?.disconnect();
       s.session.setPhase(
         LinkPhase.incompatible,
-        legacy: e.legacy,
+        incompatibility: e.kind,
         detail: e.reason,
       );
     } on ConnectException catch (e) {
