@@ -81,7 +81,7 @@ void main() {
       final Want want = w.manager.want('f0', WantReason.screen);
       await w.run(const Duration(seconds: 1));
       expect(w.s(0).status.phase, LinkPhase.ready);
-      expect(w.s(0).status.view!.firmware!.version.version, '3.4.0');
+      expect(w.s(0).status.view!.firmware!.version.version, '3.5.0');
       want.release();
       await w.run(const Duration(seconds: 30));
       expect(

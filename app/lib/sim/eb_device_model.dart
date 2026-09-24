@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import '../core/model/rgbw.dart';
 import '../core/protocol/eb/eb_scene.dart';
 
-/// Dart twin of the ElectroBright firmware (v3.4.0): the command parser,
+/// Dart twin of the ElectroBright firmware (v3.5.0, RGBW fixture): the command parser,
 /// controller, persistence policy, reply buffer and the BLE/control-task glue,
 /// ported line for line from firmware/core/ElectroBrightCore/src and
 /// firmware/test/fwsim/SimDevice.cpp.
@@ -23,10 +23,10 @@ final class EbDeviceModel {
   /// Makes flash writes fail (like fwsim `KVFAIL`), for fault tests.
   set flashWritesFail(bool fail) => _flash.failWrites = fail;
 
-  static const String firmwareVersion = '3.4.0';
+  static const String firmwareVersion = '3.5.0';
   static const String modelId = 'EB-C3-RGBW-V1';
   static const String capsReply =
-      'CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL';
+      'CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,LAYOUT=RGBW';
 
   // cfg (Config.h)
   static const int _numModes = 13;

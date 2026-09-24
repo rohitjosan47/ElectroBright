@@ -22,8 +22,8 @@ TEST(ctrl_app_handshake_replies) {
   CHECK_STR(r.env.lines[0], "STATUS:255,255,255,0,255,1,5,5,0,0,1,0,0,0,1,255,165,0,0,0,0,0,255");
   CHECK_STR(r.env.lines[1].substr(0, 18), "MODE_SETTINGS:5,5;");
   CHECK_STR(r.env.lines[2], "PRESETS:");
-  CHECK_STR(r.env.lines[3], "VERSION:3.4.0");
-  CHECK_STR(r.env.lines[4], "CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL");
+  CHECK_STR(r.env.lines[3], "VERSION:3.5.0");
+  CHECK_STR(r.env.lines[4], "CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,LAYOUT=RGBW");
   CHECK_STR(r.env.lines[5], "INFO:EB-C3-RGBW-V1");
 }
 

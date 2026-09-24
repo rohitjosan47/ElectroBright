@@ -59,7 +59,7 @@ fwsim: $(BUILD)/fwsim/fwsim
 run: $(BUILD)/tests
 	./$(BUILD)/tests $(T)
 
-# Re-records golden/rgbw_v340.golden. Only when an RGBW behaviour change is intended.
+# Re-records golden/rgbw.golden. Only when an RGBW behaviour change is intended.
 golden-record: $(BUILD)/tests
 	GOLDEN_RECORD=1 ./$(BUILD)/tests golden_
 

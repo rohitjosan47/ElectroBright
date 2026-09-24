@@ -21,7 +21,7 @@ void main() {
       h = await EbHarness.start();
       final EbFirmware fw = h.session.firmware!;
       expect(fw.model, 'EB-C3-RGBW-V1');
-      expect(fw.version.version, '3.4.0');
+      expect(fw.version.version, '3.5.0');
       expect(fw.modeCount, 13);
       expect(h.session.phase, EbPhase.ready);
       expect(h.view.scene, EbScene.defaults());

@@ -13,7 +13,7 @@ namespace cfg {
 // Family version, shared by every fixture built from this core. A fixture's
 // own identity (model id, BLE name, CAPS, pins) lives in its FixtureProfile
 // (firmware/fixtures/<Name>/Fixture.h).
-constexpr const char* kFirmwareVersion = "3.4.0";
+constexpr const char* kFirmwareVersion = "3.5.0";
 
 // Nordic UART Service
 constexpr const char* kServiceUuid = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";

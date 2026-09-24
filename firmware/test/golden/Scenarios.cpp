@@ -1,8 +1,10 @@
 // Golden baseline of firmware behaviour (render output + protocol transcripts).
 //
-// `golden_rgbw_matches_v340` replays a fixed set of scenarios and compares the
-// result with golden/rgbw_v340.golden, recorded from firmware v3.4.0 before the
-// firmware-family refactor. Any difference means RGBW behaviour changed.
+// `golden_rgbw_matches_baseline` replays a fixed set of scenarios and compares
+// the result with golden/rgbw.golden, recorded from firmware v3.4.0 before the
+// firmware-family refactor (tag fw-3.4.0-golden). Since then only the identity
+// lines changed (3.5.0: VERSION, and CAPS gained LAYOUT=RGBW). Any other
+// difference means RGBW behaviour changed.
 //
 //   make golden-record     rewrite the golden file (only when a change is intended)
 
@@ -20,7 +22,7 @@
 
 namespace {
 
-constexpr const char* kGoldenPath = "golden/rgbw_v340.golden";
+constexpr const char* kGoldenPath = "golden/rgbw.golden";
 constexpr uint32_t kFrameMs = cfg::kRenderPeriodUs / 1000;
 
 // ---- Render streams -------------------------------------------------------------
@@ -408,7 +410,7 @@ std::string readFile(const char* path) {
 
 }  // namespace
 
-TEST(golden_rgbw_matches_v340) {
+TEST(golden_rgbw_matches_baseline) {
   const std::string actual = renderStreams() + transcripts();
   if (getenv("GOLDEN_RECORD") != nullptr) {
     FILE* f = fopen(kGoldenPath, "wb");
