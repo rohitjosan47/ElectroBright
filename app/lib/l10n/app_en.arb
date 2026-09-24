@@ -1,7 +1,129 @@
 {
   "@@locale": "en",
   "appTitle": "ElectroBright",
-  "@appTitle": { "description": "Application name shown in the task switcher." },
+  "@appTitle": {
+    "description": "Application name shown in the task switcher."
+  },
   "lightsTitle": "Lights",
-  "@lightsTitle": { "description": "Title of the home screen that lists all fixtures." }
+  "@lightsTitle": {
+    "description": "Title of the home screen that lists all fixtures."
+  },
+  "typeRgbw": "RGBW",
+  "typeRgb": "RGB",
+  "typeRgbcct": "RGB + CCT",
+  "typeCct": "Tunable white",
+  "typeW": "White",
+  "typeRgbwLong": "Colour + white",
+  "typeRgbLong": "Colour",
+  "typeRgbcctLong": "Colour + tunable white",
+  "typeCctLong": "Tunable white (warm to cool)",
+  "typeWLong": "Single white",
+  "channelR": "Red",
+  "channelG": "Green",
+  "channelB": "Blue",
+  "channelW": "White",
+  "channelCw": "Cool white",
+  "channelWw": "Warm white",
+  "homeSummary": "{connected} connected · {nearby} nearby",
+  "@homeSummary": {
+    "placeholders": {
+      "connected": {
+        "type": "int"
+      },
+      "nearby": {
+        "type": "int"
+      }
+    }
+  },
+  "homeEmpty": "No lights yet. Add your first light to get started.",
+  "stateOnPercent": "On · {percent} %",
+  "@stateOnPercent": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "stateOutputPercent": "On · output {percent} %",
+  "@stateOutputPercent": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "stateOff": "Off",
+  "presenceConnected": "Connected",
+  "presenceConnecting": "Connecting…",
+  "presenceIdle": "Not connected",
+  "presenceUnavailable": "Unavailable — off, out of range or connected to another phone",
+  "presenceUpdateNeeded": "Firmware update needed",
+  "presenceNewerApp": "Needs a newer app version",
+  "presenceUnexpected": "Answered unexpectedly",
+  "presenceBluetoothOff": "Bluetooth is off",
+  "presencePermission": "Bluetooth permission needed",
+  "nearbyTitle": "Nearby — not added",
+  "nearbyUnknownType": "ElectroBright light",
+  "nearbyUpdate": "Update needed",
+  "addLight": "Add light",
+  "addTitle": "Add a light",
+  "addHint": "Only one phone can be connected to a light at a time.",
+  "addSearching": "Looking for lights…",
+  "addConnecting": "Connecting…",
+  "addFound": "Found a {type} light · firmware {version}",
+  "@addFound": {
+    "placeholders": {
+      "type": {
+        "type": "String"
+      },
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "addIdentify": "Flash it",
+  "addName": "Name",
+  "addSave": "Save",
+  "cancel": "Cancel",
+  "addAlready": "Already added as {name}",
+  "@addAlready": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "addFailed": "Couldn't connect. Make sure the light is on and not connected to another phone.",
+  "tryAgain": "Try again",
+  "fwUpdateTitle": "Firmware update needed",
+  "fwUpdateBody": "This light runs the original ElectroBright firmware. Flash the ElectroBright 3.x firmware for its type (see firmware/README.md), then try again.",
+  "fwNewerAppBody": "This light runs a newer ElectroBright fixture type than this app knows. Update the app to control it.",
+  "fwUnexpectedBody": "This light's firmware answered in a way the app did not expect. Diagnostics has the details.",
+  "forgetLight": "Forget this light",
+  "welcomeTitle": "Light, your way",
+  "welcomeBody": "Control your ElectroBright lights over Bluetooth: colours, whites, effects, presets and timers, adapted to each light.",
+  "useMyLights": "Use my lights",
+  "tryDemo": "Try demo lights",
+  "demoBadge": "Demo",
+  "switchToRealLights": "Use my real lights",
+  "switchToDemo": "Try demo lights",
+  "settings": "Settings",
+  "diagnostics": "Diagnostics",
+  "designGallery": "Design gallery",
+  "rename": "Rename",
+  "identify": "Identify",
+  "power": "Power",
+  "powerOn": "Turn on",
+  "powerOff": "Turn off",
+  "layoutChanged": "{name} is now a {type} light",
+  "@layoutChanged": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "type": {
+        "type": "String"
+      }
+    }
+  }
 }

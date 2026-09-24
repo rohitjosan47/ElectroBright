@@ -111,8 +111,9 @@ final class FixtureRegistry {
     for (final StreamSubscription<FixtureStatus> s in _subs.values) {
       await s.cancel();
     }
-    await _changes.close();
-    await _layoutChanges.close();
+    // Closing notifies listeners; nothing to wait for.
+    unawaited(_changes.close());
+    unawaited(_layoutChanges.close());
   }
 
   // ---------------------------------------------------------------------------

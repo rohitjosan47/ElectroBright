@@ -1,11 +1,15 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'app.dart';
+import 'app/app_session.dart';
 import 'bootstrap/service_registry.dart';
+import 'core/store/json_store.dart';
 import 'design/canvas/ambient_canvas.dart';
 
 Future<void> main() async {
@@ -15,6 +19,10 @@ Future<void> main() async {
   prepareAmbientCanvas();
   final AppServices services = AppServices();
   await services.platform.init();
+  final Directory support = await getApplicationSupportDirectory();
+  final JsonStore store = await JsonStore.open(
+    Directory('${support.path}/store'),
+  );
   runApp(
     LiquidGlassWidgets.wrap(
       brightnessResolver: Theme.maybeBrightnessOf,
@@ -22,7 +30,13 @@ Future<void> main() async {
         // Reconnection and retries belong to the ConnectionManager, never to
         // Riverpod's automatic provider retry.
         retry: (int retryCount, Object error) => null,
-        overrides: [servicesProvider.overrideWithValue(services)],
+        overrides: [
+          servicesProvider.overrideWithValue(services),
+          storeProvider.overrideWithValue(store),
+          demoStoreProvider.overrideWithValue(
+            () => JsonStore.open(Directory('${support.path}/store-demo')),
+          ),
+        ],
         child: ElectroBrightApp(services: services),
       ),
     ),

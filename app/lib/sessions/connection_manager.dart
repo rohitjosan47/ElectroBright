@@ -235,8 +235,20 @@ final class ConnectionManager {
     if (id != null && id >= 0) await _background.end(id);
   }
 
-  Future<void> dispose() async {
+  /// Stops every timer and decision at once (synchronous part of dispose).
+  void halt() {
     _disposed = true;
+    _backgroundTimer?.cancel();
+    for (final _Slot s in _slots.values) {
+      s.retry?.cancel();
+      s.retry = null;
+      s.idleTimer?.cancel();
+      s.idleTimer = null;
+    }
+  }
+
+  Future<void> dispose() async {
+    halt();
     _reconnectLease?.release();
     await _adapterSub.cancel();
     await _advertSub.cancel();

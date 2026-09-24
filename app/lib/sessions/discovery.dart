@@ -152,13 +152,18 @@ final class Discovery {
     return d != null && _scheduler.now - d.lastSeen <= within;
   }
 
-  Future<void> dispose() async {
+  /// Stops every timer at once (synchronous part of dispose).
+  void halt() {
     _disposed = true;
     _deferred?.cancel();
     _duty?.cancel();
+  }
+
+  Future<void> dispose() async {
+    halt();
     await _adapterSub.cancel();
     await _scan?.cancel();
-    await _updates.close();
+    unawaited(_updates.close());
   }
 
   _ScanConfig? _wanted() {

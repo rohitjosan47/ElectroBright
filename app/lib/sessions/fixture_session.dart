@@ -195,8 +195,9 @@ final class FixtureSession {
 
   Future<void> dispose() async {
     await _detach();
-    await _statuses.close();
-    await _events.close();
+    // Listeners get the done event; closing has nothing to wait for.
+    unawaited(_statuses.close());
+    unawaited(_events.close());
   }
 
   void _set(FixtureStatus s) {

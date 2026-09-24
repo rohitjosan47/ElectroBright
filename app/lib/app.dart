@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'bootstrap/service_registry.dart';
 import 'design/glass/glass_surface.dart';
@@ -6,7 +9,10 @@ import 'design/haptics/haptics_scope.dart';
 
 import 'design/theme/app_theme.dart';
 import 'design/gallery/gallery.dart';
-import 'features/diagnostics/ble_lab.dart';
+import 'app/app_session.dart';
+import 'design/canvas/ambient_canvas.dart';
+import 'features/home/home_screen.dart';
+import 'features/onboarding/onboarding_screen.dart';
 import 'l10n/app_localizations.dart';
 
 class ElectroBrightApp extends StatelessWidget {
@@ -45,50 +51,53 @@ class ElectroBrightApp extends StatelessWidget {
       // (screenshots and design review).
       home: const String.fromEnvironment('EB_START') == 'gallery'
           ? const ComponentGallery()
-          : const _HomePlaceholder(),
+          : const _Root(),
     );
   }
 }
 
-/// Stand-in until the Home connection panel lands (M4).
-class _HomePlaceholder extends StatelessWidget {
-  const _HomePlaceholder();
+/// Onboarding until the user picked real or demo lights, then Home. Saves
+/// every light's state and releases lights when the app goes to background.
+class _Root extends ConsumerStatefulWidget {
+  const _Root();
+
+  @override
+  ConsumerState<_Root> createState() => _RootState();
+}
+
+class _RootState extends ConsumerState<_Root> {
+  late final AppLifecycleListener _lifecycle;
+
+  AppLifecycleListener _listen() => AppLifecycleListener(
+    onPause: () {
+      unawaited(ref.read(appSessionProvider.notifier).saveAll());
+      unawaited(ref.read(appSessionProvider)?.ble.connections.onBackground());
+    },
+    onResume: () =>
+        unawaited(ref.read(appSessionProvider)?.ble.connections.onForeground()),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = _listen();
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-          child: Text(
-            AppLocalizations.of(context).lightsTitle,
-            style: Theme.of(context).textTheme.displaySmall
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
-        ),
-      ),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: <Widget>[
-          FloatingActionButton.extended(
-            heroTag: 'gallery',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const ComponentGallery()),
-            ),
-            label: const Text('Design gallery'),
-            icon: const Icon(Icons.palette_outlined),
-          ),
-          const SizedBox(height: 12),
-          FloatingActionButton.extended(
-            heroTag: 'lab',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const BleLabScreen()),
-            ),
-            label: const Text('BLE Lab'),
-            icon: const Icon(Icons.science_outlined),
-          ),
-        ],
+    final AppSession? app = ref.watch(appSessionProvider);
+    if (app != null) return const HomeScreen();
+    final bool onboarded = ref.read(appSessionProvider.notifier).onboarded;
+    if (!onboarded) return const OnboardingScreen();
+    return const Scaffold(
+      body: AmbientCanvas(
+        child: Center(child: CircularProgressIndicator.adaptive()),
       ),
     );
   }

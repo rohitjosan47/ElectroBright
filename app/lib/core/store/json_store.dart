@@ -13,6 +13,9 @@ import 'dart:io';
 final class JsonStore {
   JsonStore._(this.directory, this.writeDelay);
 
+  /// A store that never touches disk (tests, previews).
+  JsonStore.memory() : directory = null, writeDelay = Duration.zero;
+
   /// Opens (and creates) the store in [directory] and loads every collection.
   static Future<JsonStore> open(
     Directory directory, {
@@ -44,7 +47,8 @@ final class JsonStore {
 
   static const int schemaVersion = 1;
 
-  final Directory directory;
+  /// Null for [JsonStore.memory].
+  final Directory? directory;
   final Duration writeDelay;
   final Map<String, Object?> _cache = <String, Object?>{};
   final Set<String> _dirty = <String>{};
@@ -60,6 +64,7 @@ final class JsonStore {
   /// Replaces [collection] (written to disk within [writeDelay]).
   void write(String collection, Object? data) {
     _cache[collection] = data;
+    if (directory == null) return;
     _dirty.add(collection);
     _timer ??= Timer(writeDelay, () => unawaited(flush()));
   }
@@ -84,8 +89,8 @@ final class JsonStore {
     return _writing;
   }
 
-  File _file(String c) => File('${directory.path}/$c.json');
-  File _bak(String c) => File('${directory.path}/$c.json.bak');
+  File _file(String c) => File('${directory!.path}/$c.json');
+  File _bak(String c) => File('${directory!.path}/$c.json.bak');
 
   Future<Object?> _load(String c) async {
     for (final File f in <File>[_file(c), _bak(c)]) {
@@ -103,7 +108,7 @@ final class JsonStore {
   }
 
   Future<void> _save(String c, Object? data) async {
-    final File tmp = File('${directory.path}/$c.json.tmp');
+    final File tmp = File('${directory!.path}/$c.json.tmp');
     final RandomAccessFile raf = await tmp.open(mode: FileMode.write);
     try {
       await raf.writeString(

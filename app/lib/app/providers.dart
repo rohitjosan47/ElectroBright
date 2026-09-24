@@ -1,0 +1,144 @@
+import 'dart:async';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart';
+
+import '../core/model/fixture.dart';
+import '../core/model/light_capabilities.dart';
+import '../core/protocol/eb/eb_fixture_catalog.dart';
+import '../core/protocol/eb/eb_scene.dart';
+import '../core/model/channel_layout.dart';
+import '../sessions/discovery.dart';
+import '../sessions/fixture_registry.dart';
+import '../sessions/fixture_session.dart';
+import 'app_session.dart';
+
+/// The saved lights (live).
+final NotifierProvider<FixturesNotifier, List<Fixture>> fixturesProvider =
+    NotifierProvider<FixturesNotifier, List<Fixture>>(FixturesNotifier.new);
+
+final class FixturesNotifier extends Notifier<List<Fixture>> {
+  @override
+  List<Fixture> build() {
+    final FixtureRegistry? reg = ref.watch(appSessionProvider)?.registry;
+    if (reg == null) return const <Fixture>[];
+    final StreamSubscription<List<Fixture>> sub = reg.changes.listen(
+      (List<Fixture> l) => state = l,
+    );
+    ref.onDispose(sub.cancel);
+    return reg.fixtures;
+  }
+}
+
+/// One saved light.
+final ProviderFamily<Fixture?, String> fixtureProvider =
+    Provider.family<Fixture?, String>(
+      (Ref ref, String id) => ref.watch(
+        fixturesProvider.select(
+          (List<Fixture> l) => l.where((Fixture f) => f.id == id).firstOrNull,
+        ),
+      ),
+    );
+
+/// The live session of a saved light (null when BLE is not running).
+final ProviderFamily<FixtureSession?, String> fixtureSessionProvider =
+    Provider.family<FixtureSession?, String>(
+      (Ref ref, String id) =>
+          ref.watch(appSessionProvider)?.ble.connections.session(id),
+    );
+
+/// Connection phase, live view and last-known state of a light.
+final NotifierProviderFamily<FixtureStatusNotifier, FixtureStatus, String>
+fixtureStatusProvider =
+    NotifierProvider.family<FixtureStatusNotifier, FixtureStatus, String>(
+      FixtureStatusNotifier.new,
+    );
+
+final class FixtureStatusNotifier extends Notifier<FixtureStatus> {
+  FixtureStatusNotifier(this.id);
+  final String id;
+
+  @override
+  FixtureStatus build() {
+    final FixtureSession? s = ref.watch(fixtureSessionProvider(id));
+    if (s == null) return const FixtureStatus(phase: LinkPhase.idle);
+    final StreamSubscription<FixtureStatus> sub = s.statuses.listen(
+      (FixtureStatus st) => state = st,
+    );
+    ref.onDispose(sub.cancel);
+    return s.status;
+  }
+}
+
+/// What a light can do: live from its firmware, else as saved, else assumed
+/// from its layout. Every control screen is built from this (also offline).
+final ProviderFamily<LightCapabilities?, String> capabilitiesProvider =
+    Provider.family<LightCapabilities?, String>((Ref ref, String id) {
+      final LightCapabilities? live = ref.watch(
+        fixtureStatusProvider(id)
+            .select((FixtureStatus s) => s.view?.firmware?.capabilities),
+      );
+      if (live != null) return live;
+      return ref.watch(fixtureProvider(id))?.capabilities;
+    });
+
+/// The light's current scene (live or last known).
+final ProviderFamily<EbScene?, String> sceneProvider =
+    Provider.family<EbScene?, String>(
+      (Ref ref, String id) => ref.watch(
+        fixtureStatusProvider(id).select((FixtureStatus s) => s.state?.scene),
+      ),
+    );
+
+/// A light advertising nearby that is not saved yet.
+final class NearbyLight {
+  const NearbyLight(this.seen, this.layoutHint);
+  final SeenDevice seen;
+
+  /// From the advertised name; confirmed by the light when it connects.
+  final ChannelLayout? layoutHint;
+  bool get isLegacy => seen.deviceClass == DeviceClass.legacyElectroBright;
+}
+
+/// Unsaved ElectroBright lights nearby, strongest first. Watching it keeps a
+/// fast scan running.
+final NotifierProvider<NearbyNotifier, List<NearbyLight>> nearbyProvider =
+    NotifierProvider.autoDispose<NearbyNotifier, List<NearbyLight>>(
+      NearbyNotifier.new,
+    );
+
+final class NearbyNotifier extends Notifier<List<NearbyLight>> {
+  @override
+  List<NearbyLight> build() {
+    final AppSession? app = ref.watch(appSessionProvider);
+    if (app == null) return const <NearbyLight>[];
+    final Discovery d = app.ble.discovery;
+    final ScanLease lease = d.acquire(ScanNeed.addFlow);
+    List<NearbyLight> compute() {
+      final Set<String> saved = ref
+          .read(fixturesProvider)
+          .map((Fixture f) => f.deviceId)
+          .toSet();
+      final List<NearbyLight> out =
+          <NearbyLight>[
+            for (final SeenDevice s in d.devices)
+              if (!saved.contains(s.id) && s.deviceClass != DeviceClass.other)
+                NearbyLight(s, EbFixtureCatalog.layoutFromBleName(s.name)),
+          ]..sort(
+            (NearbyLight a, NearbyLight b) =>
+                b.seen.rssi.compareTo(a.seen.rssi),
+          );
+      return out;
+    }
+
+    final StreamSubscription<SeenDevice> sub = d.updates.listen(
+      (_) => state = compute(),
+    );
+    ref.listen(fixturesProvider, (_, _) => state = compute());
+    ref.onDispose(() {
+      unawaited(sub.cancel());
+      lease.release();
+    });
+    return compute();
+  }
+}

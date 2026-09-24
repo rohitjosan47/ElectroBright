@@ -85,9 +85,21 @@ final class SimCentral implements BleCentral {
   BleAdapterState get currentAdapterState => _state;
 
   @override
-  Stream<BleAdapterState> get adapterState async* {
-    yield _state;
-    yield* _adapter.stream;
+  Stream<BleAdapterState> get adapterState {
+    // A plain controller (not async*): its cancel completes at once, so
+    // disposing the stack never waits on a suspended generator.
+    StreamSubscription<BleAdapterState>? inner;
+    // Closed by its listener's cancel.
+    // ignore: close_sinks
+    late final StreamController<BleAdapterState> out;
+    out = StreamController<BleAdapterState>(
+      onListen: () {
+        out.add(_state);
+        inner = _adapter.stream.listen(out.add);
+      },
+      onCancel: () => inner?.cancel(),
+    );
+    return out.stream;
   }
 
   /// Tests / demo: switch Bluetooth off or on.
@@ -117,12 +129,16 @@ final class SimCentral implements BleCentral {
 
   void dispose() {
     _disposed = true;
+    _tick?.cancel();
+    _tick = null;
     unawaited(_adapter.close());
   }
 
+  Cancelable? _tick;
+
   void _tickDevices() {
     if (_disposed) return;
-    _scheduler.after(deviceTick, () {
+    _tick = _scheduler.after(deviceTick, () {
       for (final SimFixture f in fixtures) {
         f.model.advance(deviceTick.inMilliseconds);
         f._link?._deliver();

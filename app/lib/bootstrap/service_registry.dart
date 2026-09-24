@@ -26,13 +26,16 @@ final class BleStack {
   final ConnectionManager connections;
 
   Future<void> dispose() async {
-    await connections.dispose();
-    await discovery.dispose();
+    // Everything that runs on timers stops now; the rest winds down after.
+    connections.halt();
+    discovery.halt();
     final BleCentral c = central;
     if (c is _TracingCentral) {
       final BleCentral inner = c.inner;
       if (inner is SimCentral) inner.dispose();
     }
+    await connections.dispose();
+    await discovery.dispose();
   }
 }
 
@@ -51,6 +54,13 @@ final class AppServices {
 
   BleStack? get ble => _ble;
   bool get isDemo => _demo;
+
+  /// Stops the BLE stack (app shutdown, tests).
+  Future<void> stopBle() async {
+    final BleStack? b = _ble;
+    _ble = null;
+    await b?.dispose();
+  }
 
   /// Builds (or rebuilds) the BLE stack: the real radio, or simulated demo
   /// lights.
