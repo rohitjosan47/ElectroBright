@@ -6,7 +6,7 @@ Talks to a fixture exactly like the Flutter app does and checks every reply
 against the protocol contract (docs/protocol.md). The fixture's channel layout
 is read from INFO / CAPS (LAYOUT=...), and every colour width, binary frame
 and STATUS field position is derived from it, so the same suite covers the
-RGBW, RGB, RGBCCT and future fixtures.
+RGBW, RGB, RGBCCT, CCT and future fixtures.
 
 On a real fixture over Bluetooth:
 
@@ -43,6 +43,7 @@ LAYOUTS = {
     "RGBW": ["R", "G", "B", "W"],
     "RGB": ["R", "G", "B"],
     "RGBCCT": ["R", "G", "B", "CW", "WW"],
+    "CCT": ["CW", "WW"],
 }
 # Colour slot each role reads (firmware: core/Types.h): r, g, b, w (W or CW), ww.
 SLOT = {"R": 0, "G": 1, "B": 2, "W": 3, "CW": 3, "WW": 4}
@@ -390,7 +391,7 @@ async def suite_presets(fx, R):
     R.check(await fx.cmd(f"PRESET_SAVE:{TEST_SLOT}", "OK") == "OK", "PRESET_SAVE")
     pl = await fx.cmd("PRESET_LIST", "PRESETS:")
     R.check(pl is not None and f"{TEST_SLOT}," in pl, "slot listed after save", pl)
-    await fx.silent(f"COLOR:{csv(L.colour(200, 200, 200, 0))}")
+    await fx.silent(f"COLOR:{csv(L.colour(200, 200, 200, 0, 200))}")
     await fx.cmd("MODE:1", "OK")
     s = L.parse_status(await fx.cmd(f"PRESET_LOAD:{TEST_SLOT}", "STATUS:"))
     R.check(s and s["colour"] == c and s["mode"] == 9, "PRESET_LOAD answers with the preset's STATUS", s)
@@ -406,7 +407,7 @@ async def suite_sleep_timer(fx, R):
     R.check(await fx.cmd("SLEEP", "OK") == "OK", "SLEEP")
     s = await fx.status()
     R.check(s and s["sleep"] == 1, "STATUS sleeping=1", s)
-    red = L.colour(255, 0, 0, 0)
+    red = L.colour(255, 0, 0, 0, 255)  # red, or warm white on a white-only light
     await fx.write_bytes(L.frame(1, red, 255), response=True)
     await asyncio.sleep(0.2)
     s = await fx.status()
@@ -448,12 +449,12 @@ async def suite_stress(fx, R, seconds):
     seq = 0
     t_end = time.monotonic() + seconds
     sent = 0
-    last = L.colour(0, 0, 0, 0)
+    last = L.colour(0, 0, 0, 0, 0)
     while time.monotonic() < t_end:
         hue = (sent * 3) % 765
         r, g, b = (hue, 255 - hue, 0) if hue < 256 else ((0, 510 - hue, hue - 255) if hue < 510 else (hue - 510, 0, 765 - hue))
         r, g, b = max(0, min(255, r)), max(0, min(255, g)), max(0, min(255, b))
-        last = L.colour(r, g, b, 0)
+        last = L.colour(r, g, b, g, r)  # white slots too, so white-only lights stream as well
         await fx.write_bytes(L.frame(seq, last, 200), response=False)
         seq = (seq + 1) & 0xFF
         sent += 1
@@ -510,7 +511,7 @@ async def main():
     ap.add_argument("--name", help="only fixtures whose BLE name contains this text")
     ap.add_argument("--expect-version", help="exact firmware version expected (default: any 3.x)")
     ap.add_argument("--fwsim", help="run against the firmware simulator binary instead of Bluetooth")
-    ap.add_argument("--fixture", default="rgbw", help="fwsim fixture (rgbw, rgb, rgbcct)")
+    ap.add_argument("--fixture", default="rgbw", help="fwsim fixture (rgbw, rgb, rgbcct, cct)")
     args = ap.parse_args()
 
     R = Results()

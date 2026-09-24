@@ -62,7 +62,8 @@ class RenderEngine {
 
   const ChannelLayout& layout_;
   const LinColor whiteMix_;
-  const bool foldWhite_;  // layout has no white LED (neither W nor CW)
+  const bool foldWhite_;      // layout has no white LED (neither W nor CW)
+  const bool whitesOnly_;     // layout has no colour LED (CCT)
 
   Rng rng_;
   bool first_ = true;

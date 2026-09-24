@@ -8,7 +8,9 @@
 #include <math.h>
 
 RenderEngine::RenderEngine(uint32_t seed, const ChannelLayout& layout, LinColor whiteMix)
-    : layout_(layout), whiteMix_(whiteMix), foldWhite_(!layout::hasPrimaryWhite(layout)), rng_(seed) {}
+    : layout_(layout), whiteMix_(whiteMix), foldWhite_(!layout::hasPrimaryWhite(layout)),
+      whitesOnly_(!layout::hasColour(layout)),
+      rng_(seed) {}
 
 Effect& RenderEngine::effectFor(uint8_t mode) {
   switch (mode) {
@@ -128,6 +130,8 @@ void RenderEngine::frame(const RenderParams& p, uint32_t nowMs, uint16_t* duty) 
   lastOut_ = out;
 
   const float k = bright_ * gain_;
-  const LinColor mapped = foldWhite_ ? chanmap::foldWhite(out, whiteMix_) : out;
+  const LinColor mapped = foldWhite_    ? chanmap::foldWhite(out, whiteMix_)
+                         : whitesOnly_ ? chanmap::colourToWhites(out)
+                                       : out;
   for (uint8_t i = 0; i < layout_.count; ++i) duty[i] = toDuty(chanmap::component(mapped, layout_.roles[i]) * k);
 }

@@ -5,7 +5,7 @@
 
 #include <fixture/FixtureProfile.h>
 
-static_assert(kCoreApi == 1, "ElectroBrightCore does not match this sketch: run firmware/tools/install_ide_core.sh");
+static_assert(kCoreApi == 2, "ElectroBrightCore does not match this sketch: run firmware/tools/install_ide_core.sh");
 
 namespace fx {
 namespace rgbw {

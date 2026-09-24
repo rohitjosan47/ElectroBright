@@ -62,7 +62,7 @@ TEST(fixtures_wiring_uses_each_gpio_once) {
     std::set<int> pins;
     for (uint8_t i = 0; i < f.layout->count; ++i) CHECK(pins.insert(f.pins[i]).second);
     CHECK(pins.insert(f.buzzerPin).second);
-    CHECK(f.parkLowCount <= 2);
+    CHECK(f.parkLowCount <= 3);
     for (uint8_t i = 0; i < f.parkLowCount; ++i) CHECK(pins.insert(f.parkLowPins[i]).second);
     for (int p : pins) CHECK(p != 2 && p != 8 && p != 9 && p != 7);  // strapping / old status LED
     // The buzzer's LEDC channel is the first one after the LED outputs.

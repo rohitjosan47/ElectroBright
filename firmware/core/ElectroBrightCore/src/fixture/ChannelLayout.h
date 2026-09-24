@@ -33,6 +33,7 @@ namespace layouts {
 inline constexpr ChannelLayout kRgbw{"RGBW", 4, {Channel::R, Channel::G, Channel::B, Channel::W}};
 inline constexpr ChannelLayout kRgb{"RGB", 3, {Channel::R, Channel::G, Channel::B}};
 inline constexpr ChannelLayout kRgbcct{"RGBCCT", 5, {Channel::R, Channel::G, Channel::B, Channel::CW, Channel::WW}};
+inline constexpr ChannelLayout kCct{"CCT", 2, {Channel::CW, Channel::WW}};
 }  // namespace layouts
 
 namespace layout {
@@ -70,6 +71,11 @@ inline uint8_t channel(const Color8& c, Channel ch) {
 
 // True when the layout has an LED on the `w` slot (W or CW).
 inline bool hasPrimaryWhite(const ChannelLayout& l) { return has(l, Channel::W) || has(l, Channel::CW); }
+
+// True when the layout has any colour (R, G or B) LED.
+inline bool hasColour(const ChannelLayout& l) {
+  return has(l, Channel::R) || has(l, Channel::G) || has(l, Channel::B);
+}
 
 // Scene colour -> the layout's `count` wire values.
 inline void toTuple(const ChannelLayout& l, const Color8& c, uint8_t* out) {
