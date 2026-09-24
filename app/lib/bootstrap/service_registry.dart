@@ -55,6 +55,10 @@ final class AppServices {
   BleStack? get ble => _ble;
   bool get isDemo => _demo;
 
+  /// The simulated lights while in demo mode (tests read their state).
+  SimCentral? get demoLights => _demoLights;
+  SimCentral? _demoLights;
+
   /// Stops the BLE stack (app shutdown, tests).
   Future<void> stopBle() async {
     final BleStack? b = _ble;
@@ -69,7 +73,7 @@ final class AppServices {
     await _ble?.dispose();
     _demo = demo;
     final bool android = Platform.isAndroid;
-    final BleCentral inner = demo
+    final SimCentral? sim = demo
         ? SimCentral(
             scheduler: scheduler,
             // One demo light of every fixture type.
@@ -99,7 +103,9 @@ final class AppServices {
               SimFixture.legacy(id: 'demo-legacy'),
             ],
           )
-        : ReactiveBleCentral();
+        : null;
+    _demoLights = sim;
+    final BleCentral inner = sim ?? ReactiveBleCentral();
     final BleCentral central = _TracingCentral(inner, trace);
     final Discovery discovery = Discovery(
       central: central,

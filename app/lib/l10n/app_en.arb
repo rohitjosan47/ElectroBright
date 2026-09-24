@@ -125,5 +125,171 @@
         "type": "String"
       }
     }
-  }
+  },
+  "tabColour": "Colour",
+  "tabWhite": "White",
+  "tabEffects": "Effects",
+  "tabPresets": "Presets",
+  "tabCustom": "Custom",
+  "brightness": "Brightness",
+  "intensity": "Intensity",
+  "outputPercent": "Output {percent} %",
+  "@outputPercent": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "useFullRange": "Use full range",
+  "whiteLed": "White LED",
+  "temperature": "Colour temperature",
+  "level": "Level",
+  "kelvinValue": "{kelvin} K",
+  "@kelvinValue": {
+    "placeholders": {
+      "kelvin": {
+        "type": "int"
+      }
+    }
+  },
+  "kelvinApprox": "≈ {kelvin} K",
+  "@kelvinApprox": {
+    "placeholders": {
+      "kelvin": {
+        "type": "int"
+      }
+    }
+  },
+  "chipCandle": "Candle",
+  "chipWarm": "Warm",
+  "chipNeutral": "Neutral",
+  "chipDaylight": "Daylight",
+  "channels": "Channels",
+  "whites": "Whites",
+  "offlineNote": "Not connected — changes are sent when the light is back.",
+  "modeIgnoresColour": "This effect makes its own colours.",
+  "switchToSolid": "Switch to Solid",
+  "speed": "Speed",
+  "frequency": "Frequency",
+  "levelOfTen": "{value} of 10",
+  "@levelOfTen": {
+    "placeholders": {
+      "value": {
+        "type": "int"
+      }
+    }
+  },
+  "colourSource": "Colours",
+  "sourceYourColour": "Your colour",
+  "sourceAutoPalette": "Auto palette",
+  "sourceYourColours": "Your colours",
+  "sourceRedBlue": "Red & blue",
+  "sourceYourWhite": "Your white",
+  "sourceAutoWarmCool": "Auto (warm & cool)",
+  "sourceYourLevel": "Your level",
+  "sourceAutoFlashes": "Auto flashes",
+  "sourceWarmCool": "Warm & cool",
+  "beaconA": "Beacon A",
+  "beaconB": "Beacon B",
+  "modeTemperatureSweep": "Temperature sweep",
+  "modeTemperatureSweepDesc": "A slow drift from warm to cool white",
+  "modeTvWhites": "A flickering screen in warm and cool whites",
+  "modeUnavailableRainbow": "Rainbow isn't available on single-white lights.",
+  "presetEmpty": "Empty",
+  "presetSave": "Save here",
+  "presetLoad": "Load",
+  "presetOverwrite": "Overwrite with current look",
+  "presetClear": "Clear",
+  "presetName": "Preset name",
+  "presetSaved": "Preset saved",
+  "presetLoaded": "Preset loaded",
+  "presetActive": "Current look",
+  "presetModifiedFrom": "Modified from {name}",
+  "@presetModifiedFrom": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "presetDefaultName": "Preset {slot}",
+  "@presetDefaultName": {
+    "placeholders": {
+      "slot": {
+        "type": "int"
+      }
+    }
+  },
+  "presetSuggestCozy": "Cozy Warmth",
+  "presetSuggestCinema": "Cinema Night",
+  "presetSuggestFocus": "Focus",
+  "presetSuggestParty": "Party",
+  "timer": "Timer",
+  "timerStart": "Start",
+  "timerCancel": "Cancel timer",
+  "timerOff": "Off in {time}",
+  "@timerOff": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "sound": "Sound",
+  "soundOn": "Sound on",
+  "soundOff": "Sound off",
+  "lightSettings": "Light settings",
+  "name": "Name",
+  "type": "Type",
+  "firmware": "Firmware",
+  "model": "Model",
+  "whatItCanDo": "What this light can do",
+  "capChannels": "Channels",
+  "capEffects": "Effects",
+  "capEffectsCount": "{supported} of {total}",
+  "@capEffectsCount": {
+    "placeholders": {
+      "supported": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "capPresets": "Presets",
+  "capPresetsCount": "{count} on the light",
+  "@capPresetsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "capTimerSound": "Sleep timer and sound",
+  "capProtocol": "Protocol",
+  "capRaw": "Firmware capabilities",
+  "capNotLearned": "Not read from the light yet — connect it once.",
+  "ledCalibration": "LED calibration",
+  "ledWhiteTemp": "White LED",
+  "ledCoolTemp": "Cool white LED",
+  "ledWarmTemp": "Warm white LED",
+  "ledCalibrationNote": "Set these to your strip's LED temperatures so colour temperatures come out right.",
+  "channelTest": "Channel test",
+  "channelTestRunning": "Lighting {channel}",
+  "@channelTestRunning": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "factoryReset": "Factory reset",
+  "factoryResetConfirm": "Erase this light's presets and settings? It returns to its factory look.",
+  "erase": "Erase",
+  "done": "Done",
+  "errorStorage": "The light couldn't save this (storage).",
+  "errorGeneric": "The light didn't accept that.",
+  "errorOffline": "Not connected."
 }

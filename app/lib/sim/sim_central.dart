@@ -131,7 +131,24 @@ final class SimCentral implements BleCentral {
     _disposed = true;
     _tick?.cancel();
     _tick = null;
+    for (final Cancelable c in _connectTimers.toList()) {
+      c.cancel();
+    }
+    _connectTimers.clear();
     unawaited(_adapter.close());
+  }
+
+  /// Timers of connects in progress (cancelled on dispose).
+  final Set<Cancelable> _connectTimers = <Cancelable>{};
+
+  Cancelable _connectTimer(Duration d, void Function() fn) {
+    late final Cancelable c;
+    c = _scheduler.after(d, () {
+      _connectTimers.remove(c);
+      fn();
+    });
+    _connectTimers.add(c);
+    return c;
   }
 
   Cancelable? _tick;
@@ -209,6 +226,10 @@ final class SimCentral implements BleCentral {
     Cancelable? guard;
     void attempt() {
       if (ready.isCompleted) return;
+      if (_disposed) {
+        ready.completeError(const ConnectException('disposed'));
+        return;
+      }
       if (_state != BleAdapterState.ready) {
         ready.completeError(const ConnectException('bluetooth off'));
         return;
@@ -216,7 +237,7 @@ final class SimCentral implements BleCentral {
       if (f == null || !f.available || f.connected) {
         // Not advertising: keep trying until the timeout (like a pending
         // CoreBluetooth connect).
-        _scheduler.after(const Duration(milliseconds: 200), attempt);
+        _connectTimer(const Duration(milliseconds: 200), attempt);
         return;
       }
       guard?.cancel();
@@ -229,13 +250,13 @@ final class SimCentral implements BleCentral {
     }
 
     if (timeout != null) {
-      guard = _scheduler.after(timeout, () {
+      guard = _connectTimer(timeout, () {
         if (!ready.isCompleted) {
           ready.completeError(const ConnectException('timed out'));
         }
       });
     }
-    _scheduler.after(connectDelay, attempt);
+    _connectTimer(connectDelay, attempt);
     return ready.future;
   }
 

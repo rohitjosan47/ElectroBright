@@ -68,6 +68,9 @@ final class EbModeSpec {
 }
 
 abstract final class EbModeCatalog {
+  /// Solid Color: the mode every light has, showing the picked colour.
+  static const int solid = 1;
+
   static const List<EbModeSpec> modes = <EbModeSpec>[
     EbModeSpec(
       id: 1,
