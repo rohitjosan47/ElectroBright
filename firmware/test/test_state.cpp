@@ -1,6 +1,7 @@
 // Persistence policy: defaults, validation, debounce, presets, factory reset.
 
 #include "Fakes.h"
+#include "Fixtures.h"
 #include "state/SceneCodec.h"
 #include "TestFramework.h"
 
@@ -175,4 +176,48 @@ TEST(store_retries_after_write_failure) {
   CHECK(store.tick(5100, s));
   CHECK(!store.hasPendingScene());
   CHECK(kv.data.count("scene") == 1);
+}
+
+TEST(codec_keeps_the_legacy_flash_format_for_layouts_without_warm_white) {
+  // RGBW / RGB records must stay byte-identical to firmware 3.4.0 (a schema
+  // byte followed by the old 43-byte struct), so presets survive updates.
+  Scene s = state::defaultScene(fx::rgbw::kProfile.defaults);
+  s.color = {1, 2, 3, 4};
+  s.brightness = 5;
+  s.mode = 6;
+  s.speed[0] = 7;
+  s.freq[12] = 8;
+  s.policeA = {9, 10, 11, 12};
+  s.policeB = {13, 14, 15, 16};
+  uint8_t rec[scenecodec::kMaxRecord];
+  for (const ChannelLayout* l : {&layouts::kRgbw, &layouts::kRgb}) {
+    Scene t = s;
+    if (l == &layouts::kRgb) t.color.w = t.policeA.w = t.policeB.w = 0;
+    CHECK_EQ(scenecodec::pack(t, *l, rec), size_t{44});
+    const uint8_t expectedHead[] = {1, 1, 2, 3, static_cast<uint8_t>(l == &layouts::kRgb ? 0 : 4), 5, 6, 7};
+    CHECK(memcmp(rec, expectedHead, sizeof(expectedHead)) == 0);
+    CHECK_EQ(rec[1 + 4 + 1 + 1 + 13 + 12], 8);  // freq[12]
+    CHECK_EQ(rec[40], 13);                      // policeB.r at 1 + 39
+  }
+}
+
+TEST(codec_round_trips_every_fixture_and_rejects_bad_records) {
+  for (const NamedFixture& nf : kAllFixtures) {
+    const ChannelLayout& l = *nf.profile->layout;
+    Scene s = state::defaultScene(nf.profile->defaults);
+    s.mode = 9;
+    s.speed[8] = 2;
+    uint8_t rec[scenecodec::kMaxRecord];
+    const size_t n = scenecodec::pack(s, l, rec);
+    CHECK_EQ(n, scenecodec::recordSize(l));
+    Scene back{};
+    CHECK(scenecodec::unpack(rec, n, l, back));
+    CHECK(memcmp(&back, &s, sizeof(Scene)) == 0);
+    CHECK(!scenecodec::unpack(rec, n - 1, l, back));  // wrong size
+    rec[0] = 2;
+    CHECK(!scenecodec::unpack(rec, n, l, back));  // wrong schema
+    rec[0] = scenecodec::kSchema;
+    rec[6] = 0;  // mode 0
+    CHECK(!scenecodec::unpack(rec, n, l, back));
+  }
 }

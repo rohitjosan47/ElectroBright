@@ -37,13 +37,14 @@ inline size_t frameLength(const ChannelLayout& l) { return static_cast<size_t>(l
 inline uint8_t salt(const ChannelLayout& l) { return l.count == 4 ? 0x55 : static_cast<uint8_t>(0x55 ^ l.count); }
 
 // True when the write *looks like* a binary frame, so it must never be fed to
-// the text parser, even if it then fails to decode. Covers the 6..8 byte range
-// of the original protocol plus the layout's own length.
+// the text parser, even if it then fails to decode: every frame length used in
+// the family (6 .. kMaxFrame bytes, plus the layout's own length). A frame
+// meant for another fixture is therefore rejected (binbad) instead of
+// corrupting the next text command.
 inline bool isCandidate(const uint8_t* data, size_t len, const ChannelLayout& l) {
   const size_t n = frameLength(l);
   const size_t lo = n < 6 ? n : 6;
-  const size_t hi = n > 8 ? n : 8;
-  return data != nullptr && len >= lo && len <= hi && data[0] == kMagic;
+  return data != nullptr && len >= lo && len <= kMaxFrame && data[0] == kMagic;
 }
 
 // Validates and decodes a frame for the layout (`legacy`: also the pre-3.x

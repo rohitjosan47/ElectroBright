@@ -141,9 +141,10 @@ TEST(fixtures_binary_writes_never_reach_the_text_parser) {
     d.setMtu(247);
     d.setSubscribed(true);
     d.pass();
-    // Every 0xAA write in the binary length window (bad checksums included).
+    // Every 0xAA write of any family frame length (bad checksums included):
+    // frames meant for another fixture must never corrupt the text stream.
     const size_t lo = binframe::frameLength(l) < 6 ? binframe::frameLength(l) : 6;
-    const size_t hi = binframe::frameLength(l) > 8 ? binframe::frameLength(l) : 8;
+    const size_t hi = binframe::kMaxFrame;
     for (size_t len = lo; len <= hi; ++len) {
       uint8_t junk[binframe::kMaxFrame + 1] = {0xAA, 1, 2, 3, 4, 5, 6, 7, 8, 9};
       junk[len - 1] = '\n';  // even a trailing newline must not splice text

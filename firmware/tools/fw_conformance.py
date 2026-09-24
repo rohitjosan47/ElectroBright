@@ -6,7 +6,7 @@ Talks to a fixture exactly like the Flutter app does and checks every reply
 against the protocol contract (docs/protocol.md). The fixture's channel layout
 is read from INFO / CAPS (LAYOUT=...), and every colour width, binary frame
 and STATUS field position is derived from it, so the same suite covers the
-RGBW, RGB and future fixtures.
+RGBW, RGB, RGBCCT and future fixtures.
 
 On a real fixture over Bluetooth:
 
@@ -42,7 +42,10 @@ TEST_SLOT = 24
 LAYOUTS = {
     "RGBW": ["R", "G", "B", "W"],
     "RGB": ["R", "G", "B"],
+    "RGBCCT": ["R", "G", "B", "CW", "WW"],
 }
+# Colour slot each role reads (firmware: core/Types.h): r, g, b, w (W or CW), ww.
+SLOT = {"R": 0, "G": 1, "B": 2, "W": 3, "CW": 3, "WW": 4}
 
 
 class Layout:
@@ -54,7 +57,7 @@ class Layout:
         self.name = name
         self.roles = LAYOUTS[name]
         self.n = len(self.roles)
-        self.has_w = "W" in self.roles
+        self.has_w = "W" in self.roles  # the RGBW command exists only with a W LED
 
     @property
     def status_fields(self):
@@ -72,9 +75,10 @@ class Layout:
             cs ^= b
         return bytes([0xAA, *body, cs & 0xFF])
 
-    def colour(self, *values):
-        """The first n of the given channel values (R, G, B, W order)."""
-        return list(values[: self.n])
+    def colour(self, *slots):
+        """Wire values of a colour given in slot order (r, g, b, w, ww; missing = 0)."""
+        v = list(slots) + [0] * (5 - len(slots))
+        return [v[SLOT[role]] for role in self.roles]
 
     def parse_status(self, line):
         if not line or not line.startswith("STATUS:"):
@@ -288,7 +292,7 @@ async def suite_handshake(fx, R, info, caps, expect_version):
 async def suite_commands(fx, R):
     L = fx.layout
     print("\n[commands]")
-    c = L.colour(10, 20, 30, 40)
+    c = L.colour(10, 20, 30, 40, 50)
     R.check(await fx.silent(f"COLOR:{csv(c)}") == [], "COLOR is silent")
     R.check(await fx.silent("BRIGHTNESS:200") == [], "BRIGHTNESS is silent")
     s = await fx.status()
@@ -304,7 +308,7 @@ async def suite_commands(fx, R):
     s = await fx.status()
     R.check(s and s["mode"] == 11 and s["speed"] == 8 and s["freq"] == 3, "SPEED/FREQUENCY target the active mode", s)
 
-    pa, pb = L.colour(1, 2, 3, 4), L.colour(5, 6, 7, 8)
+    pa, pb = L.colour(1, 2, 3, 4, 5), L.colour(6, 7, 8, 9, 10)
     for cmd in ["FIREWORK_COLOR_MODE:1", "CLUB_COLOR_MODE:1", "POLICE_COLOR_MODE:0", f"POLICE_COLOR_A:{csv(pa)}",
                 f"POLICE_COLOR_B:{csv(pb)}", "MODE_SPEED:4,9", "MODE_FREQUENCY:4,2", "PING"]:
         R.check(await fx.cmd(cmd, "OK") == "OK", f"{cmd.split(':')[0]} replies OK")
@@ -352,7 +356,7 @@ async def suite_binary(fx, R):
     L = fx.layout
     print("\n[binary colour frames]")
     d0 = await fx.diag()
-    c = L.colour(40, 80, 120, 160)
+    c = L.colour(40, 80, 120, 160, 200)
     await fx.write_bytes(L.frame(3, c, 150), response=True)
     await asyncio.sleep(0.2)
     s = await fx.status()
@@ -362,8 +366,8 @@ async def suite_binary(fx, R):
         if other == L.name:
             continue
         o = Layout(other)
-        await fx.write_bytes(o.frame(4, o.colour(1, 2, 3, 4), 9), response=True)
-    bad = bytearray(L.frame(5, L.colour(9, 9, 9, 9), 9))
+        await fx.write_bytes(o.frame(4, o.colour(1, 2, 3, 4, 5), 9), response=True)
+    bad = bytearray(L.frame(5, L.colour(9, 9, 9, 9, 9), 9))
     bad[-1] ^= 0xFF
     await fx.write_bytes(bytes(bad), response=True)
     await asyncio.sleep(0.2)
@@ -380,7 +384,7 @@ async def suite_presets(fx, R):
     print("\n[presets]")
     before = await fx.cmd("PRESET_LIST", "PRESETS:")
     was_used = before is not None and f"{TEST_SLOT}," in before
-    c = L.colour(1, 2, 3, 4)
+    c = L.colour(1, 2, 3, 4, 5)
     await fx.silent(f"COLOR:{csv(c)}")
     await fx.cmd("MODE:9", "OK")
     R.check(await fx.cmd(f"PRESET_SAVE:{TEST_SLOT}", "OK") == "OK", "PRESET_SAVE")
@@ -506,7 +510,7 @@ async def main():
     ap.add_argument("--name", help="only fixtures whose BLE name contains this text")
     ap.add_argument("--expect-version", help="exact firmware version expected (default: any 3.x)")
     ap.add_argument("--fwsim", help="run against the firmware simulator binary instead of Bluetooth")
-    ap.add_argument("--fixture", default="rgbw", help="fwsim fixture (rgbw, rgb)")
+    ap.add_argument("--fixture", default="rgbw", help="fwsim fixture (rgbw, rgb, rgbcct)")
     args = ap.parse_args()
 
     R = Results()
@@ -554,7 +558,7 @@ async def main():
 
         if args.persist:
             print("\n[persistence]")
-            c = layout.colour(12, 34, 56, 78)
+            c = layout.colour(12, 34, 56, 78, 90)
             async with BleakClient(device) as client:
                 fx = Fixture(BleTransport(client))
                 fx.layout = layout

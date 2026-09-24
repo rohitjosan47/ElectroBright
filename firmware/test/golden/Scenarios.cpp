@@ -2,9 +2,11 @@
 //
 // `golden_rgbw_matches_baseline` replays a fixed set of scenarios and compares
 // the result with golden/rgbw.golden, recorded from firmware v3.4.0 before the
-// firmware-family refactor (tag fw-3.4.0-golden). Since then only the identity
-// lines changed (3.5.0: VERSION, and CAPS gained LAYOUT=RGBW). Any other
-// difference means RGBW behaviour changed.
+// firmware-family refactor (tag fw-3.4.0-golden). Intended changes since then:
+//   3.5.0  VERSION, and CAPS gained LAYOUT=RGBW
+//   3.5.0  a 9-byte 0xAA write (an RGBCCT frame) counts as a bad binary frame
+//          (DIAG binbad) instead of going to the text parser
+// Any other difference means RGBW behaviour changed.
 //
 //   make golden-record     rewrite the golden file (only when a change is intended)
 
