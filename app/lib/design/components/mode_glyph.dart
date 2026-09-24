@@ -35,7 +35,9 @@ class ModeGlyph extends StatefulWidget {
 class _ModeGlyphState extends State<ModeGlyph>
     with SingleTickerProviderStateMixin {
   late final Ticker _ticker = createTicker(_onTick);
-  final ValueNotifier<double> _t = ValueNotifier<double>(1.37);
+  // The still frame (Reduce Motion, off-screen): chosen so every glyph shows a
+  // lit moment (blink on, police beacon lit, storm at rest).
+  final ValueNotifier<double> _t = ValueNotifier<double>(1.30);
   Duration _last = Duration.zero;
   Duration _acc = Duration.zero;
 
@@ -83,9 +85,13 @@ class _ModeGlyphState extends State<ModeGlyph>
   }
 
   @override
+  // Fills whatever slot it is given (a childless CustomPaint would size to
+  // zero under loose constraints).
   Widget build(BuildContext context) => RepaintBoundary(
-    child: CustomPaint(
-      painter: GlyphPainter(widget.glyph, widget.color, widget.palette, _t),
+    child: SizedBox.expand(
+      child: CustomPaint(
+        painter: GlyphPainter(widget.glyph, widget.color, widget.palette, _t),
+      ),
     ),
   );
 }

@@ -191,7 +191,10 @@ class _ComponentGalleryState extends State<ComponentGallery> {
               ),
               const SizedBox(height: Space.m),
               GridView.count(
-                crossAxisCount: 3,
+                // Large Dynamic Type: fewer, wider tiles so names fit.
+                crossAxisCount: MediaQuery.textScalerOf(context).scale(1) > 1.5
+                    ? 2
+                    : 3,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 mainAxisSpacing: Space.s,
