@@ -2,8 +2,8 @@
 
 #include <string.h>
 
-#include "../../src/config/Config.h"
-#include "../../src/protocol/BinaryFrame.h"
+#include "config/Config.h"
+#include "protocol/BinaryFrame.h"
 
 namespace {
 constexpr uint8_t kConnected = 1;     // BleEvent::Connected

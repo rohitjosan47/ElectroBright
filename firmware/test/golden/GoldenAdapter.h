@@ -8,9 +8,9 @@
 
 #include <memory>
 
-#include "../../src/protocol/BinaryFrame.h"
-#include "../../src/render/RenderEngine.h"
-#include "../../src/state/DeviceState.h"
+#include "protocol/BinaryFrame.h"
+#include "render/RenderEngine.h"
+#include "state/DeviceState.h"
 #include "../fwsim/SimDevice.h"
 
 namespace golden {

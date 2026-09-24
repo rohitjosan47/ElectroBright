@@ -1,7 +1,7 @@
 import 'dart:io';
 
 /// Firmware sources the app must agree with (paths relative to app/).
-const String firmwareSrc = '../firmware/ElectroBright/src';
+const String firmwareSrc = '../firmware/core/ElectroBrightCore/src';
 
 String readFirmware(String relative) {
   final File f = File('$firmwareSrc/$relative');

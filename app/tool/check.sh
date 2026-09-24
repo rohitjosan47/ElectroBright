@@ -28,7 +28,7 @@ step "flutter analyze"
 flutter analyze --no-pub
 
 step "firmware host tests (portable core + fwsim)"
-make -C "$ROOT/firmware/ElectroBright/test" --no-print-directory
+make -C "$ROOT/firmware/test" --no-print-directory
 
 step "flutter test"
 flutter test --no-pub

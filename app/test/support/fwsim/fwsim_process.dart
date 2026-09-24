@@ -5,10 +5,10 @@ import 'dart:typed_data';
 
 /// Path of the firmware test directory, relative to the app package root
 /// (flutter test runs with the package root as the working directory).
-const String firmwareTestDir = '../firmware/ElectroBright/test';
+const String firmwareTestDir = '../firmware/test';
 const String fwsimBinary = '$firmwareTestDir/build/fwsim/fwsim';
 
-/// One reply to an fwsim request (see firmware/ElectroBright/test/fwsim/main.cpp).
+/// One reply to an fwsim request (see firmware/test/fwsim/main.cpp).
 final class FwSimReply {
   FwSimReply(this.notifications, this.state, this.sounds, this.info);
 

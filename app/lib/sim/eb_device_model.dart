@@ -5,8 +5,8 @@ import '../core/protocol/eb/eb_scene.dart';
 
 /// Dart twin of the ElectroBright firmware (v3.4.0): the command parser,
 /// controller, persistence policy, reply buffer and the BLE/control-task glue,
-/// ported line for line from firmware/ElectroBright/src and
-/// firmware/ElectroBright/test/fwsim/SimDevice.cpp.
+/// ported line for line from firmware/core/ElectroBrightCore/src and
+/// firmware/test/fwsim/SimDevice.cpp.
 ///
 /// It powers the Demo lights and the simulator integration tests. The
 /// differential test (test/fw_in_the_loop/differential_test.dart) feeds the

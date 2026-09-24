@@ -1,4 +1,4 @@
-/// ElectroBright firmware contract (firmware/ElectroBright/src/config/Config.h).
+/// ElectroBright firmware contract (firmware/core/ElectroBrightCore/src/config/Config.h).
 /// `test/cross_repo/firmware_config_sync_test.dart` checks every value
 /// against the firmware sources.
 abstract final class Eb {

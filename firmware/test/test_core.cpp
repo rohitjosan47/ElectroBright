@@ -5,9 +5,9 @@
 
 #include <vector>
 
-#include "../src/core/Rng.h"
-#include "../src/core/ShuffleBag.h"
-#include "../src/render/effects/Pulses.h"
+#include "core/Rng.h"
+#include "core/ShuffleBag.h"
+#include "render/effects/Pulses.h"
 #include "TestFramework.h"
 
 TEST(shuffle_bag_exact_proportions_per_bag) {

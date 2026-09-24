@@ -22,8 +22,8 @@
 #include <vector>
 
 #include "../Fakes.h"
-#include "../../src/protocol/Egress.h"
-#include "../../src/protocol/LineAssembler.h"
+#include "protocol/Egress.h"
+#include "protocol/LineAssembler.h"
 
 class SimDevice {
  public:

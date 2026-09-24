@@ -3,12 +3,12 @@
 #include <string>
 #include <vector>
 
-#include "../src/protocol/BinaryFrame.h"
-#include "../src/protocol/CommandParser.h"
-#include "../src/protocol/Egress.h"
-#include "../src/protocol/LineAssembler.h"
-#include "../src/protocol/Replies.h"
-#include "../src/render/ModeRegistry.h"
+#include "protocol/BinaryFrame.h"
+#include "protocol/CommandParser.h"
+#include "protocol/Egress.h"
+#include "protocol/LineAssembler.h"
+#include "protocol/Replies.h"
+#include "render/ModeRegistry.h"
 #include "TestFramework.h"
 
 // ------------------------------------------------------------------ parser

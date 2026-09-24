@@ -1,6 +1,6 @@
 # ElectroBright Mobile App — Feature Specification
 
-This document describes every feature, control and UI element of the ElectroBright Flutter app (`electrobright_app/`). It mirrors the capabilities of the ESP32-C3 firmware in `firmware/ElectroBright/`. The byte-level BLE protocol is documented in the [firmware README](../firmware/ElectroBright/README.md#4-ble-protocol-nordic-uart-service).
+This document describes every feature, control and UI element of the ElectroBright Flutter app (`electrobright_app/`). It mirrors the capabilities of the ESP32-C3 firmware in `firmware/`. The byte-level BLE protocol is documented in the [firmware README](../firmware/README.md#4-ble-protocol-nordic-uart-service).
 
 ---
 

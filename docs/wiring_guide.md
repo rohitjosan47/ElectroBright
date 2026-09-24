@@ -2,7 +2,7 @@
 
 A complete circuit connection, hardware assembly, and migration guide for building the **ElectroBright** 4-channel RGBW smart lighting system powered by the **ESP32-C3** microcontroller with native Bluetooth Low Energy (BLE 5.0).
 
-The firmware for this hardware lives in [`firmware/ElectroBright/`](../firmware/ElectroBright/README.md).
+The firmware for this hardware lives in [`firmware/`](../firmware/README.md).
 
 ---
 

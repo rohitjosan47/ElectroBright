@@ -6,11 +6,11 @@
 #include <initializer_list>
 #include <vector>
 
-#include "../src/core/MathUtil.h"
-#include "../src/feedback/SoundSequencer.h"
-#include "../src/render/Color.h"
-#include "../src/render/RenderEngine.h"
-#include "../src/render/effects/Effects.h"
+#include "core/MathUtil.h"
+#include "feedback/SoundSequencer.h"
+#include "render/Color.h"
+#include "render/RenderEngine.h"
+#include "render/effects/Effects.h"
 #include "TestFramework.h"
 
 namespace {

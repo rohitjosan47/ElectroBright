@@ -3,7 +3,7 @@
 
 #include <string>
 
-#include "../src/protocol/BinaryFrame.h"
+#include "protocol/BinaryFrame.h"
 #include "TestFramework.h"
 #include "fwsim/SimDevice.h"
 

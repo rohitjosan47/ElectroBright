@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import '../../model/rgbw.dart';
 
-/// Binary colour fast path (firmware/ElectroBright/src/protocol/BinaryFrame.h):
+/// Binary colour fast path (firmware/core/ElectroBrightCore/src/protocol/BinaryFrame.h):
 /// `[0xAA, seq, R, G, B, W, Br, seq^R^G^B^W^Br^0x55]`. The firmware sends no
 /// reply; the frame sets colour and master brightness but never wakes a
 /// sleeping light. Each frame must be its own BLE write.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerates src/render/GammaLut.h (8-bit perceptual -> 16-bit linear, gamma 2.2)."""
+"""Regenerates core/ElectroBrightCore/src/render/GammaLut.h (8-bit perceptual -> 16-bit linear, gamma 2.2)."""
 import os
 
 GAMMA = 2.2
@@ -7,7 +7,7 @@ GAMMA = 2.2
 # never collapse to "off".
 vals = [0] + [max(1, round(65535 * ((i / 255.0) ** GAMMA))) for i in range(1, 256)]
 rows = ["    " + ", ".join(str(v) for v in vals[i:i + 12]) + "," for i in range(0, 256, 12)]
-path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "render", "GammaLut.h")
+path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "core", "ElectroBrightCore", "src", "render", "GammaLut.h")
 with open(path, "w") as f:
     f.write("#pragma once\n")
     f.write("// sRGB-style 8-bit perceptual value -> 16-bit linear light, gamma 2.2.\n")

@@ -5,7 +5,7 @@ import 'eb_constants.dart';
 import 'eb_scene.dart';
 
 /// One reply line from the firmware, parsed strictly
-/// (firmware/ElectroBright/src/protocol/Replies.cpp). Anything that is not
+/// (firmware/core/ElectroBrightCore/src/protocol/Replies.cpp). Anything that is not
 /// exactly well-formed becomes [EbMalformed] and must never be applied.
 @immutable
 sealed class EbReply {

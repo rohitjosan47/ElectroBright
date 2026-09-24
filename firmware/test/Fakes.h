@@ -5,8 +5,8 @@
 #include <string>
 #include <vector>
 
-#include "../src/control/ControllerCore.h"
-#include "../src/state/KeyValueStore.h"
+#include "control/ControllerCore.h"
+#include "state/KeyValueStore.h"
 
 class MockKv : public IKeyValueStore {
  public:

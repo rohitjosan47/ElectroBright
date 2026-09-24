@@ -16,15 +16,17 @@ Firmware version: **3.4.0** · Model id: **EB-C3-RGBW-V1** · BLE name: **Electr
 | Board | **ESP32C3 Dev Module** (`esp32:esp32:esp32c3`) |
 | USB CDC On Boot | Enabled (only needed for serial logs) |
 
-1. **File → Open…** `firmware/ElectroBright/ElectroBright.ino`
-2. Select the board and port, then **Upload**.
+1. Once: run `firmware/tools/install_ide_core.sh` (links the shared core library into the
+   Arduino sketchbook), then restart the IDE.
+2. **File → Open…** `firmware/fixtures/ElectroBright_RGBW/ElectroBright_RGBW.ino`
+3. Select the board and port, then **Upload**.
 
 Reference build (v3.4.0): 653 KB flash (49 %), 30.8 KB static RAM (9 %), zero compiler
 warnings with `--warnings all`.
 
 Command line (the Arduino IDE ships `arduino-cli`):
 ```bash
-arduino-cli compile --fqbn esp32:esp32:esp32c3:CDCOnBoot=cdc --warnings all firmware/ElectroBright
+firmware/tools/build.sh            # every fixture, with the IDE's arduino-cli and settings
 ```
 
 **First boot starts clean.** Settings and presets saved by the original
@@ -212,8 +214,8 @@ Errors use the previous firmware's codes: `FORMAT`, `MODE_INVALID`,
 
 **Host tests** (portable core, ASan + UBSan, `-Werror`), 79 tests:
 ```bash
-make -C firmware/ElectroBright/test          # all
-make -C firmware/ElectroBright/test run T=club # filter by name
+make -C firmware/test          # all
+make -C firmware/test run T=club # filter by name
 ```
 They cover:
 - every command and error code
@@ -229,9 +231,9 @@ They cover:
 
 **On-device suite** (`pip install bleak`):
 ```bash
-python3 firmware/ElectroBright/tools/fw_conformance.py              # contract + 30 s stress
-python3 firmware/ElectroBright/tools/fw_conformance.py --stress 600 --cycles 100
-python3 firmware/ElectroBright/tools/fw_conformance.py --persist    # power-cycle check
+python3 firmware/tools/fw_conformance.py              # contract + 30 s stress
+python3 firmware/tools/fw_conformance.py --stress 600 --cycles 100
+python3 firmware/tools/fw_conformance.py --persist    # power-cycle check
 ```
 
 ---

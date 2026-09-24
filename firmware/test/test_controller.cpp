@@ -1,6 +1,6 @@
 // Controller: the app contract, sleep/timer semantics, presets, sound, errors.
 
-#include "../src/protocol/BinaryFrame.h"
+#include "protocol/BinaryFrame.h"
 #include "Fakes.h"
 #include "TestFramework.h"
 

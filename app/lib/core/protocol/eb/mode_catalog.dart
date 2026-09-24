@@ -32,7 +32,7 @@ enum EbModeGlyph {
 }
 
 /// One lighting mode of the ElectroBright firmware. Capability flags and
-/// slider labels must equal firmware/ElectroBright/src/render/ModeRegistry.h
+/// slider labels must equal firmware/core/ElectroBrightCore/src/render/ModeRegistry.h
 /// (enforced by test/cross_repo/mode_registry_sync_test.dart).
 @immutable
 final class EbModeSpec {

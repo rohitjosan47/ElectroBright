@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 
-#include "../../src/config/Config.h"
+#include "config/Config.h"
 #include "SimDevice.h"
 
 namespace {
