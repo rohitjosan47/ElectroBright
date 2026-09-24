@@ -1,41 +1,97 @@
-# ElectroBright Firmware (ESP32-C3)
+# ElectroBright Firmware Family (ESP32-C3)
 
-Firmware for the ElectroBright RGBW light controller. It was written from scratch as a replacement for the original firmware. It is compatible with the Flutter app in `electrobright_app/` and with the hardware in [`docs/wiring_guide.md`](../../docs/wiring_guide.md).
+Firmware for ElectroBright BLE light fixtures. One **shared core** holds everything the fixtures have in common:
+- all 13 modes and effects;
+- the BLE protocol;
+- presets, the sleep timer, sound, diagnostics and persistence.
 
-Firmware version: **3.4.0** · Model id: **EB-C3-RGBW-V1** · BLE name: **ElectroBright_C3_V1**
+Each **fixture** is a small Arduino sketch that adds only its identity, channel layout and wiring. Every fixture works with the ElectroBright app. The protocol contract is in [`docs/protocol.md`](../docs/protocol.md), and the hardware is described in [`docs/wiring_guide.md`](../docs/wiring_guide.md).
+
+Family version **3.5.0**
+
+| Fixture | Sketch | Channels | Model id | BLE name | Status |
+|---|---|---|---|---|---|
+| RGBW | [`fixtures/ElectroBright_RGBW`](fixtures/ElectroBright_RGBW/README.md) | R, G, B, W | `EB-C3-RGBW-V1` | `ElectroBright_C3_V1` | shipping (byte-identical to 3.4.0 apart from VERSION/CAPS) |
+| RGB | [`fixtures/ElectroBright_RGB`](fixtures/ElectroBright_RGB/README.md) | R, G, B | `EB-C3-RGB-V1` | `ElectroBright_C3_RGB_V1` | new; host-tested, awaiting a hardware run |
+
+```
+firmware/
+  core/ElectroBrightCore/   Arduino library: the shared core (library.properties, src/)
+  fixtures/<Name>/          one sketch per fixture: <Name>.ino, Fixture.h, README.md
+  test/                     host tests, fwsim, golden baseline (make)
+  tools/                    IDE setup, build script, conformance suite, gamma-table generator
+```
 
 ---
 
-## 1. Build & flash
+## 1. Build & flash (Arduino IDE)
 
 | Item | Requirement (verified) |
 |---|---|
 | IDE | Arduino IDE 2.x |
 | Board package | **esp32 by Espressif ≥ 3.0** (verified with 3.3.11) |
-| Library | **NimBLE-Arduino 2.x** by h2zero (verified with 2.5.1) — install via Library Manager |
+| Libraries | **NimBLE-Arduino 2.x** by h2zero (verified with 2.5.1), via Library Manager; **ElectroBrightCore** (this repo, step 1) |
 | Board | **ESP32C3 Dev Module** (`esp32:esp32:esp32c3`) |
 | USB CDC On Boot | Enabled (only needed for serial logs) |
 
-1. Once: run `firmware/tools/install_ide_core.sh` (links the shared core library into the
-   Arduino sketchbook), then restart the IDE.
-2. **File → Open…** `firmware/fixtures/ElectroBright_RGBW/ElectroBright_RGBW.ino`
+1. **Once:** run `firmware/tools/install_ide_core.sh`, then restart the IDE.
+   - The script links `core/ElectroBrightCore` into `~/Documents/Arduino/libraries`, so every sketch always builds against the working tree.
+   - `--copy` installs a plain copy instead; re-run it after every core change.
+   - `--status` shows what is installed.
+2. **File → Open…** the fixture's sketch, for example `firmware/fixtures/ElectroBright_RGB/ElectroBright_RGB.ino`.
 3. Select the board and port, then **Upload**.
 
-Reference build (v3.4.0): 653 KB flash (49 %), 30.8 KB static RAM (9 %), zero compiler
-warnings with `--warnings all`.
+A sketch built against a stale core copy fails at compile time with "ElectroBrightCore does not match this sketch".
 
-Command line (the Arduino IDE ships `arduino-cli`):
+**Command line.** This uses the Arduino IDE's own `arduino-cli` and settings, and always builds against the working tree:
 ```bash
-firmware/tools/build.sh            # every fixture, with the IDE's arduino-cli and settings
+firmware/tools/build.sh            # every fixture
+firmware/tools/build.sh RGB        # one fixture (folder suffix)
 ```
 
-**First boot starts clean.** Settings and presets saved by the original
-firmware (NVS namespace `eeprom`) are erased once; nothing is migrated. The light comes
-up white at full brightness with no presets.
+Reference build (3.5.0), per fixture: ≈655 KB flash (49 %) and 31.0 KB static RAM (9 %), with zero compiler warnings under `--warnings all`.
+
+**First boot starts clean.** Each fixture stores its settings and presets in its own NVS namespace: `eb3` for RGBW and `eb3rgb` for RGB.
+- An RGBW light updated from 3.4.0 keeps its presets, because the namespace and the byte layout are unchanged.
+- Data from the original pre-3.x firmware (namespace `eeprom`) is erased once.
 
 ---
 
-## 2. Architecture
+## 2. Fixtures and channel layouts
+
+A fixture is described by a `FixtureProfile` (`core/ElectroBrightCore/src/fixture/FixtureProfile.h`). Its fields:
+- **Identity:** model id, BLE name, CAPS reply, NVS namespace.
+- **Channel layout:** which LED channels exist, in wire order.
+- **Wiring:** one GPIO per channel, the buzzer pin, and unused outputs that must be held low.
+- **Scene defaults:** colour and police colours.
+- **White mix:** the linear RGB that stands in for white-channel light on a layout without W.
+- **Legacy frames:** whether the pre-3.x binary frames are accepted.
+
+The layout sets the width of every colour on the wire. `COLOR`, `POLICE_COLOR_A/B`, the binary frame and STATUS all carry one value per channel. See [`docs/protocol.md`](../docs/protocol.md).
+
+What differs between fixtures:
+
+| | RGBW | RGB |
+|---|---|---|
+| **Outputs** | GPIO 1, 3, 4, 5 → R, G, B, W | GPIO 1, 3, 4 → R, G, B; GPIO 5 held low (W not fitted) |
+| **Colour command** | `COLOR:r,g,b,w` (alias `RGBW:`) | `COLOR:r,g,b` (`RGBW:` → `ERROR:UNKNOWN_CMD`) |
+| **Binary frame** | 8 bytes, salt 0x55, plus the legacy 7/6-byte frames | 7 bytes, salt 0x56 |
+| **STATUS** | 23 fields | 20 fields |
+| **White-channel light from effects** | drives the W LED | mixed from R+G+B (hue kept) |
+| **Police colour B default** | W LED `0,0,0,255` | RGB white `255,255,255` |
+| **Buzzer LEDC channel** | 4 | 3 |
+
+### Adding a fixture
+1. **Layout.** If the layout is new, add it to `fixture/ChannelLayout.h`.
+2. **Folder.** Copy `fixtures/ElectroBright_RGB` to `fixtures/ElectroBright_<Name>`.
+   - Rename the `.ino` to match the folder.
+   - Edit `Fixture.h`: identity, pins, defaults, and a unique NVS namespace (≤ 15 chars).
+3. **Register.** Add it to `test/Fixtures.h` and to `FIXTURES` in `test/Makefile`. `tools/fw_conformance.py` needs the new layout in `LAYOUTS`.
+4. **Check.** Run `make -C firmware/test`, `make -C firmware/test conformance` and `firmware/tools/build.sh`.
+
+---
+
+## 3. Architecture
 
 ```
 NimBLE host task ── write callback: validate + copy only ──► colour mailbox (latest wins)
@@ -46,7 +102,7 @@ CONTROL task (prio 6) ── the ONLY owner of device state (actor model)
    StateStore (NVS, debounced) · sleep timer · sounds
                                                                   │ SeqLock snapshot
 esp_timer 200 Hz ─► RENDER task (prio 10)
-   RenderEngine: smoothing → effect (+ crossfade) → brightness → sleep fade → LEDC
+   RenderEngine: smoothing → effect (+ crossfade) → channel map → brightness → sleep fade → LEDC
    SoundSequencer tick → buzzer
 ```
 
@@ -73,31 +129,38 @@ Design rules that remove whole classes of bugs found in the original firmware:
   and idle tasks.
 - **Safe power-up.** The LED gates are driven low first, then the device
   fades in from black over 600 ms (no boot flash, no inrush spike).
-- **Phase-shifted PWM.** The four channels switch at ¼-period offsets, which
+- **Phase-shifted PWM.** The n channels switch at 1/n-period offsets, which
   lowers the peak current on the strip supply and reduces EMI.
+- **One core, many fixtures.** Effects always render linear RGBW; the channel
+  map at the end drives the fixture's real outputs (on a light without W,
+  white-channel light becomes hue-preserving RGB white).
 
 ### Source map
 
+All paths are under `core/ElectroBrightCore/src/` unless noted.
+
 | Path | Portable? | Purpose |
 |---|---|---|
-| `src/config/Config.h` | ✓ | Every pin, rate, timing and buffer size |
-| `src/core/` | ✓ | Types, math, RNG, noise, seqlock, stats |
-| `src/protocol/` | ✓ | Line assembler, parser, binary frames, reply formats, egress packing |
-| `src/state/` | ✓ | Scene/settings schema, persistence policy |
-| `src/control/ControllerCore.*` | ✓ | Command semantics, sleep timer, presets |
-| `src/render/` | ✓ | Colour pipeline, render engine, mode registry, 13 effects |
-| `src/feedback/` | ✓ | Buzzer melodies and sequencer |
-| `src/platform/` | ESP32 | LEDC PWM, buzzer, NVS, NimBLE NUS, tasks/timer wiring |
+| `config/Config.h` | ✓ | Family version, rates, timings, buffer sizes (shared by every fixture) |
+| `fixture/` | ✓ | `ChannelLayout` (channels in wire order), `FixtureProfile` (what a sketch passes to `App::start`) |
+| `core/` | ✓ | Types, math, RNG, noise, seqlock, stats |
+| `protocol/` | ✓ | Line assembler, parser, binary frames, reply formats, egress packing |
+| `state/` | ✓ | Scene/settings schema, persistence policy |
+| `control/ControllerCore.*` | ✓ | Command semantics, sleep timer, presets |
+| `render/` | ✓ | Colour pipeline, render engine, channel map, mode registry, 13 effects |
+| `feedback/` | ✓ | Buzzer melodies and sequencer |
+| `platform/` | ESP32 | LEDC PWM, buzzer, NVS, NimBLE NUS, tasks/timer wiring |
+| `fixtures/<Name>/Fixture.h` | ✓ | One fixture's identity, layout, pins, defaults (outside the library) |
 
 "Portable" code has no Arduino / ESP-IDF includes (enforced by `make portable`)
 and is fully covered by the host tests.
 
 ---
 
-## 3. Modes and sliders
+## 4. Modes and sliders
 
 Protocol command names are unchanged (`SPEED:` / `FREQUENCY:`). The **UI
-names** now describe what each slider really does (`src/render/ModeRegistry.h`
+names** now describe what each slider really does (`core/ElectroBrightCore/src/render/ModeRegistry.h`
 must match the app's `mode_definition.dart`; the app test
 `mode_registry_sync_test.dart` enforces this).
 
@@ -157,88 +220,66 @@ bars) accent blackout of at most 120 ms.
 
 ---
 
-## 4. BLE protocol (Nordic UART Service)
+## 5. BLE protocol
 
-Service `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`, RX (write / write-no-response)
-`…0002`, TX (notify) `…0003`. Text lines end with `\n`, `\r` or `\r\n`; names
-are case-insensitive. Replies are `\n`-terminated. Several replies may share
-one notification, and a long reply may span notifications.
+Nordic UART Service with text commands and a binary colour fast path. The complete contract is in [`docs/protocol.md`](../docs/protocol.md):
+- identity and layout detection;
+- binary frames;
+- every command and reply;
+- the `3n + 11`-field STATUS;
+- error codes and shared behaviour.
 
-**Binary colour fast path** (no reply), 8 bytes:
-`[0xAA, seq, R, G, B, W, Brightness, seq^R^G^B^W^Br^0x55]`. The legacy 6- and
-7-byte forms are also accepted.
-
-| Command | Reply |
-|---|---|
-| `RGBW:r,g,b,w` (alias `COLOR:`) · `BRIGHTNESS:0-255` · `SPEED:1-10` · `FREQUENCY:1-10` | none (high-rate) |
-| `MODE:1-13` · `MODE_SPEED:m,s` · `MODE_FREQUENCY:m,f` | `OK` |
-| `FIREWORK_COLOR_MODE:0\|1` · `CLUB_COLOR_MODE:0\|1` · `POLICE_COLOR_MODE:0\|1` | `OK` |
-| `POLICE_COLOR_A:r,g,b,w` · `POLICE_COLOR_B:r,g,b,w` | `OK` |
-| `PRESET_SAVE:0-24` · `PRESET_DELETE:0-24` | `OK` |
-| `PRESET_LOAD:0-24` | `STATUS:…` or `ERROR:PRESET_EMPTY:<id>` |
-| `PRESET_LIST` | `PRESETS:0,3,` (trailing comma; `PRESETS:` when empty) |
-| `STATUS` | `STATUS:` + 23 fields (below) |
-| `MODE_SETTINGS` | `MODE_SETTINGS:s1,f1;…;s13,f13` |
-| `MODE_CAPABILITIES:m` | `CAPABILITIES:NONE` / `FREQUENCY` / `SPEED,FREQUENCY[,COLOR_MODE]` |
-| `SLEEP` · `WAKE` · `SOUND_ON` · `SOUND_OFF` · `PING` | `OK` |
-| `TIMER:0-86400` (seconds, 0 = cancel) | `OK` |
-| `FACTORY_RESET` | `OK` (no reboot; the link stays up) |
-| `INFO` · `VERSION` · `CAPS` | `INFO:EB-C3-RGBW-V1` · `VERSION:3.4.0` · `CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL` |
-| `DIAG` | `DIAG:key=value,…` (see §6) |
-
-`STATUS` fields: `r,g,b,w, brightness, mode, speed, freq` (of the active mode),
-`fireworkCM, clubCM, policeCM, sleeping, timerActive, timerRemainingSec, sound,
-policeA r,g,b,w, policeB r,g,b,w`.
-
-Errors use the previous firmware's codes: `FORMAT`, `MODE_INVALID`,
-`SPEED_OUT_OF_BOUNDS`, `FREQUENCY_INVALID`, `BRIGHTNESS_INVALID`, `PRESET_ID`,
-`*_COLOR_MODE_INVALID`, `MODE_SPEED_INVALID`, `MODE_FREQUENCY_INVALID`,
-`UNKNOWN_CMD`, and the new `STORAGE` for a flash write failure.
-
-### Behavior notes (differences from the original firmware)
-- **SLEEP turns the light off in every mode.** It also cancels the timer.
-  Colour and brightness received while asleep update the stored values but do
-  **not** wake the light (a late drag packet after pressing Power used to turn
-  it back on). `WAKE`, `MODE` and `PRESET_LOAD` wake it.
-- **When the sleep timer fires**, the light fades out over 2 s and the device
-  pushes an unsolicited `STATUS`.
-- **Loading a preset keeps the mute setting.** Mute is a device setting, not
-  part of a scene.
-- **Sleep state is not persisted.** Power-up always means light on.
-- **Persistence:** the live scene is saved 3 s after the last change (at most
-  15 s after the first). Sound setting and presets are saved immediately.
+How this firmware differs from the original (pre-3.x) firmware:
+- **Sleep:**
+  - SLEEP turns the light off in every mode, and cancels the timer.
+  - Colour and brightness received while asleep update the stored values but do not wake the light. In the original firmware, a late drag packet after pressing Power turned it back on.
+  - `WAKE`, `MODE` and `PRESET_LOAD` wake the light.
+- **Timer:** when it fires, the light fades out over 2 s and pushes an unsolicited `STATUS`.
+- **Presets:** loading a preset keeps the mute setting. Mute is a device setting, not part of a scene.
+- **Power-up:** sleep state is not persisted, so power-up always means light on.
+- **Persistence:** the live scene is saved 3 s after the last change, and at most 15 s after the first change. The sound setting and presets are saved immediately.
 
 ---
 
-## 5. Tests
+## 6. Tests
 
-**Host tests** (portable core, ASan + UBSan, `-Werror`), 79 tests:
+**Host tests** (`test/`: portable core, ASan + UBSan, `-Werror`): 114 tests.
 ```bash
-make -C firmware/test          # all
-make -C firmware/test run T=club # filter by name
+make -C firmware/test                 # portable check, all tests, fwsim
+make -C firmware/test run T=rgb       # filter by name
+make -C firmware/test conformance     # tools/fw_conformance.py against fwsim, every fixture
 ```
-They cover:
-- every command and error code
-- fragmentation and flooding
-- exact reply strings
-- egress packing and retries
-- debounce, max-latency and failure retry of the persistence
-- sleep / timer / preset / mute semantics
-- a simulation of every mode at the real 200 Hz frame rate: rates within ±5 %,
-  monotonic slider response, Club dark time ≤ 2 % with blackouts ≤ 120 ms,
-  darkness in every mode when asleep, instant parameter changes, bounded /
-  NaN-free output
 
-**On-device suite** (`pip install bleak`):
+What they cover:
+- **Protocol and state:** every command and error code; fragmentation and flooding; exact reply strings; egress packing and retries; persistence debounce, maximum latency and failure retry; sleep, timer, preset and mute semantics.
+- **Render:** every mode simulated at the real 200 Hz frame rate:
+  - rates within ±5 % and monotonic slider response;
+  - Club dark time ≤ 2 %, with blackouts ≤ 120 ms;
+  - darkness in every mode while asleep;
+  - instant parameter changes;
+  - bounded, NaN-free output.
+- **Golden baseline:** `golden/rgbw.golden` holds render hashes for 64 streams, plus protocol transcripts with flash contents. It was recorded from 3.4.0 before the family refactor, so any change in RGBW behaviour fails the build. Re-record it only with `make golden-record`.
+- **RGB fixture** (`test_rgb.cpp`):
+  - widths, identity, frames and the salt;
+  - rejection of RGBW frames;
+  - defaults, storage validation, and presets across a reboot;
+  - hue-preserving white fold;
+  - effects identical to RGBW.
+- **Per-fixture invariants** (`test_layouts.cpp`): identity and wiring, `3n + 11` STATUS fields, colour arity, frame round trips, binary data never reaching the text parser, and bounded rendering. These run for every fixture in `test/Fixtures.h`.
+
+**fwsim** (`test/fwsim`) runs the real core behind a stdin/stdout protocol for the app's firmware-in-the-loop tests. Select the fixture with `--fixture rgbw|rgb` (the default is rgbw).
+
+**On-device suite** (`pip install bleak`). It reads the layout from INFO/CAPS:
 ```bash
-python3 firmware/tools/fw_conformance.py              # contract + 30 s stress
+python3 firmware/tools/fw_conformance.py                 # contract + 30 s stress
+python3 firmware/tools/fw_conformance.py --name RGB      # pick a fixture by name
 python3 firmware/tools/fw_conformance.py --stress 600 --cycles 100
-python3 firmware/tools/fw_conformance.py --persist    # power-cycle check
+python3 firmware/tools/fw_conformance.py --persist       # power-cycle check
 ```
 
 ---
 
-## 6. Diagnostics (`DIAG`)
+## 7. Diagnostics (`DIAG`)
 
 | Key | Meaning |
 |---|---|
@@ -253,14 +294,26 @@ python3 firmware/tools/fw_conformance.py --persist    # power-cycle check
 
 ---
 
-## 7. Tuning
+## 8. Tuning
 
-Everything is in `src/config/Config.h`:
-- PWM frequency and resolution, and phase stagger
-- smoothing / crossfade / fade times
-- persistence debounce
-- buffer sizes
-- task priorities and stacks
-- `kConnectChirp` (beep on connect)
+**Shared settings** are in `core/ElectroBrightCore/src/config/Config.h`:
+- PWM frequency, resolution and phase stagger;
+- smoothing, crossfade and fade times;
+- persistence debounce;
+- buffer sizes;
+- task priorities and stack sizes;
+- `kConnectChirp` (beep on connect).
+
+**Per-fixture settings** are in `fixtures/<Name>/Fixture.h`: pins, defaults and `whiteMix`.
 
 Regenerate the gamma table with `tools/gen_gamma_lut.py`.
+
+---
+
+## 9. Roadmap: more fixtures
+
+The core is sized for up to 5 channels (`kMaxChannels`, `Command::args`, frame routing up to 9 bytes). The buzzer uses the first LEDC channel after the LED outputs (the C3 has 6 channels).
+
+- **W (single white), n = 1:** needs a `W`-only layout. Effects render RGBW, so the channel map must turn colour into white brightness (for example, luminance).
+- **CCT (cool + warm white) and RGBCCT (RGB + CW + WW, n = 5):** need `CW`/`WW` channel roles. Colour temperature has to be carried from the scene to the channel map, which means widening `Scene` colours beyond `Rgbw8`. That change needs a new NVS schema. The new fixtures get their own namespaces, so existing RGBW/RGB presets are unaffected.
+- **App:** the app must accept `LAYOUT=RGB` (and later layouts), size colours and STATUS by `n`, and use the salted frame. See [`docs/protocol.md`](../docs/protocol.md).

@@ -2,7 +2,7 @@
 
 A complete circuit connection, hardware assembly, and migration guide for building the **ElectroBright** 4-channel RGBW smart lighting system powered by the **ESP32-C3** microcontroller with native Bluetooth Low Energy (BLE 5.0).
 
-The firmware for this hardware lives in [`firmware/`](../firmware/README.md).
+The same board also builds the **3-channel RGB fixture**: leave the white channel unpopulated (see [§7](#7-rgb-fixture-3-channels)). Each fixture has its own firmware sketch in [`firmware/fixtures/`](../firmware/README.md): `ElectroBright_RGBW` and `ElectroBright_RGB`.
 
 ---
 
@@ -169,4 +169,23 @@ Before plugging in your main power supply, verify each connection:
 - [ ] **MOSFET Gates Protected:** 220Ω series resistors installed on GPIO 1, 3, 4, 5 with 10kΩ pull-downs to GND.
 - [ ] **LED Strip Polarity:** Strip `+12V/+24V` connected to PSU (+); `R, G, B, W` connected to MOSFET Drains.
 - [ ] **Buzzer Wiring:** Connected between GPIO 6 and GND.
+
+---
+
+## 7. RGB fixture (3 channels)
+
+The RGB fixture is this board without the white channel. Flash `firmware/fixtures/ElectroBright_RGB` instead of the RGBW sketch.
+
+| Function | ESP32-C3 pin | Change from RGBW |
+| :--- | :--- | :--- |
+| Red / Green / Blue | GPIO 1 / 3 / 4 | unchanged |
+| White | GPIO 5 | **not fitted:** no MOSFET, gate resistor or pull-down needed. The firmware drives GPIO 5 low anyway |
+| Buzzer | GPIO 6 | unchanged |
+
+- **BOM changes:** 3 MOSFETs, 3 gate resistors (220–470 Ω) and 3 pull-downs (10 kΩ). The strip is a common-anode **RGB** strip (`+V`, `R-`, `G-`, `B-`).
+- **Current:** an RGB strip at full white draws all three channels at once. Size the supply and wiring for the strip's rated RGB-white current.
+- **Checklist deltas** (vs §6):
+  - MOSFET gates protected on GPIO 1, 3, 4. Nothing is connected to GPIO 5.
+  - Strip `R, G, B` go to the MOSFET drains.
+- **Reusing an RGBW board:** it can run the RGB firmware with an RGB strip. Leave the W output unconnected; the firmware holds its gate low. The RGB firmware keeps its settings and presets in its own flash area, so switching firmwares never mixes RGBW and RGB presets.
 
