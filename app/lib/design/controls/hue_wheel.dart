@@ -3,36 +3,29 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 
+import '../../core/color/hsv.dart';
 import '../haptics/haptics.dart';
 import '../haptics/haptics_scope.dart';
 
-/// HSV value of the wheel (hue 0..360, saturation/value 0..1).
-@immutable
-final class Hsv {
-  const Hsv(this.h, this.s, this.v);
-  final double h;
-  final double s;
-  final double v;
+export '../../core/color/hsv.dart';
 
-  Color get color => HSVColor.fromAHSV(1, h, s, v).toColor();
-
-  /// Keeps [previous] hue when the new colour is (near) grey or black, so the
-  /// hue never snaps to red while the user drags into a corner.
-  static Hsv fromColor(Color c, {Hsv? previous}) {
-    final HSVColor x = HSVColor.fromColor(c);
-    final bool hueless = x.saturation <= 0.05 || x.value <= 0.05;
-    return Hsv(
-      hueless && previous != null ? previous.h : x.hue,
-      x.saturation,
-      x.value,
-    );
+/// Wheel display colour of an [Hsv].
+extension HsvDisplay on Hsv {
+  Color get color {
+    final List<int> c = toRgb8();
+    return Color.fromARGB(255, c[0], c[1], c[2]);
   }
+}
 
-  @override
-  bool operator ==(Object other) =>
-      other is Hsv && other.h == h && other.s == s && other.v == v;
-  @override
-  int get hashCode => Object.hash(h, s, v);
+/// [Hsv] of a displayed colour (keeps [previous] hue for greys).
+Hsv hsvOfColor(Color c, {Hsv? previous}) {
+  final int argb = c.toARGB32();
+  return Hsv.fromRgb8(
+    (argb >> 16) & 0xFF,
+    (argb >> 8) & 0xFF,
+    argb & 0xFF,
+    previous: previous,
+  );
 }
 
 enum _Target { ring, square }
@@ -78,8 +71,8 @@ class _HueWheelState extends State<HueWheel>
     super.didUpdateWidget(old);
     if (_target == null && widget.value != _v.value) {
       _v.value =
-          Hsv.fromColor(widget.value.color, previous: _v.value) ==
-              Hsv.fromColor(_v.value.color, previous: _v.value)
+          hsvOfColor(widget.value.color, previous: _v.value) ==
+              hsvOfColor(_v.value.color, previous: _v.value)
           ? _v
                 .value // same colour: keep our (precise) hue
           : widget.value;
