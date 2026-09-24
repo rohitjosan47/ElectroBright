@@ -5,9 +5,10 @@ A complete circuit connection, hardware assembly, and migration guide for buildi
 The same board also builds two other fixtures:
 - the **3-channel RGB fixture**: leave the white channel unpopulated (see [§7](#7-rgb-fixture-3-channels));
 - the **5-channel RGBCCT fixture**: add a warm-white channel (see [§8](#8-rgbcct-fixture-5-channels));
-- the **2-channel CCT fixture**: only the cool-white and warm-white channels (see [§9](#9-cct-fixture-2-channels)).
+- the **2-channel CCT fixture**: only the cool-white and warm-white channels (see [§9](#9-cct-fixture-2-channels));
+- the **1-channel single-white fixture**: only the W channel (see [§10](#10-single-white-fixture-1-channel)).
 
-Each fixture has its own firmware sketch in [`firmware/fixtures/`](../firmware/README.md): `ElectroBright_RGBW`, `ElectroBright_RGB`, `ElectroBright_RGBCCT` and `ElectroBright_CCT`.
+Each fixture has its own firmware sketch in [`firmware/fixtures/`](../firmware/README.md): `ElectroBright_RGBW`, `ElectroBright_RGB`, `ElectroBright_RGBCCT`, `ElectroBright_CCT` and `ElectroBright_W`.
 
 ---
 
@@ -238,4 +239,24 @@ The CCT fixture drives a tunable-white (CCT, 3-pin) common-anode strip: cool whi
   - MOSFET gates protected on GPIO 5 and 10. Nothing is connected to GPIO 1, 3, 4.
   - Strip `CW, WW` go to the MOSFET drains.
 - **GPIO 10 missing on your board:** change `kPinWarmWhite` in the fixture's `Fixture.h`. The same applies to RGBCCT (§8).
+
+---
+
+## 10. Single-white fixture (1 channel)
+
+The single-white fixture drives a single-colour white strip (2-pin, common anode). It uses the W position of the RGBW board, which is the cool-white position on RGBCCT/CCT boards, so any ElectroBright PCB becomes a single-white light by fitting one MOSFET. Flash `firmware/fixtures/ElectroBright_W`.
+
+| Function | ESP32-C3 pin | Notes |
+| :--- | :--- | :--- |
+| White | GPIO 5 | MOSFET, 220–470 Ω gate resistor, 10 kΩ pull-down, drain to the strip's `−` |
+| Buzzer | GPIO 6 | unchanged |
+| *(other LED positions)* | GPIO 1 / 3 / 4 / 10 | **not fitted.** The firmware drives them low anyway |
+
+- **BOM:**
+  - 1 logic-level MOSFET, 1 gate resistor, 1 pull-down;
+  - a single-colour strip (`+V`, `−`).
+- **Checklist deltas** (vs §6):
+  - The MOSFET gate is protected on GPIO 5. Nothing is connected to GPIO 1, 3, 4, 10.
+  - The strip's `−` goes to the MOSFET drain.
+- **Modes:** this light has 12 of the 13 modes. Rainbow is left out because it only changes colour.
 

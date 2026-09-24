@@ -8,6 +8,7 @@ This is the contract between the ElectroBright fixtures (`firmware/`) and the ap
 | RGB | `firmware/fixtures/ElectroBright_RGB` | `RGB` | R, G, B (n = 3) | `EB-C3-RGB-V1` | `ElectroBright_C3_RGB_V1` |
 | RGBCCT | `firmware/fixtures/ElectroBright_RGBCCT` | `RGBCCT` | R, G, B, CW, WW (n = 5) | `EB-C3-RGBCCT-V1` | `ElectroBright_C3_RGBCCT_V1` |
 | CCT | `firmware/fixtures/ElectroBright_CCT` | `CCT` | CW, WW (n = 2) | `EB-C3-CCT-V1` | `ElectroBright_C3_CCT_V1` |
+| W (single white) | `firmware/fixtures/ElectroBright_W` | `W` | W (n = 1) | `EB-C3-W-V1` | `ElectroBright_C3_W_V1` |
 
 Source of truth for each fixture:
 - `firmware/fixtures/<Name>/Fixture.h`: identity, layout, pins and defaults.
@@ -40,6 +41,10 @@ CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,LAYOUT=<LAYOUT>
 - **Where the layout comes from:** the `LAYOUT` key in CAPS. It always equals the middle part of the model id.
 - **RGBW 3.4.0:** it predates the `LAYOUT` key. Its model id `EB-C3-RGBW-V1` implies `RGBW`.
 - **CAPS is `KEY=VALUE` pairs:** parse it as a map and ignore unknown keys. Keys may be added in later versions.
+- **Supported modes:** `MODES=<hex mask>` (bit m−1 = mode m) is present only when a light doesn't support all 13 modes. If it is absent, all 13 are supported.
+  - The single-white light sends `MODES=1DFF`: every mode except Rainbow (10), which only changes colour at constant intensity.
+  - An unsupported mode behaves like an out-of-range one: `MODE:10` → `ERROR:MODE_INVALID`, `MODE_SPEED:10,s` → `ERROR:MODE_SPEED_INVALID`, `MODE_FREQUENCY:10,f` → `ERROR:MODE_FREQUENCY_INVALID`, `MODE_CAPABILITIES:10` → `ERROR:MODE_INVALID`.
+  - `MODE_SETTINGS` still lists all 13 pairs.
 - **Legacy firmware** (show "Firmware update needed"):
   - an INFO reply of `ElectroBright_ESP32C3_BLE`, or no `EB-` model id;
   - the name `ElectroBright_BLE`;
@@ -63,9 +68,10 @@ cs = seq ^ c1 ^ … ^ cn ^ Br ^ salt         salt = 0x55 when n = 4, otherwise 0
 | RGB | `[AA, seq, R, G, B, Br, seq^R^G^B^Br^0x56]` (7 bytes) |
 | RGBCCT | `[AA, seq, R, G, B, CW, WW, Br, seq^R^G^B^CW^WW^Br^0x50]` (9 bytes) |
 | CCT | `[AA, seq, CW, WW, Br, seq^CW^WW^Br^0x57]` (6 bytes) |
+| W | `[AA, seq, W, Br, seq^W^Br^0x54]` (5 bytes) |
 
 - `seq` counts frames. A gap increments `gaps` in DIAG.
-- **Binary vs text:** a write is binary when it starts with `0xAA` and is 6 to 9 bytes long, which covers every frame length in the family. Such a write never reaches the text parser.
+- **Binary vs text:** a write is binary when it starts with `0xAA` and is 5 to 9 bytes long, which covers every frame length in the family. Such a write never reaches the text parser.
   - A binary write whose length or checksum is wrong counts as `binbad` and is not applied.
 - **Why the salt:** a light rejects every other fixture's frames, even ones of the same length. For example, an RGB light rejects RGBW's legacy 7-byte frame, and a CCT light rejects RGBW's legacy 6-byte frame. A mismatched app can't set a wrong colour or corrupt a text command.
 - **Legacy frames:** RGBW also accepts the pre-3.x forms `[AA, R, G, B, W, Br, cs]` (7 bytes) and `[AA, R, G, B, W, cs]` (6 bytes), with salt 0x55.
@@ -79,8 +85,8 @@ Colour arguments are `v1,…,vn`, each 0–255. The wrong number of values gives
 | Command | Reply |
 |---|---|
 | `COLOR:v1,…,vn` · `BRIGHTNESS:0-255` · `SPEED:1-10` · `FREQUENCY:1-10` | none (high-rate; `ERROR:…` on bad input) |
-| `RGBW:r,g,b,w` (only on layouts with W; same as `COLOR`) | none, or `ERROR:UNKNOWN_CMD` on other layouts |
-| `MODE:1-13` · `MODE_SPEED:m,1-10` · `MODE_FREQUENCY:m,1-10` | `OK` |
+| `RGBW:r,g,b,w` (only on the RGBW light; same as `COLOR`) | none, or `ERROR:UNKNOWN_CMD` on other lights |
+| `MODE:1-13` · `MODE_SPEED:m,1-10` · `MODE_FREQUENCY:m,1-10` (m must be a supported mode, §2) | `OK` |
 | `FIREWORK_COLOR_MODE:0\|1` · `CLUB_COLOR_MODE:0\|1` · `POLICE_COLOR_MODE:0\|1` | `OK` |
 | `POLICE_COLOR_A:v1,…,vn` · `POLICE_COLOR_B:v1,…,vn` | `OK` |
 | `PRESET_SAVE:0-24` · `PRESET_DELETE:0-24` | `OK`, or `ERROR:STORAGE` |
@@ -106,7 +112,7 @@ Colour arguments are `v1,…,vn`, each 0–255. The wrong number of values gives
 
 ## 5. STATUS
 
-STATUS has `3n + 11` fields: 23 for RGBW, 20 for RGB, 26 for RGBCCT, 17 for CCT.
+STATUS has `3n + 11` fields: 23 for RGBW, 20 for RGB, 26 for RGBCCT, 17 for CCT, 14 for W.
 
 ```
 STATUS:<colour>, brightness, mode, speed, freq, fireworkCM, clubCM, policeCM,
@@ -124,6 +130,7 @@ RGBW  STATUS:255,255,255,0,255,1,5,5,0,0,1,0,0,0,1,255,165,0,0,0,0,0,255
 RGB   STATUS:255,255,255,255,1,5,5,0,0,1,0,0,0,1,255,165,0,255,255,255
 RGBCCT STATUS:0,0,0,255,255,255,1,5,5,0,0,1,0,0,0,1,255,165,0,0,0,0,0,0,255,255
 CCT   STATUS:255,255,255,1,5,5,0,0,1,0,0,0,1,0,255,255,0
+W     STATUS:255,255,1,5,5,0,0,1,0,0,0,1,255,255
 ```
 
 ## 6. Behaviour shared by every fixture
@@ -141,12 +148,14 @@ CCT   STATUS:255,255,255,1,5,5,0,0,1,0,0,0,1,0,255,255,0
   - RGBW: the W LED.
   - RGBCCT: both CW and WW together, a neutral white.
   - CCT: both CW and WW together, a neutral white.
+  - W: the white LED at full.
   - RGB (no white LED): white mixed from the RGB LEDs, with the same hue and never brighter than full scale.
 - **Coloured effect light on a white-only light (CCT):** Rainbow, TV, Police (auto), and the Fireworks and Club auto palettes make their own colours. The CCT light shows them as white temperature:
   - Brightness follows the colour's strongest channel.
   - Warm hues (red, orange, yellow) go to the warm LED, cool hues (blue, cyan) to the cool LED, and neutral ones to both.
   - So Rainbow sweeps warm to cool, and auto Police alternates warm and cool.
-- **Storage:** each fixture has its own flash namespace (`eb3` for RGBW, `eb3rgb` for RGB, `eb3rgbcct` for RGBCCT, `eb3cct` for CCT). Reflashing a board with another fixture's firmware starts it with factory defaults.
+- **Coloured effect light on a single white LED (W):** it becomes brightness, the level of the colour's strongest channel. Saturated flashes (Police, Club, Fireworks) stay at full brightness. Rainbow is not available (§2).
+- **Storage:** each fixture has its own flash namespace (`eb3` for RGBW, `eb3rgb` for RGB, `eb3rgbcct` for RGBCCT, `eb3cct` for CCT, `eb3w` for W). Reflashing a board with another fixture's firmware starts it with factory defaults.
 - **Defaults** (power-up and factory reset):
 
   | Fixture | Colour | Police A / B |
@@ -155,6 +164,7 @@ CCT   STATUS:255,255,255,1,5,5,0,0,1,0,0,0,1,0,255,255,0
   | RGB | RGB white | amber / RGB white |
   | RGBCCT | both white LEDs | amber / both white LEDs |
   | CCT | both white LEDs | warm / cool |
+  | W | full white | full / full |
 
 ## 7. Adding a layout
 
@@ -162,4 +172,4 @@ CCT   STATUS:255,255,255,1,5,5,0,0,1,0,0,0,1,0,255,255,0
 2. Add a fixture folder with a `Fixture.h` and a sketch.
 3. Register the fixture in `firmware/test/Fixtures.h`.
 
-The invariant tests (`test_layouts.cpp`) and `make conformance` then cover it. The channel roles are R, G, B, W, CW and WW. A layout without colour LEDs gets coloured effect light as white temperature (CW + WW). A single-white layout would need that map extended; see the roadmap in `firmware/README.md`.
+The invariant tests (`test_layouts.cpp`) and `make conformance` then cover it. The channel roles are R, G, B, W, CW and WW. A layout without colour LEDs gets coloured effect light as white temperature (CW + WW) or as brightness (a single W). A layout can drop modes it cannot show (its `modes` mask, announced as CAPS `MODES`).

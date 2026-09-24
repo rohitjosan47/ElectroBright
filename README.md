@@ -8,6 +8,7 @@ ElectroBright is an ambient lighting system. An ESP32-C3 drives a 12 V / 24 V LE
 | RGB | red, green, blue | `firmware/fixtures/ElectroBright_RGB` |
 | RGBCCT | red, green, blue, cool white, warm white | `firmware/fixtures/ElectroBright_RGBCCT` |
 | CCT | cool white, warm white | `firmware/fixtures/ElectroBright_CCT` |
+| W | single white | `firmware/fixtures/ElectroBright_W` |
 
 ## Repository Structure
 
@@ -15,14 +16,14 @@ ElectroBright is an ambient lighting system. An ESP32-C3 drives a 12 V / 24 V LE
 ElectroBright/
 ├── firmware/                      # ESP32-C3 firmware family (Arduino IDE)
 │   ├── core/ElectroBrightCore/    # shared core library: effects, BLE protocol, presets, timer, sound
-│   ├── fixtures/                  # one sketch per fixture type (RGBW, RGB, RGBCCT, CCT)
+│   ├── fixtures/                  # one sketch per fixture type (RGBW, RGB, RGBCCT, CCT, W)
 │   ├── test/                      # host unit, simulation and golden tests (make)
 │   └── tools/                     # IDE setup, build script, conformance suite, gamma-table generator
 ├── app/                           # Flutter app v2 (iOS, Android) — in progress
 ├── electrobright_app/             # Flutter app (iOS, Android, macOS)
 └── docs/
     ├── protocol.md                        # BLE protocol contract for every fixture (layouts, frames, STATUS)
-    ├── wiring_guide.md                    # circuit, MOSFETs, buck converter and pinout (RGBW, RGB, RGBCCT, CCT)
+    ├── wiring_guide.md                    # circuit, MOSFETs, buck converter and pinout (all fixtures)
     ├── ESP32C3_Backup_Power_Solution.md   # supercapacitor ride-through for the controller
     └── app_specifications.md              # app features and controls
 ```
