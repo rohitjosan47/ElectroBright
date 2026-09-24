@@ -27,7 +27,8 @@
 
 class SimDevice {
  public:
-  SimDevice();
+  // Simulates the fixture `fixture` (default: the RGBW light the app drives).
+  explicit SimDevice(const FixtureProfile& fixture = fx::rgbw::kProfile);
   // The controller's environment keeps a reference to this object.
   SimDevice(const SimDevice&) = delete;
   SimDevice& operator=(const SimDevice&) = delete;
@@ -61,6 +62,7 @@ class SimDevice {
   std::vector<SoundId> takeSounds();
 
   // --- Inspection -------------------------------------------------------------------
+  const FixtureProfile& fixture() const { return fixture_; }
   const ControllerCore& core() const { return rig_->core; }
   const StateStore& store() const { return rig_->store; }
   const Stats& stats() const { return rig_->stats; }
@@ -92,7 +94,8 @@ class SimDevice {
 
   // Everything that a reboot recreates (flash lives outside, in kv_).
   struct Rig {
-    explicit Rig(SimDevice& dev, MockKv& kv) : env(dev), store(kv, stats), core(env, store, stats) {}
+    Rig(SimDevice& dev, MockKv& kv, const FixtureProfile& fixture)
+        : env(dev), store(kv, stats, fixture), core(env, store, stats, fixture) {}
     Env env;
     Stats stats;
     StateStore store;
@@ -102,6 +105,7 @@ class SimDevice {
   bool notify(const uint8_t* data, size_t len);  // ble::notify
   size_t maxPayload() const { return mtu_ > 3 ? static_cast<size_t>(mtu_ - 3) : 20; }
 
+  const FixtureProfile& fixture_;
   MockKv kv_;
   std::unique_ptr<Rig> rig_;
   Egress egress_;

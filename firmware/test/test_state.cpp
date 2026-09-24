@@ -6,11 +6,11 @@
 TEST(store_empty_flash_gives_defaults_and_no_presets) {
   MockKv kv;
   Stats st;
-  StateStore store(kv, st);
+  StateStore store(kv, st, fx::rgbw::kProfile);
   Scene s;
   Settings set;
   store.load(s, set);
-  const Scene d = state::defaultScene();
+  const Scene d = state::defaultScene(fx::rgbw::kProfile.defaults);
   CHECK(memcmp(&s, &d, sizeof(Scene)) == 0);
   CHECK_EQ(set.soundEnabled, 1);
   CHECK_EQ(store.presetMask(), 0u);
@@ -20,7 +20,7 @@ TEST(store_empty_flash_gives_defaults_and_no_presets) {
 TEST(store_debounces_scene_writes) {
   MockKv kv;
   Stats st;
-  StateStore store(kv, st);
+  StateStore store(kv, st, fx::rgbw::kProfile);
   Scene s;
   Settings set;
   store.load(s, set);
@@ -45,7 +45,7 @@ TEST(store_debounces_scene_writes) {
 TEST(store_max_latency_bounds_continuous_streaming) {
   MockKv kv;
   Stats st;
-  StateStore store(kv, st);
+  StateStore store(kv, st, fx::rgbw::kProfile);
   Scene s;
   Settings set;
   store.load(s, set);
@@ -65,7 +65,7 @@ TEST(store_scene_and_settings_round_trip) {
   MockKv kv;
   Stats st;
   {
-    StateStore store(kv, st);
+    StateStore store(kv, st, fx::rgbw::kProfile);
     Scene s;
     Settings set;
     store.load(s, set);
@@ -77,7 +77,7 @@ TEST(store_scene_and_settings_round_trip) {
     set.soundEnabled = 0;
     CHECK(store.saveSettings(set));
   }
-  StateStore store2(kv, st);
+  StateStore store2(kv, st, fx::rgbw::kProfile);
   Scene s;
   Settings set;
   store2.load(s, set);
@@ -90,7 +90,7 @@ TEST(store_scene_and_settings_round_trip) {
 TEST(store_rejects_corrupt_or_foreign_records) {
   MockKv kv;
   Stats st;
-  StateStore store(kv, st);
+  StateStore store(kv, st, fx::rgbw::kProfile);
   // Wrong size.
   kv.data["scene"] = std::vector<uint8_t>(5, 0);
   // Right size, invalid mode.
@@ -98,7 +98,7 @@ TEST(store_rejects_corrupt_or_foreign_records) {
   bad[0] = StateStore::kSchema;
   kv.data["p00"] = bad;
   // Wrong schema.
-  Scene good = state::defaultScene();
+  Scene good = state::defaultScene(fx::rgbw::kProfile.defaults);
   std::vector<uint8_t> foreign(1 + sizeof(Scene), 0);
   foreign[0] = 99;
   memcpy(foreign.data() + 1, &good, sizeof(Scene));
@@ -117,7 +117,7 @@ TEST(store_rejects_corrupt_or_foreign_records) {
 TEST(store_presets_save_load_delete_and_mask) {
   MockKv kv;
   Stats st;
-  StateStore store(kv, st);
+  StateStore store(kv, st, fx::rgbw::kProfile);
   Scene s;
   Settings set;
   store.load(s, set);
@@ -137,7 +137,7 @@ TEST(store_presets_save_load_delete_and_mask) {
   CHECK(store.deletePreset(5));  // deleting an empty slot is fine
 
   // Presets survive a reload (mask rebuilt from flash).
-  StateStore store2(kv, st);
+  StateStore store2(kv, st, fx::rgbw::kProfile);
   store2.load(s, set);
   CHECK_EQ(store2.presetMask(), 1u << 24);
 }
@@ -145,7 +145,7 @@ TEST(store_presets_save_load_delete_and_mask) {
 TEST(store_factory_reset_erases_everything) {
   MockKv kv;
   Stats st;
-  StateStore store(kv, st);
+  StateStore store(kv, st, fx::rgbw::kProfile);
   Scene s;
   Settings set;
   store.load(s, set);
@@ -160,7 +160,7 @@ TEST(store_factory_reset_erases_everything) {
 TEST(store_retries_after_write_failure) {
   MockKv kv;
   Stats st;
-  StateStore store(kv, st);
+  StateStore store(kv, st, fx::rgbw::kProfile);
   Scene s;
   Settings set;
   store.load(s, set);

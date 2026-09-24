@@ -19,7 +19,8 @@ class StateStore {
  public:
   static constexpr uint8_t kSchema = 1;
 
-  StateStore(IKeyValueStore& kv, Stats& stats) : kv_(kv), stats_(stats) {}
+  StateStore(IKeyValueStore& kv, Stats& stats, const FixtureProfile& fixture)
+      : kv_(kv), stats_(stats), fixture_(fixture) {}
 
   // Loads scene + settings (defaults for anything missing/invalid) and scans
   // which preset slots are occupied.
@@ -57,8 +58,11 @@ class StateStore {
   bool writeScene(const Scene& scene);
   bool noteWrite(bool ok);
 
+  bool valid(const Scene& s) const { return state::isValid(s, *fixture_.layout); }
+
   IKeyValueStore& kv_;
   Stats& stats_;
+  const FixtureProfile& fixture_;
   Scene shadow_{};
   bool shadowValid_ = false;
   bool dirty_ = false;

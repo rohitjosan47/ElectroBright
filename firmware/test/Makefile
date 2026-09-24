@@ -33,21 +33,26 @@ all: portable run fwsim
 
 $(BUILD)/src/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(SAN) -c $< -o $@
+	@echo "  CXX $<"
+	@$(CXX) $(CXXFLAGS) $(SAN) -c $< -o $@
 
 $(BUILD)/test/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(SAN) -c $< -o $@
+	@echo "  CXX $<"
+	@$(CXX) $(CXXFLAGS) $(SAN) -c $< -o $@
 
 $(BUILD)/fwsim/%.o: fwsim/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(SAN) -c $< -o $@
+	@echo "  CXX $<"
+	@$(CXX) $(CXXFLAGS) $(SAN) -c $< -o $@
 
 $(BUILD)/tests: $(OBJS)
-	$(CXX) $(SAN) $^ -o $@
+	@echo "  LD  $@"
+	@$(CXX) $(SAN) $^ -o $@
 
 $(BUILD)/fwsim/fwsim: $(PORTABLE_OBJS) $(FWSIM_OBJ) $(FWSIM_MAIN)
-	$(CXX) $(SAN) $^ -o $@
+	@echo "  LD  $@"
+	@$(CXX) $(SAN) $^ -o $@
 
 fwsim: $(BUILD)/fwsim/fwsim
 

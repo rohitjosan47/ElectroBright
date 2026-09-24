@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "ElectroBright_RGBW/Fixture.h"
 #include "protocol/BinaryFrame.h"
 #include "protocol/CommandParser.h"
 #include "protocol/Egress.h"
@@ -184,7 +185,7 @@ TEST(binary_frames_round_trip_and_validate) {
 
 // ------------------------------------------------------------------ replies
 TEST(status_reply_has_exact_23_field_format) {
-  Scene s = state::defaultScene();
+  Scene s = state::defaultScene(fx::rgbw::kProfile.defaults);
   s.color = {10, 20, 30, 40};
   s.brightness = 200;
   s.mode = 3;
@@ -197,7 +198,7 @@ TEST(status_reply_has_exact_23_field_format) {
 }
 
 TEST(mode_settings_and_presets_replies) {
-  Scene s = state::defaultScene();
+  Scene s = state::defaultScene(fx::rgbw::kProfile.defaults);
   s.speed[0] = 1;
   s.freq[12] = 10;
   char buf[256];

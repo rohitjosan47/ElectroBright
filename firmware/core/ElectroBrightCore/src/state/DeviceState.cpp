@@ -4,10 +4,10 @@
 
 namespace state {
 
-Scene defaultScene() {
+Scene defaultScene(const SceneDefaults& d) {
   Scene s;
   memset(&s, 0, sizeof(s));
-  s.color = {255, 255, 255, 0};
+  s.color = d.color;
   s.brightness = 255;
   s.mode = 1;
   for (uint8_t i = 0; i < cfg::kNumModes; ++i) {
@@ -17,8 +17,8 @@ Scene defaultScene() {
   s.fireworkColorMode = 0;
   s.clubColorMode = 0;
   s.policeColorMode = 1;
-  s.policeA = {255, 165, 0, 0};  // matches the app's defaults
-  s.policeB = {0, 0, 0, 255};
+  s.policeA = d.policeA;
+  s.policeB = d.policeB;
   return s;
 }
 
@@ -29,8 +29,9 @@ Settings defaultSettings() {
   return s;
 }
 
-bool isValid(const Scene& s) {
+bool isValid(const Scene& s, const ChannelLayout& l) {
   if (s.mode < 1 || s.mode > cfg::kNumModes) return false;
+  if (!layout::fits(l, s.color) || !layout::fits(l, s.policeA) || !layout::fits(l, s.policeB)) return false;
   for (uint8_t i = 0; i < cfg::kNumModes; ++i) {
     if (s.speed[i] < cfg::kMinLevel || s.speed[i] > cfg::kMaxLevel) return false;
     if (s.freq[i] < cfg::kMinLevel || s.freq[i] > cfg::kMaxLevel) return false;

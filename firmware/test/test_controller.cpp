@@ -157,7 +157,7 @@ TEST(ctrl_sound_on_always_confirms_and_persists) {
 
   // Persisted immediately (not debounced).
   r.send("SOUND_OFF");
-  StateStore store2(r.kv, r.stats);
+  StateStore store2(r.kv, r.stats, fx::rgbw::kProfile);
   Scene s;
   Settings set;
   store2.load(s, set);
@@ -224,7 +224,7 @@ TEST(ctrl_scene_changes_are_persisted_debounced) {
   CHECK(r.kv.data.count("scene") == 0);
   r.advance(3100);
   CHECK(r.kv.data.count("scene") == 1);
-  StateStore store2(r.kv, r.stats);
+  StateStore store2(r.kv, r.stats, fx::rgbw::kProfile);
   Scene s;
   Settings set;
   store2.load(s, set);

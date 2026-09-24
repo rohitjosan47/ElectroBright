@@ -18,7 +18,7 @@ namespace golden {
 // Output channels of the fixture under test (RGBW).
 constexpr int kChannels = 4;
 
-inline Scene defaultScene() { return state::defaultScene(); }
+inline Scene defaultScene() { return state::defaultScene(fx::rgbw::kProfile.defaults); }
 
 class Engine {
  public:

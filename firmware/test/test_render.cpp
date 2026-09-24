@@ -6,6 +6,7 @@
 #include <initializer_list>
 #include <vector>
 
+#include "ElectroBright_RGBW/Fixture.h"
 #include "core/MathUtil.h"
 #include "feedback/SoundSequencer.h"
 #include "render/Color.h"
@@ -24,7 +25,7 @@ struct Sim {
   uint16_t duty[4] = {};
 
   explicit Sim(uint8_t mode = 1, uint8_t speed = 5, uint8_t freq = 5) {
-    p.scene = state::defaultScene();
+    p.scene = state::defaultScene(fx::rgbw::kProfile.defaults);
     p.scene.mode = mode;
     for (auto& s : p.scene.speed) s = speed;
     for (auto& f : p.scene.freq) f = freq;

@@ -30,15 +30,17 @@ namespace {
 constexpr const char* kTag = "EB";
 
 // ---- Shared objects (static storage, no heap) --------------------------------
+FixtureProfile g_fixture{};  // copy of the sketch's profile, lives for the whole run
 Stats g_stats;
 PwmOutput g_pwm;
 Buzzer g_buzzer;
 NvsStore g_nvs;
-StateStore g_store(g_nvs, g_stats);
 SoundSequencer g_sound;
 SeqLock<RenderParams> g_params;
-RenderEngine g_engine(0x5EEDu);
 Egress g_egress;  // control task only
+// Built in App::start() once the fixture is known (function-local statics).
+RenderEngine* g_engine = nullptr;
+ControllerCore* g_core = nullptr;
 
 StreamBufferHandle_t g_rxText = nullptr;
 QueueHandle_t g_colorMailbox = nullptr;
@@ -67,7 +69,6 @@ class DeviceEnv final : public IControllerEnv {
 };
 
 DeviceEnv g_env;
-ControllerCore g_core(g_env, g_store, g_stats);
 
 // ---- Control task: the only owner of device state ------------------------------
 void controlTask(void*) {
@@ -89,21 +90,21 @@ void controlTask(void*) {
       g_egress.clear();  // never deliver a previous session's replies
       assembler.reset();
       if (ev == static_cast<uint8_t>(BleEvent::Connected)) {
-        g_core.onConnect(now);
+        g_core->onConnect(now);
       } else {
-        g_core.onDisconnect(now);
+        g_core->onDisconnect(now);
       }
     }
 
     // 2. Latest binary colour (older ones were overwritten in the mailbox).
     ColorFrame frame;
-    if (xQueueReceive(g_colorMailbox, &frame, 0) == pdTRUE) g_core.onColorFrame(frame, now);
+    if (xQueueReceive(g_colorMailbox, &frame, 0) == pdTRUE) g_core->onColorFrame(frame, now);
 
     // 3. Text commands, executed in batches (enables coalescing).
     size_t count = 0;
     auto flushBatch = [&]() {
       if (count > 0) {
-        g_core.processLines(linePtrs, count, now);
+        g_core->processLines(linePtrs, count, now);
         count = 0;
       }
     };
@@ -123,7 +124,7 @@ void controlTask(void*) {
     seen = c;
 
     // 4. Timer expiry + persistence.
-    g_core.tick(now);
+    g_core->tick(now);
 
     // 5. Replies.
     if (ble::connected()) {
@@ -146,8 +147,8 @@ void onFrameTimer(void*) {
 void renderTask(void*) {
   esp_task_wdt_add(nullptr);
   RenderParams params{};
-  g_params.tryRead(params);  // published by g_core.begin() before this task starts
-  uint16_t duty[4];
+  g_params.tryRead(params);  // published by g_core->begin() before this task starts
+  uint16_t duty[kMaxChannels] = {};
 
   for (;;) {
     const uint32_t pending = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(50));
@@ -156,7 +157,7 @@ void renderTask(void*) {
     const int64_t t0 = esp_timer_get_time();
     g_params.tryRead(params);  // on a torn read keep last frame's params
     const uint32_t now = static_cast<uint32_t>(t0 / 1000);
-    g_engine.frame(params, now, duty);
+    g_engine->frame(params, now, duty);
     g_pwm.write(duty);
     g_sound.tick(now, g_buzzer);
 
@@ -180,20 +181,28 @@ void configureWatchdog() {
 
 namespace App {
 
-void start() {
+void start(const FixtureProfile& fixture) {
+  g_fixture = fixture;
+
   // 1. Outputs first: every LED channel held at 0 % from the earliest moment.
-  if (!g_pwm.begin()) ESP_LOGE(kTag, "LEDC init failed");
-  if (!g_buzzer.begin()) ESP_LOGW(kTag, "buzzer init failed");
+  if (!g_pwm.begin(g_fixture)) ESP_LOGE(kTag, "LEDC init failed");
+  // The buzzer takes the first LEDC channel after the LED outputs.
+  if (!g_buzzer.begin(g_fixture.buzzerPin, g_fixture.layout->count)) ESP_LOGW(kTag, "buzzer init failed");
 
   configureWatchdog();
 
   // 2. Storage (clean start: the old firmware's EEPROM data is discarded).
   NvsStore::wipeNamespace(cfg::kLegacyNvsNamespace);
-  if (!g_nvs.begin(cfg::kNvsNamespace)) ESP_LOGE(kTag, "NVS unavailable; running with defaults");
+  if (!g_nvs.begin(g_fixture.nvsNamespace)) ESP_LOGE(kTag, "NVS unavailable; running with defaults");
 
   // 3. State + first render snapshot (the renderer fades in from black).
-  g_engine.reseed(esp_random());
-  g_core.begin(nowMs());
+  static StateStore store(g_nvs, g_stats, g_fixture);
+  static RenderEngine engine(0x5EEDu, *g_fixture.layout, g_fixture.whiteMix);
+  static ControllerCore core(g_env, store, g_stats, g_fixture);
+  g_engine = &engine;
+  g_core = &core;
+  g_engine->reseed(esp_random());
+  g_core->begin(nowMs());
 
   // 4. IPC + tasks.
   g_rxText = xStreamBufferCreate(cfg::kRxStreamBytes, 1);
@@ -211,9 +220,9 @@ void start() {
 
   // 6. Radio last: by now every consumer of its callbacks exists.
   BleSinks sinks{g_rxText, g_colorMailbox, g_events, g_controlTask, &g_stats};
-  if (!ble::begin(sinks)) ESP_LOGE(kTag, "BLE advertising failed to start");
+  if (!ble::begin(sinks, g_fixture)) ESP_LOGE(kTag, "BLE advertising failed to start");
 
-  ESP_LOGI(kTag, "ElectroBright %s ready", cfg::kFirmwareVersion);
+  ESP_LOGI(kTag, "ElectroBright %s %s ready", g_fixture.modelId, cfg::kFirmwareVersion);
 }
 
 }  // namespace App

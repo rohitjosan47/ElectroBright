@@ -21,12 +21,12 @@ bool StateStore::noteWrite(bool ok) {
 
 void StateStore::load(Scene& scene, Settings& settings) {
   SceneRecord sr;
-  if (kv_.read(kSceneKey, &sr, sizeof(sr)) && sr.schema == kSchema && state::isValid(sr.scene)) {
+  if (kv_.read(kSceneKey, &sr, sizeof(sr)) && sr.schema == kSchema && valid(sr.scene)) {
     scene = sr.scene;
     shadow_ = sr.scene;
     shadowValid_ = true;
   } else {
-    scene = state::defaultScene();
+    scene = state::defaultScene(fixture_.defaults);
     shadowValid_ = false;  // first tick after a change (or flush) writes it
   }
 
@@ -42,7 +42,7 @@ void StateStore::load(Scene& scene, Settings& settings) {
     char key[4];
     presetKey(i, key);
     SceneRecord pr;
-    if (kv_.read(key, &pr, sizeof(pr)) && pr.schema == kSchema && state::isValid(pr.scene)) {
+    if (kv_.read(key, &pr, sizeof(pr)) && pr.schema == kSchema && valid(pr.scene)) {
       presetMask_ |= (1u << i);
     }
   }
@@ -93,7 +93,7 @@ bool StateStore::saveSettings(const Settings& settings) {
 }
 
 bool StateStore::savePreset(uint8_t id, const Scene& scene) {
-  if (id >= cfg::kNumPresets || !state::isValid(scene)) return false;
+  if (id >= cfg::kNumPresets || !valid(scene)) return false;
   char key[4];
   presetKey(id, key);
   SceneRecord pr;
@@ -110,7 +110,7 @@ bool StateStore::loadPreset(uint8_t id, Scene& out) {
   char key[4];
   presetKey(id, key);
   SceneRecord pr;
-  if (kv_.read(key, &pr, sizeof(pr)) && pr.schema == kSchema && state::isValid(pr.scene)) {
+  if (kv_.read(key, &pr, sizeof(pr)) && pr.schema == kSchema && valid(pr.scene)) {
     out = pr.scene;
     presetMask_ |= (1u << id);
     return true;

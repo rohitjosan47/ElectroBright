@@ -24,12 +24,13 @@ void SimDevice::Env::systemDiag(SystemDiag& d) {
 }
 
 // ---- Lifecycle ------------------------------------------------------------------
-SimDevice::SimDevice() : rig_(std::make_unique<Rig>(*this, kv_)) {}
+SimDevice::SimDevice(const FixtureProfile& fixture)
+    : fixture_(fixture), rig_(std::make_unique<Rig>(*this, kv_, fixture)) {}
 
 void SimDevice::boot() { rig_->core.begin(now_); }
 
 void SimDevice::reboot() {
-  rig_ = std::make_unique<Rig>(*this, kv_);
+  rig_ = std::make_unique<Rig>(*this, kv_, fixture_);
   egress_.clear();
   assembler_ = LineAssembler();
   seen_ = {};
@@ -61,9 +62,10 @@ void SimDevice::disconnect() {
 
 void SimDevice::write(const uint8_t* data, size_t len) {
   if (len == 0) return;
-  if (binframe::isCandidate(data, len)) {
+  const ChannelLayout& layout = *fixture_.layout;
+  if (binframe::isCandidate(data, len, layout)) {
     ColorFrame frame{};
-    if (binframe::decode(data, len, frame)) {
+    if (binframe::decode(data, len, layout, fixture_.legacyFrames, frame)) {
       mailbox_ = frame;  // xQueueOverwrite: only the newest colour matters
       mailboxFull_ = true;
       Stats::inc(rig_->stats.binaryOk);

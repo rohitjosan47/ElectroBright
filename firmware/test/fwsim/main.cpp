@@ -1,6 +1,8 @@
 // fwsim: the real portable firmware core behind a line protocol on
 // stdin/stdout, driven by the Flutter app's tests (app/test/support/fwsim/).
 //
+// Usage: fwsim [--fixture rgbw|rgb]   (default rgbw)
+//
 // Every request line produces zero or more event lines, then a line ".".
 //   HELLO            -> I fwsim/1 fw=<version> model=<model>
 //   CONNECT | DISCONNECT | MTU <n> | SUB <0|1> | AUTO <0|1>
@@ -10,7 +12,7 @@
 //   NFAIL <k>        the next k notifications fail (stack out of buffers)
 //   KVFAIL <0|1>     flash writes fail
 //   REBOOT           power cycle (flash survives)
-//   STATE            -> S {json}
+//   STATE            -> S {json}   (colours: one value per layout channel)
 //   SOUNDS           -> B name,name,...   (and clears the list)
 //   QUIT
 // After each request, notifications delivered to the phone are reported as
@@ -23,6 +25,7 @@
 #include <vector>
 
 #include "config/Config.h"
+#include "../Fixtures.h"
 #include "SimDevice.h"
 
 namespace {
@@ -61,10 +64,16 @@ const char* soundName(SoundId id) {
   return "?";
 }
 
-void printRgbw(std::string& j, const Rgbw8& c) {
-  char b[48];
-  snprintf(b, sizeof(b), "[%u,%u,%u,%u]", c.r, c.g, c.b, c.w);
-  j += b;
+void printColor(std::string& j, const ChannelLayout& l, const Rgbw8& c) {
+  uint8_t t[kMaxChannels];
+  layout::toTuple(l, c, t);
+  j += "[";
+  for (uint8_t i = 0; i < l.count; ++i) {
+    char b[8];
+    snprintf(b, sizeof(b), i ? ",%u" : "%u", t[i]);
+    j += b;
+  }
+  j += "]";
 }
 
 void printLevels(std::string& j, const uint8_t* v) {
@@ -81,7 +90,7 @@ std::string stateJson(SimDevice& dev) {
   const Scene& s = dev.core().scene();
   const Stats& st = dev.stats();
   std::string j = "{\"scene\":{\"color\":";
-  printRgbw(j, s.color);
+  printColor(j, *dev.fixture().layout, s.color);
   char b[256];
   snprintf(b, sizeof(b), ",\"brightness\":%u,\"mode\":%u,\"speed\":", s.brightness, s.mode);
   j += b;
@@ -91,9 +100,9 @@ std::string stateJson(SimDevice& dev) {
   snprintf(b, sizeof(b), ",\"fireworkColorMode\":%u,\"clubColorMode\":%u,\"policeColorMode\":%u,\"policeA\":",
            s.fireworkColorMode, s.clubColorMode, s.policeColorMode);
   j += b;
-  printRgbw(j, s.policeA);
+  printColor(j, *dev.fixture().layout, s.policeA);
   j += ",\"policeB\":";
-  printRgbw(j, s.policeB);
+  printColor(j, *dev.fixture().layout, s.policeB);
   snprintf(b, sizeof(b),
            "},\"sleeping\":%u,\"timer\":{\"active\":%u,\"remaining\":%lu},\"sound\":%u,\"presets\":[",
            dev.core().sleeping() ? 1u : 0u, dev.core().timerActive() ? 1u : 0u,
@@ -142,8 +151,21 @@ void emitNotifications(SimDevice& dev) {
 
 }  // namespace
 
-int main() {
-  SimDevice dev;
+int main(int argc, char** argv) {
+  const FixtureProfile* fixture = &fx::rgbw::kProfile;
+  for (int i = 1; i < argc; ++i) {
+    if (strcmp(argv[i], "--fixture") == 0 && i + 1 < argc) {
+      fixture = findFixture(argv[++i]);
+      if (fixture == nullptr) {
+        fprintf(stderr, "fwsim: unknown fixture %s\n", argv[i]);
+        return 2;
+      }
+    } else {
+      fprintf(stderr, "usage: fwsim [--fixture <name>]\n");
+      return 2;
+    }
+  }
+  SimDevice dev(*fixture);
   dev.boot();
   dev.takeSounds();  // boot chime is not interesting to clients
   bool autoPass = true;
@@ -159,7 +181,7 @@ int main() {
 
     if (strcmp(cmd, "QUIT") == 0) break;
     if (strcmp(cmd, "HELLO") == 0) {
-      printf("I fwsim/1 fw=%s model=%s\n", cfg::kFirmwareVersion, cfg::kModelId);
+      printf("I fwsim/1 fw=%s model=%s\n", cfg::kFirmwareVersion, dev.fixture().modelId);
     } else if (strcmp(cmd, "CONNECT") == 0) {
       dev.connect();
       if (autoPass) dev.pass();

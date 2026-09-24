@@ -6,12 +6,15 @@
 // firmware/core; install it once with firmware/tools/install_ide_core.sh).
 // See firmware/README.md.
 //
-// setup() only starts the core; the work runs in dedicated FreeRTOS tasks, so
+// Fixture.h holds this fixture's identity, channel layout and pins. setup()
+// only starts the core with it; the work runs in dedicated FreeRTOS tasks, so
 // the Arduino loop task exits.
 
 #include <Arduino.h>  // implicit in the Arduino build; explicit for IDE code analysis
 #include <ElectroBrightCore.h>
 
-void setup() { App::start(); }
+#include "Fixture.h"
+
+void setup() { App::start(fx::rgbw::kProfile); }
 
 void loop() { vTaskDelete(nullptr); }

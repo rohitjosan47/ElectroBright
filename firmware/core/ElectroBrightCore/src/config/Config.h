@@ -9,24 +9,16 @@
 
 namespace cfg {
 
-// --- Identity (must match the Flutter app's device catalog) -----------------
-constexpr const char* kDeviceName   = "ElectroBright_C3_V1";   // app scans for the "ElectroBright_C3_" prefix
-constexpr const char* kModelId      = "EB-C3-RGBW-V1";         // exact INFO reply value the app resolves
+// --- Identity -------------------------------------------------------------------
+// Family version, shared by every fixture built from this core. A fixture's
+// own identity (model id, BLE name, CAPS, pins) lives in its FixtureProfile
+// (firmware/fixtures/<Name>/Fixture.h).
 constexpr const char* kFirmwareVersion = "3.4.0";
-constexpr const char* kCapsReply    = "CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL";
 
 // Nordic UART Service
 constexpr const char* kServiceUuid = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
 constexpr const char* kRxCharUuid  = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E";  // phone -> device (write / write-no-rsp)
 constexpr const char* kTxCharUuid  = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";  // device -> phone (notify)
-
-// --- Pins (ESP32-C3) -------------------------------------------------------
-// GPIO 7 / 8 (old status LED) are intentionally never configured.
-constexpr uint8_t kPinRed    = 1;   // GPIO 1, not strapping GPIO 2
-constexpr uint8_t kPinGreen  = 3;
-constexpr uint8_t kPinBlue   = 4;
-constexpr uint8_t kPinWhite  = 5;
-constexpr uint8_t kPinBuzzer = 6;
 
 // --- LED PWM ----------------------------------------------------------------
 constexpr uint32_t kPwmFreqHz   = 4882;    // 80 MHz / 2^14
@@ -53,7 +45,6 @@ constexpr uint16_t kBootFadeMs       = 600;    // fade-in from black after power
 // --- Persistence -------------------------------------------------------------
 constexpr uint32_t kPersistDebounceMs   = 3000;   // commit this long after the last change...
 constexpr uint32_t kPersistMaxLatencyMs = 15000;  // ...but never later than this after the first change
-constexpr const char* kNvsNamespace       = "eb3";
 constexpr const char* kLegacyNvsNamespace = "eeprom";  // old firmware's EEPROM emulation (wiped once, no migration)
 
 // --- Protocol / buffers -----------------------------------------------------------

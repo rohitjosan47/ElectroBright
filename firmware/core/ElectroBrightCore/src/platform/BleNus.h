@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "../core/Stats.h"
+#include "../fixture/FixtureProfile.h"
 
 enum class BleEvent : uint8_t { Connected = 1, Disconnected = 2 };
 
@@ -28,7 +29,8 @@ struct BleSinks {
 
 namespace ble {
 
-bool begin(const BleSinks& sinks);
+// `fixture` supplies the BLE name and the binary-frame layout; it must outlive the radio.
+bool begin(const BleSinks& sinks, const FixtureProfile& fixture);
 bool connected();
 // Max bytes per notification for the current link (ATT MTU - 3).
 size_t maxPayload();

@@ -10,6 +10,7 @@
 namespace {
 
 BleSinks g_sinks{};
+const FixtureProfile* g_fixture = nullptr;
 NimBLECharacteristic* g_tx = nullptr;
 std::atomic<bool> g_connected{false};
 std::atomic<uint16_t> g_connHandle{BLE_HS_CONN_HANDLE_NONE};
@@ -48,9 +49,10 @@ class RxCallbacks final : public NimBLECharacteristicCallbacks {
     const size_t len = value.size();
     if (len == 0) return;
 
-    if (binframe::isCandidate(data, len)) {
+    const ChannelLayout& layout = *g_fixture->layout;
+    if (binframe::isCandidate(data, len, layout)) {
       ColorFrame frame{};
-      if (binframe::decode(data, len, frame)) {
+      if (binframe::decode(data, len, layout, g_fixture->legacyFrames, frame)) {
         xQueueOverwrite(g_sinks.colorMailbox, &frame);  // only the newest colour matters
         Stats::inc(g_sinks.stats->binaryOk);
       } else {
@@ -74,10 +76,11 @@ RxCallbacks g_rxCallbacks;
 
 namespace ble {
 
-bool begin(const BleSinks& sinks) {
+bool begin(const BleSinks& sinks, const FixtureProfile& fixture) {
   g_sinks = sinks;
+  g_fixture = &fixture;
 
-  NimBLEDevice::init(cfg::kDeviceName);
+  NimBLEDevice::init(fixture.deviceName);
   NimBLEDevice::setPower(9);  // dBm
   NimBLEDevice::setMTU(cfg::kPreferredMtu);
 
@@ -92,13 +95,13 @@ bool begin(const BleSinks& sinks) {
   rx->setCallbacks(&g_rxCallbacks);
   // NimBLE 2.x starts services together with the server (on advertising start).
 
-  // The 128-bit service UUID and the 19-char name do not both fit in one
-  // 31-byte advertisement: UUID in the advertisement, name in the scan response.
+  // The 128-bit service UUID and the name (up to 29 chars) do not both fit in
+  // one 31-byte advertisement: UUID in the advertisement, name in the scan response.
   NimBLEAdvertisementData advData;
   advData.setFlags(BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP);
   advData.addServiceUUID(NimBLEUUID(cfg::kServiceUuid));
   NimBLEAdvertisementData scanData;
-  scanData.setName(cfg::kDeviceName);
+  scanData.setName(fixture.deviceName);
 
   NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
   adv->enableScanResponse(true);  // must precede the setters (it clears the "data set" flag)

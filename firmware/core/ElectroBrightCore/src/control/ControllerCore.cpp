@@ -5,9 +5,9 @@
 #include "../config/Config.h"
 #include "../protocol/Replies.h"
 
-ControllerCore::ControllerCore(IControllerEnv& env, StateStore& store, Stats& stats)
-    : env_(env), store_(store), stats_(stats) {
-  scene_ = state::defaultScene();
+ControllerCore::ControllerCore(IControllerEnv& env, StateStore& store, Stats& stats, const FixtureProfile& fixture)
+    : env_(env), store_(store), stats_(stats), fixture_(fixture) {
+  scene_ = state::defaultScene(fixture_.defaults);
   settings_ = state::defaultSettings();
   fadeMs_ = cfg::kSleepFadeMs;
 }
@@ -67,7 +67,7 @@ void ControllerCore::processLines(const char* const* lines, size_t count, uint32
     // Parse in chunks so the look-ahead for coalescing never overflows.
     ParseResult results[cfg::kMaxLinesPerBatch];
     const size_t n = (count - i) < cfg::kMaxLinesPerBatch ? (count - i) : cfg::kMaxLinesPerBatch;
-    for (size_t k = 0; k < n; ++k) results[k] = parseCommand(lines[i + k]);
+    for (size_t k = 0; k < n; ++k) results[k] = parseCommand(lines[i + k], *fixture_.layout);
 
     for (size_t k = 0; k < n; ++k) {
       Stats::inc(stats_.rxLines);
@@ -98,8 +98,7 @@ void ControllerCore::execute(const Command& c, uint32_t nowMs) {
   const int32_t* a = c.args;
   switch (c.id) {
     case CmdId::Rgbw:
-      scene_.color = {static_cast<uint8_t>(a[0]), static_cast<uint8_t>(a[1]), static_cast<uint8_t>(a[2]),
-                      static_cast<uint8_t>(a[3])};
+      scene_.color = layout::fromTuple(*fixture_.layout, a);
       sceneChanged(nowMs);
       publish();
       return;  // no reply (high-frequency command)
@@ -161,8 +160,7 @@ void ControllerCore::execute(const Command& c, uint32_t nowMs) {
     case CmdId::PoliceColorA:
     case CmdId::PoliceColorB: {
       Rgbw8& target = c.id == CmdId::PoliceColorA ? scene_.policeA : scene_.policeB;
-      target = {static_cast<uint8_t>(a[0]), static_cast<uint8_t>(a[1]), static_cast<uint8_t>(a[2]),
-                static_cast<uint8_t>(a[3])};
+      target = layout::fromTuple(*fixture_.layout, a);
       sceneChanged(nowMs);
       publish();
       env_.sendLine("OK");
@@ -267,7 +265,7 @@ void ControllerCore::execute(const Command& c, uint32_t nowMs) {
 
     case CmdId::FactoryReset:
       checkStorage(store_.factoryReset());
-      scene_ = state::defaultScene();
+      scene_ = state::defaultScene(fixture_.defaults);
       settings_ = state::defaultSettings();
       timerActive_ = false;
       wake();
@@ -277,7 +275,7 @@ void ControllerCore::execute(const Command& c, uint32_t nowMs) {
       return;
 
     case CmdId::Info:
-      snprintf(buf_, sizeof(buf_), "INFO:%s", cfg::kModelId);
+      snprintf(buf_, sizeof(buf_), "INFO:%s", fixture_.modelId);
       env_.sendLine(buf_);
       return;
 
@@ -287,7 +285,7 @@ void ControllerCore::execute(const Command& c, uint32_t nowMs) {
       return;
 
     case CmdId::Caps:
-      env_.sendLine(cfg::kCapsReply);
+      env_.sendLine(fixture_.capsReply);
       return;
 
     case CmdId::Ping:
@@ -335,7 +333,8 @@ void ControllerCore::sleep(uint16_t fadeMs) {
 }
 
 void ControllerCore::sendStatus(uint32_t nowMs) {
-  StatusView v{&scene_, sleeping_, timerActive_, timerRemainingSec(nowMs), settings_.soundEnabled != 0};
+  StatusView v{&scene_, sleeping_, timerActive_, timerRemainingSec(nowMs), settings_.soundEnabled != 0,
+               fixture_.layout};
   replies::status(buf_, sizeof(buf_), v);
   env_.sendLine(buf_);
 }

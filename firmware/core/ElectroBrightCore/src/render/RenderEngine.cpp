@@ -2,11 +2,13 @@
 
 #include "../config/Config.h"
 #include "../core/MathUtil.h"
+#include "ChannelMap.h"
 #include "Color.h"
 
 #include <math.h>
 
-RenderEngine::RenderEngine(uint32_t seed) : rng_(seed) {}
+RenderEngine::RenderEngine(uint32_t seed, const ChannelLayout& layout, LinColor whiteMix)
+    : layout_(layout), whiteMix_(whiteMix), foldWhite_(!layout::has(layout, Channel::W)), rng_(seed) {}
 
 Effect& RenderEngine::effectFor(uint8_t mode) {
   switch (mode) {
@@ -57,7 +59,7 @@ float RenderEngine::approach(float current, float target, float alpha) {
   return fabsf(target - next) < (0.5f / 65535.0f) ? target : next;
 }
 
-void RenderEngine::frame(const RenderParams& p, uint32_t nowMs, uint16_t duty[4]) {
+void RenderEngine::frame(const RenderParams& p, uint32_t nowMs, uint16_t* duty) {
   float dt = 0.0f;  // the very first frame starts exactly black
   if (!first_) {
     dt = static_cast<float>(static_cast<uint32_t>(nowMs - lastNow_));
@@ -107,7 +109,7 @@ void RenderEngine::frame(const RenderParams& p, uint32_t nowMs, uint16_t duty[4]
   if (gain_ <= 0.0f) {
     // Fully dark: skip effect work entirely.
     lastOut_ = kBlack;
-    duty[0] = duty[1] = duty[2] = duty[3] = 0;
+    for (uint8_t i = 0; i < layout_.count; ++i) duty[i] = 0;
     return;
   }
 
@@ -125,8 +127,6 @@ void RenderEngine::frame(const RenderParams& p, uint32_t nowMs, uint16_t duty[4]
   lastOut_ = out;
 
   const float k = bright_ * gain_;
-  duty[0] = toDuty(out.r * k);
-  duty[1] = toDuty(out.g * k);
-  duty[2] = toDuty(out.b * k);
-  duty[3] = toDuty(out.w * k);
+  const LinColor mapped = foldWhite_ ? chanmap::foldWhite(out, whiteMix_) : out;
+  for (uint8_t i = 0; i < layout_.count; ++i) duty[i] = toDuty(chanmap::component(mapped, layout_.roles[i]) * k);
 }

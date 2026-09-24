@@ -7,6 +7,7 @@
 
 #include "control/ControllerCore.h"
 #include "state/KeyValueStore.h"
+#include "ElectroBright_RGBW/Fixture.h"
 
 class MockKv : public IKeyValueStore {
  public:
@@ -68,9 +69,9 @@ class FakeEnv : public IControllerEnv {
 struct Rig {
   MockKv kv;
   Stats stats;
-  StateStore store{kv, stats};
+  StateStore store{kv, stats, fx::rgbw::kProfile};
   FakeEnv env;
-  ControllerCore core{env, store, stats};
+  ControllerCore core{env, store, stats, fx::rgbw::kProfile};
   uint32_t now = 1000;
 
   Rig() { core.begin(now); env.clear(); }

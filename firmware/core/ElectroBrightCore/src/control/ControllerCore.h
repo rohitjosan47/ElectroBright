@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #include "../core/Stats.h"
+#include "../fixture/FixtureProfile.h"
 #include "../feedback/SoundSequencer.h"
 #include "../protocol/BinaryFrame.h"
 #include "../protocol/CommandParser.h"
@@ -38,7 +39,7 @@ class IControllerEnv {
 
 class ControllerCore {
  public:
-  ControllerCore(IControllerEnv& env, StateStore& store, Stats& stats);
+  ControllerCore(IControllerEnv& env, StateStore& store, Stats& stats, const FixtureProfile& fixture);
 
   void begin(uint32_t nowMs);
   void onConnect(uint32_t nowMs);
@@ -53,6 +54,7 @@ class ControllerCore {
 
   const Scene& scene() const { return scene_; }
   const Settings& settings() const { return settings_; }
+  const FixtureProfile& fixture() const { return fixture_; }
   bool sleeping() const { return sleeping_; }
   bool timerActive() const { return timerActive_; }
   uint32_t timerRemainingSec(uint32_t nowMs) const;
@@ -72,6 +74,7 @@ class ControllerCore {
   IControllerEnv& env_;
   StateStore& store_;
   Stats& stats_;
+  const FixtureProfile& fixture_;
 
   Scene scene_{};
   Settings settings_{};

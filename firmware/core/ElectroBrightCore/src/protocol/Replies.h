@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "../fixture/ChannelLayout.h"
 #include "../state/DeviceState.h"
 
 struct StatusView {
@@ -14,12 +15,15 @@ struct StatusView {
   bool timerActive;
   uint32_t timerRemainingSec;
   bool soundEnabled;
+  const ChannelLayout* layout = &layouts::kRgbw;  // colours carry one value per channel
 };
 
 namespace replies {
 
-// STATUS:r,g,b,w,br,mode,speed,freq,fwCM,clCM,polCM,sleep,timerActive,timerRemaining,sound,
-//        polAr,polAg,polAb,polAw,polBr,polBg,polBb,polBw   (23 fields)
+// STATUS:<colour>,br,mode,speed,freq,fwCM,clCM,polCM,sleep,timerActive,timerRemaining,sound,
+//        <policeA>,<policeB>
+// where each <colour> is one value per layout channel: 3n + 11 fields
+// (RGBW: r,g,b,w,...,polAr,polAg,polAb,polAw,polBr,polBg,polBb,polBw = 23 fields).
 size_t status(char* out, size_t cap, const StatusView& v);
 
 // MODE_SETTINGS:s1,f1;s2,f2;...;s13,f13

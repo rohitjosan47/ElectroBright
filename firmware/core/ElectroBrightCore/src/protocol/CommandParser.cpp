@@ -94,9 +94,12 @@ ParseResult fail(ParseStatus status, const char* code) {
   return r;
 }
 
+// Commands whose arguments are one colour: one value per layout channel.
+bool isColorCommand(CmdId id) { return id == CmdId::Rgbw || id == CmdId::PoliceColorA || id == CmdId::PoliceColorB; }
+
 }  // namespace
 
-ParseResult parseCommand(const char* line) {
+ParseResult parseCommand(const char* line, const ChannelLayout& layout) {
   if (line == nullptr) return fail(ParseStatus::Unknown, "UNKNOWN_CMD");
 
   // Trim the whole line.
@@ -118,12 +121,17 @@ ParseResult parseCommand(const char* line) {
     }
   }
   if (spec == nullptr) return fail(ParseStatus::Unknown, "UNKNOWN_CMD");
+  // "RGBW" names a white channel: unknown on fixtures without one ("COLOR" is universal).
+  if (strcmp(spec->name, "RGBW") == 0 && !layout::has(layout, Channel::W)) {
+    return fail(ParseStatus::Unknown, "UNKNOWN_CMD");
+  }
+  const uint8_t argc = isColorCommand(spec->id) ? layout.count : spec->argc;
 
   ParseResult r{};
   r.status = ParseStatus::Ok;
   r.errorCode = nullptr;
   r.cmd.id = spec->id;
-  r.cmd.argc = spec->argc;
+  r.cmd.argc = argc;
 
   // Argument text (may be empty).
   const char* args = colon ? colon + 1 : end;
@@ -131,7 +139,7 @@ ParseResult parseCommand(const char* line) {
   while (p < end && isSpace(*p)) ++p;
   const bool noArgText = (p == end);
 
-  if (spec->argc == 0) {
+  if (argc == 0) {
     // "STATUS" and "STATUS:" are both fine; "STATUS:5" is not.
     if (!noArgText) return fail(ParseStatus::Format, spec->errorCode);
     return r;
@@ -142,7 +150,7 @@ ParseResult parseCommand(const char* line) {
   const char* fieldStart = args;
   for (const char* q = args;; ++q) {
     if (q == end || *q == ',') {
-      if (field == spec->argc) {
+      if (field == argc) {
         // Only a single, empty trailing field (a trailing comma) is tolerated.
         const char* t = fieldStart;
         while (t < q && isSpace(*t)) ++t;
@@ -160,7 +168,7 @@ ParseResult parseCommand(const char* line) {
       fieldStart = q + 1;
     }
   }
-  if (field != spec->argc) return fail(ParseStatus::Format, spec->errorCode);
+  if (field != argc) return fail(ParseStatus::Format, spec->errorCode);
   return r;
 }
 

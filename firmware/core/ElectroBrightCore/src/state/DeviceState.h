@@ -11,6 +11,7 @@
 
 #include "../config/Config.h"
 #include "../core/Types.h"
+#include "../fixture/FixtureProfile.h"
 
 struct Scene {
   Rgbw8 color;
@@ -34,11 +35,13 @@ static_assert(sizeof(Settings) == 4, "Settings must be tightly packed");
 
 namespace state {
 
-Scene defaultScene();
+// Power-up / factory-reset scene with the fixture's colour defaults.
+Scene defaultScene(const SceneDefaults& d);
 Settings defaultSettings();
 
-// Strict validation of every field (used for anything read back from flash).
-bool isValid(const Scene& s);
+// Strict validation of every field (used for anything read back from flash);
+// colours must fit the layout (channels it lacks are 0).
+bool isValid(const Scene& s, const ChannelLayout& l);
 bool isValid(const Settings& s);
 
 inline uint8_t activeSpeed(const Scene& s) { return s.speed[s.mode - 1]; }
