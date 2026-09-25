@@ -195,6 +195,54 @@ final class ColourEngine {
 
   static int _byte(double unit) => (unit.clamp(0.0, 1.0) * 255).round();
 
+  /// The channel levels (perceptual 0..1, the largest 1) of [intent] at full
+  /// intensity, unquantised: the colour the user asked for, exactly, where
+  /// the 8-bit channels of a dim colour cannot resolve its hue. Null for raw
+  /// channel values (they are all there is).
+  List<double>? fullLevels(ColourIntent intent, ChannelLayout layout) {
+    List<double> unit(List<double> l) {
+      final double m = l.fold(0, math.max);
+      return m <= 0 ? l : <double>[for (final double x in l) x / m];
+    }
+
+    List<double> bytes(ChannelColor c) => <double>[
+      for (final int v in c.values) v / 255,
+    ];
+    switch (intent) {
+      case RawIntent():
+        return null;
+      case WhiteIntent(:final double kelvin):
+        // Proportions do not depend on the level: at full level the 8-bit
+        // rounding is a fraction of a percent.
+        return unit(bytes(_encodeWhite(kelvin, 1, layout)));
+      case HsvIntent(:final Hsv hsv, :final double white):
+        // Black keeps its hue: shown as the colour at full value.
+        final List<double> rgb = hsv.v > 0 || white > 0
+            ? hsv.toRgb()
+            : hsv.copyWith(v: 1).toRgb();
+        switch (layout) {
+          case ChannelLayout.rgb:
+            return unit(rgb);
+          case ChannelLayout.rgbw:
+            return unit(<double>[...rgb, white.clamp(0.0, 1.0)]);
+          case ChannelLayout.rgbcct:
+            return unit(<double>[...rgb, 0, 0]);
+          case ChannelLayout.cct:
+            final LinearRgb lin = LinearRgb(
+              math.pow(rgb[0], 2.2).toDouble(),
+              math.pow(rgb[1], 2.2).toDouble(),
+              math.pow(rgb[2], 2.2).toDouble(),
+            );
+            final double k = lin.max <= 0
+                ? 4000
+                : ColorScience.estimateKelvin(lin.normalized());
+            return unit(bytes(_encodeWhite(k, 1, layout)));
+          case ChannelLayout.w:
+            return const <double>[1];
+        }
+    }
+  }
+
   // ---------------------------------------------------------------- decode
 
   /// The intent a colour most likely came from. [hint] (the intent the

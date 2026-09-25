@@ -25,7 +25,9 @@ import '../../design/controls/glass_slider.dart';
 import '../../design/glass/glass_surface.dart';
 import '../../design/haptics/haptics.dart';
 import '../../design/tokens/tokens.dart';
+import '../../design/tone/colour_glide.dart';
 import '../../design/tone/light_level.dart';
+import '../../design/tone/screen_colour.dart';
 import '../../design/tone/tone_scope.dart';
 import '../../drivers/electrobright/eb_types.dart';
 import '../../l10n/app_localizations.dart';
@@ -413,6 +415,11 @@ _ScreenState _screenState(FixtureStatus s) => (
 
 /// The light's look without its brightness (the pill's alone): its scene at
 /// full, or the factory look while nothing is known (never connected).
+/// A finger is on the colour (wheel, square, channel or white sliders): the
+/// display follows it exactly instead of gliding.
+bool _following(FixtureStatus s) =>
+    s.view?.gestures.contains(EbKeys.color) ?? false;
+
 EbScene _lookOf(FixtureStatus s, ChannelLayout layout) {
   final EbScene? scene = s.state?.scene;
   return (scene != null && scene.layout == layout
@@ -446,6 +453,7 @@ class _Tone extends ConsumerWidget {
           t.look,
           sleeping: t.sleeping,
           whitePoints: fixture.whitePoints,
+          steady: ref.watch(steadyLevelsProvider(fixture.id)),
         ),
         dark: Theme.of(context).brightness == Brightness.dark,
       ),
@@ -527,7 +535,7 @@ class _Orb extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ({EbScene look, bool on, bool known}) o = ref.watch(
+    final ({EbScene look, bool on, bool known, bool following}) o = ref.watch(
       fixtureStatusProvider(fixture.id).select(
         (FixtureStatus s) => (
           look: _lookOf(s, layout),
@@ -536,6 +544,7 @@ class _Orb extends ConsumerWidget {
               !s.state!.sleeping &&
               s.state!.scene.brightness > 0,
           known: s.state != null,
+          following: _following(s),
         ),
       ),
     );
@@ -545,14 +554,23 @@ class _Orb extends ConsumerWidget {
       fixture.whitePoints,
       AppLocalizations.of(context),
     );
-    return LightOrb(
-      spec: mode,
-      color: swatchOf(o.look.color, fixture.whitePoints),
-      on: o.on,
-      // Known lights follow their brightness; unknown ones stay dimmed.
-      level: o.known ? LightLevel.of(context) : null,
-      size: 160,
-      speed: mode.hasSpeed ? 0.5 + o.look.speed / 10 : 1,
+    final Animation<double>? level = o.known ? LightLevel.of(context) : null;
+    return ColourGlide(
+      follow: o.following,
+      colour: swatchOf(
+        o.look.color,
+        fixture.whitePoints,
+        steady: ref.watch(steadyLevelsProvider(fixture.id)),
+      ),
+      builder: (BuildContext context, Color colour, _) => LightOrb(
+        spec: mode,
+        color: colour,
+        on: o.on,
+        // Known lights follow their brightness; unknown ones stay dimmed.
+        level: level,
+        size: 160,
+        speed: mode.hasSpeed ? 0.5 + o.look.speed / 10 : 1,
+      ),
     );
   }
 }
@@ -578,6 +596,7 @@ class _EffectsTab extends ConsumerWidget {
     ),
     capabilities: capabilities,
     whitePoints: fixture.whitePoints,
+    steady: ref.watch(steadyLevelsProvider(fixture.id)),
     session: session,
     enabled: enabled,
   );
@@ -703,18 +722,18 @@ class _Header extends StatelessWidget {
 
 /// The brightness pill's fill: the light's colour, lifted to read as a glow
 /// on glass; a white (almost no chroma) takes its temperature's tint.
-Color _pillFill(Color swatch, {required bool dark}) {
-  final LinearRgb lin = ColorScience.fromArgb(swatch.toARGB32());
+@visibleForTesting
+Color pillFill(Color swatch, {required bool dark}) {
+  final LinearRgb lin = linearOf(swatch);
   Oklch o = ColorScience.toOklch(lin);
   if (o.c < 0.04) {
     final double k = ColorScience.estimateKelvin(lin);
     o = Oklch(o.l, 0.06, k < 4500 ? 70 : 245);
   }
   o = Oklch(o.l.clamp(dark ? 0.58 : 0.62, dark ? 0.8 : 0.82), o.c, o.h);
-  return Color(
-    ColorScience.toArgb(
-      ColorScience.fromOklch(ColorScience.toGamut(o)).clamp01(),
-    ),
+  // Unrounded, so a colour dragged smoothly never steps back by a rounding.
+  return screenColour(
+    ColorScience.fromOklch(ColorScience.toGamut(o)).clamp01(),
   );
 }
 
@@ -749,19 +768,26 @@ class BrightnessPill extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
-    final ({int brightness, int level, bool sleeping, EbScene look}) p = ref
-        .watch(
-          fixtureStatusProvider(fixtureId).select((FixtureStatus s) {
-            final EbScene? scene = s.state?.scene;
-            final bool known = scene != null && scene.layout == layout;
-            return (
-              brightness: known ? scene.brightness : 255,
-              level: known ? scene.color[0] : 255,
-              sleeping: s.state?.sleeping ?? false,
-              look: _lookOf(s, layout),
-            );
-          }),
+    final ({
+      int brightness,
+      int level,
+      bool sleeping,
+      EbScene look,
+      bool following,
+    })
+    p = ref.watch(
+      fixtureStatusProvider(fixtureId).select((FixtureStatus s) {
+        final EbScene? scene = s.state?.scene;
+        final bool known = scene != null && scene.layout == layout;
+        return (
+          brightness: known ? scene.brightness : 255,
+          level: known ? scene.color[0] : 255,
+          sleeping: s.state?.sleeping ?? false,
+          look: _lookOf(s, layout),
+          following: _following(s),
         );
+      }),
+    );
     final bool single = layout == ChannelLayout.w;
     final int brightness = p.sleeping ? 0 : p.brightness;
     final FixtureSession? s = enabled ? session : null;
@@ -774,72 +800,93 @@ class BrightnessPill extends ConsumerWidget {
       whitePoints,
       l,
     );
-    final Color swatch = mode.colorUse == EbColorUse.never
+    // At full intensity and steady at low channel values (the fill's length
+    // shows the brightness, not its colour).
+    final Color target = mode.colorUse == EbColorUse.never
         ? Color(mode.gradient.first)
-        : swatchOf(p.look.color, whitePoints);
-    // Light: saturated (whites a neutral mid-tone), >= 3:1 on the track.
-    final LightSurfaces? light = dark
-        ? null
-        : LightSurfaces(ToneScope.of(context));
-    // Light: the light's own colour, painted luminous by the slider; its ink
-    // (dark or white, >= 4.5:1 on every part of the fill).
-    final Color fill = light == null ? _pillFill(swatch, dark: dark) : swatch;
-    final Color onFill = light != null
-        ? Color(light.luminous(swatch.toARGB32()).ink)
-        : fill.computeLuminance() > 0.45
-        ? const Color(0xFF15171C)
-        : Colors.white;
+        : swatchOf(
+            p.look.color,
+            whitePoints,
+            steady: ref.watch(steadyLevelsProvider(fixtureId)),
+          );
     // Dimmed, but on light surfaces never below 4.5:1.
     final double dimFloor = dark ? 0 : LightSurfaces.dimAlpha;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        GlassSlider(
-          key: const ValueKey<String>('brightness'),
-          value: brightness / 255,
-          semanticLabel: single ? l.intensity : l.brightness,
-          enabled: s != null,
-          height: 56,
-          fill: fill,
-          // Light: real liquid glass over the canvas (dark keeps the panel).
-          glassTier: dark ? GlassTier.panel : GlassTier.chrome,
-          valueText: (double x) => label(l, x),
-          // The sun follows the level: small and faint low, full at the top.
-          leadingBuilder: (double x, double width) {
-            final bool overFill = x * width >= Space.m + 24;
-            return SizedBox.square(
-              dimension: 24,
-              child: Center(
-                child: Icon(
-                  Icons.wb_sunny_outlined,
-                  key: const ValueKey<String>('brightness-icon'),
-                  size: 15 + 6 * x,
-                  color: (overFill ? onFill : fg).withValues(
-                    alpha: math.max(dimFloor, x <= 0 ? 0.4 : 0.55 + 0.45 * x),
+        // Colour changes glide, so a single step never flashes; a finger on
+        // the colour is followed exactly.
+        ColourGlide(
+          colour: target,
+          follow: p.following,
+          builder: (BuildContext context, Color swatch, _) {
+            // Light: saturated (whites a neutral mid-tone), >= 3:1 on the track.
+            final LightSurfaces? light = dark
+                ? null
+                : LightSurfaces(ToneScope.of(context));
+            // Light: the light's own colour, painted luminous by the slider; its ink
+            // (dark or white, >= 4.5:1 on every part of the fill).
+            final Color fill = light == null
+                ? pillFill(swatch, dark: dark)
+                : swatch;
+            final Color onFill = light != null
+                ? Color(light.luminousOf(linearOf(swatch)).ink)
+                : fill.computeLuminance() > 0.45
+                ? const Color(0xFF15171C)
+                : Colors.white;
+            return GlassSlider(
+              key: const ValueKey<String>('brightness'),
+              value: brightness / 255,
+              semanticLabel: single ? l.intensity : l.brightness,
+              enabled: s != null,
+              height: 56,
+              fill: fill,
+              // Light: real liquid glass over the canvas (dark keeps the panel).
+              glassTier: dark ? GlassTier.panel : GlassTier.chrome,
+              valueText: (double x) => label(l, x),
+              // The sun follows the level: small and faint low, full at the top.
+              leadingBuilder: (double x, double width) {
+                final bool overFill = x * width >= Space.m + 24;
+                return SizedBox.square(
+                  dimension: 24,
+                  child: Center(
+                    child: Icon(
+                      Icons.wb_sunny_outlined,
+                      key: const ValueKey<String>('brightness-icon'),
+                      size: 15 + 6 * x,
+                      color: (overFill ? onFill : fg).withValues(
+                        alpha: math.max(
+                          dimFloor,
+                          x <= 0 ? 0.4 : 0.55 + 0.45 * x,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
+              trailingBuilder: (double x, double width) {
+                final bool overFill = x * width >= width - Space.m - 20;
+                return Text(
+                  label(l, x),
+                  style: TextStyle(
+                    color: (overFill ? onFill : fg).withValues(
+                      alpha: x <= 0 ? math.max(dimFloor, 0.6) : 1,
+                    ),
+                    fontWeight: FontWeight.w500,
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures(),
+                    ],
+                  ),
+                );
+              },
+              onChangeStart: (_) => s?.beginGesture(EbKeys.brightness),
+              onChanged: (double x) =>
+                  s?.setBrightness((x * 255).round(), live: true),
+              onChangeEnd: (double x) {
+                s?.setBrightness((x * 255).round());
+                s?.endGesture(EbKeys.brightness);
+              },
             );
-          },
-          trailingBuilder: (double x, double width) {
-            final bool overFill = x * width >= width - Space.m - 20;
-            return Text(
-              label(l, x),
-              style: TextStyle(
-                color: (overFill ? onFill : fg).withValues(
-                  alpha: x <= 0 ? math.max(dimFloor, 0.6) : 1,
-                ),
-                fontWeight: FontWeight.w500,
-                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-              ),
-            );
-          },
-          onChangeStart: (_) => s?.beginGesture(EbKeys.brightness),
-          onChanged: (double x) =>
-              s?.setBrightness((x * 255).round(), live: true),
-          onChangeEnd: (double x) {
-            s?.setBrightness((x * 255).round());
-            s?.endGesture(EbKeys.brightness);
           },
         ),
         if (single)
@@ -962,8 +1009,11 @@ class _ColourTab extends ConsumerWidget {
             enabled: s != null,
             onGestureStart: () => s?.beginGesture(EbKeys.color),
             onGestureEnd: () => s?.endGesture(EbKeys.color),
-            onChanged: (ChannelColor c, {required bool live}) =>
-                s?.setColor(c, live: live),
+            onChanged: (
+              ChannelColor c, {
+              required bool live,
+              ColourIntent? intent,
+            }) => s?.setColor(c, live: live, intent: intent),
           ),
         ),
       ],

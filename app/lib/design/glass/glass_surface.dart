@@ -54,6 +54,7 @@ class GlassSurface extends StatelessWidget {
     this.padding = EdgeInsets.zero,
     this.tinted = true,
     this.tint,
+    this.elevated = true,
     super.key,
   });
 
@@ -68,6 +69,11 @@ class GlassSurface extends StatelessWidget {
   /// A stronger tint in this colour (e.g. a lit button in the light's
   /// accent), instead of the light's glass tint.
   final Color? tint;
+
+  /// Casts a drop shadow. Off for glass nested inside another surface (a
+  /// segmented thumb, a slider in a panel): nothing it draws may leave its
+  /// own bounds and spill over its container.
+  final bool elevated;
 
   @override
   Widget build(BuildContext context) {
@@ -142,11 +148,12 @@ class GlassSurface extends StatelessWidget {
           ),
         ),
         shadows: <BoxShadow>[
-          BoxShadow(
-            color: Colors.black.withValues(alpha: dark ? 0.35 : 0.08),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
-          ),
+          if (elevated)
+            BoxShadow(
+              color: Colors.black.withValues(alpha: dark ? 0.35 : 0.08),
+              blurRadius: 24,
+              offset: const Offset(0, 10),
+            ),
         ],
       ),
       child: Padding(padding: padding, child: child),
@@ -158,6 +165,15 @@ class GlassSurface extends StatelessWidget {
         borderRadius: BorderRadius.circular(radius),
         side: side,
       );
+
+  static const List<BoxShadow> _chromeShadows = <BoxShadow>[
+    BoxShadow(color: Color(0x1A000000), blurRadius: 18, offset: Offset(0, 6)),
+    BoxShadow(color: Color(0x0D000000), blurRadius: 3, offset: Offset(0, 1)),
+  ];
+
+  static const List<BoxShadow> _panelShadows = <BoxShadow>[
+    BoxShadow(color: Color(0x14000000), blurRadius: 22, offset: Offset(0, 8)),
+  ];
 
   static const BorderSide _hairline = BorderSide(
     color: Color(LightSurfaces.hairline),
@@ -171,18 +187,7 @@ class GlassSurface extends StatelessWidget {
   Widget _lightChrome(Color tint, bool lit) => DecoratedBox(
     decoration: ShapeDecoration(
       shape: _shape(),
-      shadows: const <BoxShadow>[
-        BoxShadow(
-          color: Color(0x1A000000),
-          blurRadius: 18,
-          offset: Offset(0, 6),
-        ),
-        BoxShadow(
-          color: Color(0x0D000000),
-          blurRadius: 3,
-          offset: Offset(0, 1),
-        ),
-      ],
+      shadows: elevated ? _chromeShadows : null,
     ),
     child: CustomPaint(
       foregroundPainter: _GlassRim(radius),
@@ -235,13 +240,7 @@ class GlassSurface extends StatelessWidget {
                 ],
         ),
         shape: _shape(side: _hairline),
-        shadows: const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 22,
-            offset: Offset(0, 8),
-          ),
-        ],
+        shadows: elevated ? _panelShadows : null,
       ),
       child: CustomPaint(
         foregroundPainter: _GlassRim(radius),

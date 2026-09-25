@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/color/colour_engine.dart';
+import '../../../core/color/steady_colour.dart';
 import '../../../core/color/led_white_points.dart';
 import '../../../core/color/light_tone.dart';
 import '../../../core/color/light_surfaces.dart';
@@ -34,6 +36,7 @@ class EffectsPanel extends StatelessWidget {
     required this.whitePoints,
     required this.session,
     required this.enabled,
+    this.steady,
     super.key,
   });
 
@@ -43,6 +46,9 @@ class EffectsPanel extends StatelessWidget {
   final FixtureSession? session;
   final bool enabled;
 
+  /// The light's colour kept steady at low channel values (for the glyphs).
+  final SteadyLevels? steady;
+
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
@@ -50,7 +56,7 @@ class EffectsPanel extends StatelessWidget {
     final EbModeSpec? current = modes
         .where((EbModeSpec m) => m.id == scene.mode)
         .firstOrNull;
-    final Color colour = swatchOf(scene.color, whitePoints);
+    final Color colour = swatchOf(scene.color, whitePoints, steady: steady);
     final Color fg = ToneScope.of(context).dark
         ? Colors.white
         : const Color(0xFF15171C);
@@ -477,10 +483,11 @@ class _BeaconSheetState extends State<_BeaconSheet> {
           ColourEditor(
             value: _value,
             whitePoints: widget.whitePoints,
-            onChanged: (ChannelColor c, {required bool live}) {
-              setState(() => _value = c);
-              if (!live) widget.onChanged(c);
-            },
+            onChanged:
+                (ChannelColor c, {required bool live, ColourIntent? intent}) {
+                  setState(() => _value = c);
+                  if (!live) widget.onChanged(c);
+                },
           ),
         ],
       ),

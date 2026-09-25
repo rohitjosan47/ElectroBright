@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:meta/meta.dart';
 
 import '../core/ble/ble_link.dart';
+import '../core/color/colour_engine.dart';
 import '../core/model/fixture.dart';
 import '../core/model/channel_color.dart';
 import '../core/protocol/eb/eb_scene.dart';
@@ -43,6 +44,7 @@ final class FixtureStatus {
     this.incompatibility,
     this.detail,
     this.offlineBrightness,
+    this.colourPick,
   });
 
   final LinkPhase phase;
@@ -69,6 +71,11 @@ final class FixtureStatus {
   /// control keeps what the user chose.
   final int? offlineBrightness;
 
+  /// What was last picked on this phone (the editor's intent, before 8-bit
+  /// encoding) and the session change that sent it. It is what the colour
+  /// shown is while [view]'s colour origin is that change.
+  final ColourPick? colourPick;
+
   /// What the UI should render: live when connected, else the last known
   /// with the change waiting to be sent.
   EbDeviceState? get state {
@@ -90,7 +97,36 @@ final class FixtureStatus {
     incompatibility: incompatibility,
     detail: detail,
     offlineBrightness: view == null ? brightness : null,
+    colourPick: colourPick,
   );
+
+  FixtureStatus _withPick(ColourPick? pick) => FixtureStatus(
+    phase: phase,
+    view: view,
+    lastKnown: lastKnown,
+    attempt: attempt,
+    incompatibility: incompatibility,
+    detail: detail,
+    offlineBrightness: offlineBrightness,
+    colourPick: view == null ? null : pick,
+  );
+}
+
+/// A colour picked on this phone: the intent and the session change
+/// ([EbColorOrigin.seq]) that sent its encoding.
+@immutable
+final class ColourPick {
+  const ColourPick(this.seq, this.intent);
+  final int seq;
+  final ColourIntent intent;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ColourPick && other.seq == seq && other.intent == intent;
+  @override
+  int get hashCode => Object.hash(seq, intent);
+  @override
+  String toString() => 'ColourPick#$seq($intent)';
 }
 
 /// One saved light: its (optional) live driver session plus the last-known
@@ -109,6 +145,10 @@ final class FixtureSession {
 
   /// Fires when the oldest pending offline change runs out of time.
   Cancelable? _expiry;
+
+  /// The colour last picked on this phone, unquantised, and the session
+  /// change that sent it (see [FixtureStatus.colourPick]).
+  ColourPick? _pick;
 
   /// Brightness set while not connected (see [FixtureStatus.offlineBrightness]).
   int? _offlineBrightness;
@@ -185,6 +225,8 @@ final class FixtureSession {
       expectedLayout: fixture.layout,
     );
     _session = s;
+    // Sequence numbers belong to a session.
+    _pick = null;
     setPhase(LinkPhase.handshaking);
     try {
       await s.start();
@@ -251,7 +293,7 @@ final class FixtureSession {
   }
 
   void _set(FixtureStatus s) {
-    _status = s._withOffline(_offlineBrightness);
+    _status = s._withOffline(_offlineBrightness)._withPick(_pick);
     if (!_statuses.isClosed) _statuses.add(_status);
   }
 
@@ -357,13 +399,21 @@ final class FixtureSession {
     code: 'LAYOUT_CHANGED',
   );
 
-  void setColor(ChannelColor c, {bool live = false}) => unawaited(
-    _intent(EbKeys.color, (EbSession s) {
-      if (c.layout != s.layout) return Future<EbResult>.value(wrongLayout);
-      s.setColor(c, live: live);
-      return Future<EbResult>.value(EbResult.ok);
-    }),
-  );
+  /// [intent]: what the user picked (the colour editor), shown exactly
+  /// until the light reports a colour of its own.
+  void setColor(ChannelColor c, {bool live = false, ColourIntent? intent}) =>
+      unawaited(
+        _intent(EbKeys.color, (EbSession s) {
+          if (c.layout != s.layout) {
+            return Future<EbResult>.value(wrongLayout);
+          }
+          final int? seq = s.setColor(c, live: live);
+          if (seq != null) {
+            _pick = intent == null ? null : ColourPick(seq, intent);
+          }
+          return Future<EbResult>.value(EbResult.ok);
+        }),
+      );
 
   /// Colour and brightness in one frame (see [EbSession.setLook]).
   /// [keepOffline]: how long the change waits for a dropped link.

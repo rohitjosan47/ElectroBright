@@ -3,6 +3,10 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
 
+import '../core/color/colour_engine.dart';
+import '../core/color/led_white_points.dart';
+import '../core/color/steady_colour.dart';
+import '../core/model/channel_color.dart';
 import '../core/model/fixture.dart';
 import '../core/model/light_capabilities.dart';
 import '../core/protocol/eb/eb_fixture_catalog.dart';
@@ -10,6 +14,7 @@ import '../core/protocol/eb/eb_scene.dart';
 import '../core/model/channel_layout.dart';
 import '../sessions/discovery.dart';
 import '../sessions/fixture_registry.dart';
+import '../drivers/electrobright/eb_types.dart';
 import '../sessions/fixture_session.dart';
 import 'app_session.dart';
 
@@ -89,6 +94,53 @@ final ProviderFamily<EbScene?, String> sceneProvider =
         fixtureStatusProvider(id).select((FixtureStatus s) => s.state?.scene),
       ),
     );
+
+/// A light's picked colour at full intensity as the UI shows it (pill, orb,
+/// canvas, glyphs), chosen by where the colour came from: while the
+/// session's colour is the change that sent the user's pick on this phone,
+/// exactly that pick (also after release, until the light reports a colour
+/// of its own); otherwise the channels, held steady at low values. One
+/// status carries both, so the choice never flips between frames.
+final NotifierProviderFamily<SteadyLevelsNotifier, SteadyLevels?, String>
+steadyLevelsProvider =
+    NotifierProvider.family<SteadyLevelsNotifier, SteadyLevels?, String>(
+      SteadyLevelsNotifier.new,
+    );
+
+final class SteadyLevelsNotifier extends Notifier<SteadyLevels?> {
+  SteadyLevelsNotifier(this.id);
+  final String id;
+
+  @override
+  SteadyLevels? build() {
+    final (ChannelColor?, EbColorOrigin?, ColourPick?) s = ref.watch(
+      fixtureStatusProvider(id).select(
+        (FixtureStatus s) =>
+            (s.state?.scene.color, s.view?.colorOrigin, s.colourPick),
+      ),
+    );
+    final (ChannelColor? c, EbColorOrigin? origin, ColourPick? pick) = s;
+    final LedWhitePoints wp = ref.watch(
+      fixtureProvider(id)
+          .select((Fixture? f) => f?.whitePoints ?? const LedWhitePoints()),
+    );
+    final bool picked =
+        c != null &&
+        origin != null &&
+        origin.byUser &&
+        pick != null &&
+        pick.seq == origin.seq;
+    if (!picked) return SteadyLevels.next(stateOrNull, c);
+    return switch (pick.intent) {
+      RawIntent() => SteadyLevels.next(stateOrNull, c, exact: true),
+      final ColourIntent i => SteadyLevels.next(
+        stateOrNull,
+        c,
+        intent: ColourEngine(wp).fullLevels(i, c.layout),
+      ),
+    };
+  }
+}
 
 /// A light advertising nearby that is not saved yet.
 final class NearbyLight {

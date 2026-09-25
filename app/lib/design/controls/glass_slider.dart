@@ -12,6 +12,7 @@ import '../glass/glass_surface.dart';
 import '../haptics/haptics.dart';
 import '../haptics/haptics_scope.dart';
 import '../tokens/tokens.dart';
+import '../tone/screen_colour.dart';
 import '../tone/tone_scope.dart';
 
 /// A horizontal glass slider. The value lives in local state while the finger
@@ -41,6 +42,7 @@ class GlassSlider extends StatefulWidget {
     this.valueText,
     this.enabled = true,
     this.glassTier = GlassTier.panel,
+    this.elevated = true,
     super.key,
   }) : assert(trailing == null || trailingBuilder == null),
        assert(leading == null || leadingBuilder == null);
@@ -77,6 +79,60 @@ class GlassSlider extends StatefulWidget {
   /// The glass of the track (chrome = real refraction, for a slider floating
   /// on the canvas; panel for sliders inside panels).
   final GlassTier glassTier;
+
+  /// Casts the track's drop shadow (off inside a panel, see
+  /// [GlassSurface.elevated]).
+  final bool elevated;
+
+  /// Gradient sliders: the gradient's inset from the track and the knob's
+  /// from the gradient. Track, gradient and knob are concentric at each end,
+  /// evenly spaced, and the knob's shadow stays on the gradient.
+  static const double gradientInset = 3;
+
+  /// The knob of a gradient slider of [size] at [fraction].
+  static ({Offset centre, double radius}) gradientKnob(
+    Size size,
+    double fraction,
+  ) {
+    final double end = size.height / 2;
+    return (
+      centre: Offset(
+        end + fraction.clamp(0.0, 1.0) * (size.width - 2 * end),
+        end,
+      ),
+      radius: end - 2 * gradientInset,
+    );
+  }
+
+  /// Light theme: how far the fill sits inside the track (the glass rim's
+  /// width plus a hair), on every side.
+  static const double lightFillInset = 2;
+
+  /// Light theme fill geometry for a track of [size] at [fraction]: the
+  /// inner tube (the track inset on every side, concentric radius) and the
+  /// fill body inside it (leading end rounded min(h/2, w/2)); null when
+  /// empty.
+  static ({RRect tube, RRect body})? lightFillShapes(
+    Size size,
+    double fraction,
+  ) {
+    const double inset = lightFillInset;
+    final double h = size.height - 2 * inset;
+    final double w = fraction.clamp(0.0, 1.0) * (size.width - 2 * inset);
+    if (w <= 0 || h <= 0) return null;
+    final Radius end = Radius.circular(math.min(h / 2, w / 2));
+    return (
+      tube: RRect.fromRectAndRadius(
+        Rect.fromLTWH(inset, inset, size.width - 2 * inset, h),
+        Radius.circular(h / 2),
+      ),
+      body: RRect.fromRectAndCorners(
+        Rect.fromLTWH(inset, inset, w, h),
+        topRight: end,
+        bottomRight: end,
+      ),
+    );
+  }
 
   @override
   State<GlassSlider> createState() => _GlassSliderState();
@@ -225,7 +281,7 @@ class _GlassSliderState extends State<GlassSlider>
     // inner glow, same-hue edge and coloured under-light).
     final LuminousFill? luminous = tone.dark
         ? null
-        : LightSurfaces(tone).luminous(fill.toARGB32());
+        : LightSurfaces(tone).luminousOf(linearOf(fill));
     // Only the words follow the value here; the track repaints from [_v].
     return ValueListenableBuilder<String>(
       valueListenable: _shown,
@@ -321,6 +377,7 @@ class _GlassSliderState extends State<GlassSlider>
                 child: GlassSurface(
                   tier: widget.glassTier,
                   radius: Radii.capsule,
+                  elevated: widget.elevated,
                   child: RepaintBoundary(
                     child: CustomPaint(
                       painter: _TrackPainter(
@@ -402,39 +459,37 @@ class _TrackPainter extends CustomPainter {
     canvas.clipRRect(shape);
     final List<Color>? t = track;
     if (t != null) {
-      // Gradient slider: the whole track shows the range, a glass knob rides it.
+      // Gradient slider: the whole track shows the range, a glass knob rides
+      // it. The gradient is inset from the track and the knob from the
+      // gradient by the same step, all concentric at the ends, so no edge
+      // runs into another and nothing reaches the track's rim.
+      const double g = GlassSlider.gradientInset;
       canvas.drawRRect(
-        shape.deflate(3),
+        shape.deflate(g),
         Paint()
           ..shader = LinearGradient(colors: t).createShader(Offset.zero & size),
       );
-      final double r = size.height / 2 - 4;
-      final double x = r + 4 + fraction * (size.width - 2 * (r + 4));
-      final Offset c = Offset(x, size.height / 2);
-      if (dark) {
-        canvas.drawCircle(
-          c,
-          r + 1.5,
-          Paint()
-            ..color = Colors.black.withValues(alpha: 0.25)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
-        );
-      } else {
-        // Light: a soft neutral shadow under the knob.
-        final Offset below = c + const Offset(0, 1.5);
-        canvas.drawCircle(
-          below,
-          r + 3,
-          Paint()
-            ..shader = RadialGradient(
-              colors: <Color>[
-                Colors.black.withValues(alpha: 0.18),
-                Colors.black.withValues(alpha: 0),
-              ],
-              stops: <double>[r / (r + 3), 1],
-            ).createShader(Rect.fromCircle(center: below, radius: r + 3)),
-        );
-      }
+      final (:Offset centre, :double radius) = GlassSlider.gradientKnob(
+        size,
+        fraction,
+      );
+      final Offset c = centre;
+      final double r = radius;
+      // A soft shadow under the knob, ending at the gradient's edge.
+      final Offset below = c + const Offset(0, 1);
+      final double reach = r + g - 1;
+      canvas.drawCircle(
+        below,
+        reach,
+        Paint()
+          ..shader = RadialGradient(
+            colors: <Color>[
+              Colors.black.withValues(alpha: dark ? 0.35 : 0.18),
+              Colors.black.withValues(alpha: 0),
+            ],
+            stops: <double>[r / reach, 1],
+          ).createShader(Rect.fromCircle(center: below, radius: reach)),
+      );
       canvas.drawCircle(c, r, Paint()..color = Colors.white);
       if (!dark) {
         // A crisp dark outline keeps the knob visible on light gradients.
@@ -453,26 +508,32 @@ class _TrackPainter extends CustomPainter {
         Paint()..color = Color.lerp(t.first, t.last, fraction)!,
       );
     } else if (luminous != null) {
-      // Light pill: a faint glass track, then the fill as light inside glass:
-      // the light's colour brightening toward the leading end, a white
-      // specular across the top half, a soft inner glow at the leading end
-      // and a fine edge in a deeper shade of the same hue (the boundary).
+      // Light pill: a faint glass track, then the fill like liquid in a tube:
+      // inset from the track by the rim on every side and clipped to the
+      // concentric inner capsule, so the rim never overlaps it and nothing
+      // is cut. It brightens toward the leading end, with a white specular
+      // across its top half, a soft inner glow at the leading end and a
+      // liquid-glass edge (a bright inner highlight on top, a barely deeper
+      // tone below) instead of an outline.
       final LuminousFill l = luminous!;
       canvas.drawRRect(
         shape,
         Paint()
           ..color = Colors.black.withValues(alpha: LightSurfaces.trackAlpha),
       );
-      if (fraction > 0) {
-        final double h = size.height;
-        final double w = fraction * size.width;
-        final Rect rect = Rect.fromLTWH(0, 0, w, h);
-        final Radius end = Radius.circular(math.min(h / 2, w / 2));
-        final RRect body = RRect.fromRectAndCorners(
-          rect,
-          topRight: end,
-          bottomRight: end,
-        );
+      final ({RRect tube, RRect body})? shapes = GlassSlider.lightFillShapes(
+        size,
+        fraction,
+      );
+      if (shapes != null) {
+        const double inset = GlassSlider.lightFillInset;
+        final RRect tube = shapes.tube;
+        final RRect body = shapes.body;
+        final Rect rect = body.outerRect;
+        final double h = rect.height;
+        final double w = rect.width;
+        canvas.save();
+        canvas.clipRRect(tube);
         canvas.drawRRect(
           body,
           Paint()
@@ -481,18 +542,21 @@ class _TrackPainter extends CustomPainter {
               stops: const <double>[0, 0.6, 1],
             ).createShader(rect),
         );
-        canvas.save();
         canvas.clipRRect(body);
+        final Rect top = Rect.fromLTWH(inset, inset, w, h / 2);
         canvas.drawRect(
-          Rect.fromLTWH(0, 0, w, h / 2),
+          top,
           Paint()
             ..shader = const LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: <Color>[Color(0x73FFFFFF), Color(0x00FFFFFF)],
-            ).createShader(Rect.fromLTWH(0, 0, w, h / 2)),
+            ).createShader(top),
         );
-        final Offset glowAt = Offset(math.max(h * 0.4, w - h * 0.45), h * 0.55);
+        final Offset glowAt = Offset(
+          inset + math.max(h * 0.4, w - h * 0.45),
+          inset + h * 0.55,
+        );
         canvas.drawCircle(
           glowAt,
           h * 0.9,
@@ -504,14 +568,25 @@ class _TrackPainter extends CustomPainter {
               ],
             ).createShader(Rect.fromCircle(center: glowAt, radius: h * 0.9)),
         );
-        canvas.restore();
+        // The liquid-glass edge: soft and low-contrast, no visible outline.
         canvas.drawRRect(
-          body.deflate(0.6),
+          body.deflate(0.5),
           Paint()
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.2
-            ..color = Color(l.edge),
+            ..strokeWidth = 1
+            ..shader = LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: <Color>[
+                Colors.white.withValues(alpha: 0.7),
+                Colors.white.withValues(alpha: 0),
+                Color(l.deep).withValues(alpha: 0),
+                Color(l.deep).withValues(alpha: 0.25),
+              ],
+              stops: const <double>[0, 0.4, 0.6, 1],
+            ).createShader(rect),
         );
+        canvas.restore();
       }
     } else if (fraction > 0) {
       // Pill slider: the filled part in its colour, fraction × width all the

@@ -254,16 +254,17 @@ void main() {
     );
     final Size size = t.getSize(track);
     final double h = size.height;
-    // About 2 % of the track (no minimum width), its end rounded only as
-    // far as it is wide.
-    final double w = 5 / 255 * size.width;
-    expect(w / size.width, closeTo(0.02, 0.001));
-    final Radius end = Radius.circular(w / 2 < h / 2 ? w / 2 : h / 2);
-    // Light theme (as tested): the faint glass track, the luminous fill
-    // (its body, specular highlight and inner glow) and its fine edge; no
-    // grip bar after it.
+    // Light theme (as tested): the fill sits inside the track like liquid in
+    // a tube — inset on every side, clipped to the concentric inner capsule
+    // — about 2 % of the inner width (no minimum), its end rounded only as
+    // far as it is wide; a soft glass edge, no dark outline, no grip.
+    const double inset = GlassSlider.lightFillInset;
+    final double ih = h - 2 * inset;
+    final double w = 5 / 255 * (size.width - 2 * inset);
+    expect(w / (size.width - 2 * inset), closeTo(0.02, 0.001));
+    final Radius end = Radius.circular(w / 2 < ih / 2 ? w / 2 : ih / 2);
     final RRect body = RRect.fromRectAndCorners(
-      Rect.fromLTWH(0, 0, w, h),
+      Rect.fromLTWH(inset, inset, w, ih),
       topRight: end,
       bottomRight: end,
     );
@@ -277,10 +278,25 @@ void main() {
             Radius.circular(h / 2),
           ),
         )
+        ..clipRRect(
+          rrect: RRect.fromRectAndRadius(
+            Rect.fromLTWH(inset, inset, size.width - 2 * inset, ih),
+            Radius.circular(ih / 2),
+          ),
+        )
         ..rrect(rrect: body)
         ..rect()
         ..circle()
-        ..rrect(rrect: body.deflate(0.6), style: PaintingStyle.stroke),
+        ..rrect(rrect: body.deflate(0.5), style: PaintingStyle.stroke),
+    );
+    // No solid (dark) outline: every stroke is a soft gradient highlight.
+    expect(
+      track,
+      paints..everything((Symbol method, List<dynamic> args) {
+        if (method != #drawRRect) return true;
+        final Paint paint = args[1] as Paint;
+        return paint.style != PaintingStyle.stroke || paint.shader != null;
+      }),
     );
     expect(
       track,

@@ -70,38 +70,65 @@ abstract final class LightInk {
     );
     // Below ~2500 K a "white" is an orange (a saturated orange sits right on
     // the 2000 K blackbody colour); the app's white LEDs span 2700–6500 K.
-    return a.c < 0.04 || (d < 0.04 && k >= 2500 && k <= 10000);
+    // A white is never more saturated than its blackbody colour (a vivid
+    // amber near 2500 K is a colour).
+    return a.c < 0.04 ||
+        (d < 0.04 && a.c <= b.c + 0.01 && k >= 2500 && k <= 10000);
   }
 
   /// Warm or neutral whites (ivory) below 5000 K, cool whites above.
   static bool isWarm(LinearRgb white) =>
       ColorScience.estimateKelvin(white.normalized()) < 5000;
 
-  /// Lightness at which [hue] reaches its most saturated in sRGB.
+  /// Lightness at which [hue] reaches its most saturated in sRGB. Exact
+  /// (not on a grid): it moves smoothly with the hue, so a colour dragged
+  /// across hues never makes what is derived from it step back and forth.
   static double cuspLightness(double hue) {
+    double chromaAt(double l) => ColorScience.toGamut(Oklch(l, 0.4, hue)).c;
+    // A coarse scan finds the peak's neighbourhood; the most saturated
+    // lightness is then refined (chroma rises to the cusp, then falls).
     double best = 0.6, chroma = -1;
-    for (double l = 0.4; l <= 0.97; l += 0.01) {
-      final double c = ColorScience.toGamut(Oklch(l, 0.4, hue)).c;
+    for (double l = 0.4; l <= 0.97; l += 0.03) {
+      final double c = chromaAt(l);
       if (c > chroma) {
         chroma = c;
         best = l;
       }
     }
-    return best;
+    double lo = math.max(0.4, best - 0.03), hi = math.min(0.97, best + 0.03);
+    const double phi = 0.6180339887;
+    double a = hi - phi * (hi - lo), b = lo + phi * (hi - lo);
+    double ca = chromaAt(a), cb = chromaAt(b);
+    for (int i = 0; i < 24; i++) {
+      if (ca < cb) {
+        lo = a;
+        a = b;
+        ca = cb;
+        b = lo + phi * (hi - lo);
+        cb = chromaAt(b);
+      } else {
+        hi = b;
+        b = a;
+        cb = ca;
+        a = hi - phi * (hi - lo);
+        ca = chromaAt(a);
+      }
+    }
+    return (lo + hi) / 2;
   }
 }
 
 /// A slider fill that looks like light inside glass: the light's own colour,
 /// deeper where it starts and brighter at its leading end, the ink that reads
-/// on all of it, a fine edge in a deeper shade of the same hue, and the
-/// colour it casts onto the surface below.
+/// on all of it, and the colour it casts onto the surface below. It differs
+/// from the empty track by colour and brightness; its edge is a soft
+/// liquid-glass highlight, not an outline.
 @immutable
 final class LuminousFill {
   const LuminousFill({
     required this.deep,
     required this.base,
     required this.bright,
-    required this.edge,
     required this.ink,
     required this.under,
   });
@@ -109,9 +136,6 @@ final class LuminousFill {
   final int deep;
   final int base;
   final int bright;
-
-  /// The boundary stroke (>= 3:1 against the track).
-  final int edge;
 
   /// Text and icons on the fill (>= 4.5:1 on every part of it).
   final int ink;
@@ -166,52 +190,58 @@ final class LightSurfaces {
   int get panelTrack => trackOn(panel);
 
   /// The fill for a slider in [colour] (the light's colour, or the accent).
-  LuminousFill luminous(int colour) {
-    final LinearRgb lin = ColorScience.fromArgb(colour);
+  LuminousFill luminous(int colour) =>
+      luminousOf(ColorScience.fromArgb(colour));
+
+  /// [luminous] for an unrounded colour (linear light). Continuous in the
+  /// colour: a colour that moves smoothly gives a fill that does too.
+  LuminousFill luminousOf(LinearRgb lin) {
     final Oklch o = ColorScience.toOklch(lin);
     final bool white = LightInk.isWhite(lin);
     final bool warm = white && LightInk.isWarm(lin);
     // Whites: a luminous ivory or a clean cool white, faintly tinted.
-    double l = white
+    final double l0 = white
         ? (warm ? 0.93 : 0.955)
         : LightInk.cuspLightness(o.h).clamp(0.5, 0.92);
     Oklch at(double lightness) => white
         ? Oklch(lightness, warm ? 0.042 : 0.02, warm ? 85 : 235)
         : ColorScience.toGamut(Oklch(lightness, 0.37, o.h));
-    for (int i = 0; i < 30; i++) {
-      final int deep = LightInk.argb(at(l - 0.05));
-      final int bright = LightInk.argb(at(math.min(0.985, l + 0.04)));
-      final int? ink = <int>[LightInk.text, LightInk.white]
-          .where(
-            (int ink) =>
-                LightInk.contrast(ink, deep) >= 4.5 &&
-                LightInk.contrast(ink, bright) >= 4.5,
-          )
-          .firstOrNull;
-      if (ink != null || l >= 0.96) {
-        final int base = LightInk.argb(at(l));
-        return LuminousFill(
-          deep: deep,
-          base: base,
-          bright: bright,
-          edge: LightInk.deepen(
-            LightInk.deepen(base, pillTrack, 3),
-            panelTrack,
-            3,
-          ),
-          ink: ink ?? LightInk.text,
-          under: underLight(colour),
-        );
-      }
-      // Neither ink reads yet (a mid-tone): brighter, not darker.
-      l += 0.02;
+    int deepAt(double l) => LightInk.argb(at(l - 0.05));
+    int brightAt(double l) => LightInk.argb(at(math.min(0.985, l + 0.04)));
+    bool reads(int ink, double l) =>
+        LightInk.contrast(ink, deepAt(l)) >= 4.5 &&
+        LightInk.contrast(ink, brightAt(l)) >= 4.5;
+    LuminousFill fill(double l, int ink) => LuminousFill(
+      deep: deepAt(l),
+      base: LightInk.argb(at(l)),
+      bright: brightAt(l),
+      ink: ink,
+      under: underLightOf(lin),
+    );
+    for (final int ink in <int>[LightInk.text, LightInk.white]) {
+      if (reads(ink, l0)) return fill(l0, ink);
     }
-    throw StateError('unreachable');
+    // Neither ink reads yet (a mid-tone): brighter, not darker, just as far
+    // as dark text needs (found exactly, not in steps).
+    const double top = 0.96;
+    if (!reads(LightInk.text, top)) return fill(top, LightInk.text);
+    double lo = l0, hi = top;
+    for (int i = 0; i < 24; i++) {
+      final double mid = (lo + hi) / 2;
+      if (reads(LightInk.text, mid)) {
+        hi = mid;
+      } else {
+        lo = mid;
+      }
+    }
+    return fill(hi, LightInk.text);
   }
 
   /// Coloured light cast onto the surface below an element in [colour].
-  int underLight(int colour) {
-    final LinearRgb lin = ColorScience.fromArgb(colour);
+  int underLight(int colour) => underLightOf(ColorScience.fromArgb(colour));
+
+  /// [underLight] for an unrounded colour (linear light).
+  int underLightOf(LinearRgb lin) {
     if (LightInk.isWhite(lin)) {
       return LightInk.argb(
         LightInk.isWarm(lin)

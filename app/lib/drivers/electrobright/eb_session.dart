@@ -118,6 +118,10 @@ final class EbSession {
   /// Set when a STATUS line of the wrong shape arrived during the handshake.
   bool _statusShapeMismatch = false;
 
+  /// See [colorOrigin]: the origin and the colour it was recorded for.
+  EbColorOrigin _colorOrigin = const EbColorOrigin.light(0);
+  ChannelColor? _originColor;
+
   /// Key -> sequence number of the newest unconfirmed change to it.
   final Map<String, int> _latest = <String, int>{};
   final Set<String> _gestures = <String>{};
@@ -176,7 +180,20 @@ final class EbSession {
     state: _desired,
     pending: _latest.keys.toSet(),
     firmware: _firmware,
+    colorOrigin: colorOrigin,
+    gestures: _gestures.toSet(),
   );
+
+  /// Where the colour [view] shows came from (see [EbColorOrigin]).
+  EbColorOrigin get colorOrigin {
+    // Any change of the shown colour not made by setColor/setLook came from
+    // the light; the light confirming the user's value keeps it the user's.
+    if (_desired.scene.color != _originColor) {
+      _colorOrigin = EbColorOrigin.light(_seq);
+      _originColor = _desired.scene.color;
+    }
+    return _colorOrigin;
+  }
 
   /// The state the light is believed to hold (diagnostics and tests).
   EbDeviceState get confirmed => _shadow;
@@ -340,6 +357,7 @@ final class EbSession {
   /// A finger went down on a control; incoming values never move it now.
   void beginGesture(String key) {
     _gestures.add(key);
+    _changed();
     if (key == EbKeys.brightness) {
       _gestureStartBrightness = _desired.scene.brightness;
     }
@@ -369,15 +387,23 @@ final class EbSession {
   }
 
   /// Sets the base colour; [live] while dragging (unreliable, paced frames).
-  /// [color] must have the light's layout.
-  void setColor(ChannelColor color, {bool live = false}) {
+  /// [color] must have the light's layout. Returns the change's sequence
+  /// number (its [EbColorOrigin]), or null when nothing was set.
+  int? setColor(ChannelColor color, {bool live = false}) {
     _checkLayout(color);
-    if (_phase != EbPhase.ready && _phase != EbPhase.resyncing) return;
+    if (_phase != EbPhase.ready && _phase != EbPhase.resyncing) return null;
     if (!live && _desired.sleeping) unawaited(setPower(on: true));
     _desired = _desired.copyWith(scene: _desired.scene.copyWith(color: color));
-    _latest[EbKeys.color] = ++_seq;
+    final int seq = _latest[EbKeys.color] = ++_seq;
+    _byUser(color, seq);
     _stream.submit(terminal: !live);
     _changed();
+    return seq;
+  }
+
+  void _byUser(ChannelColor color, int seq) {
+    _colorOrigin = EbColorOrigin.user(seq);
+    _originColor = color;
   }
 
   /// Colour and brightness in one frame (one gesture): used where both must
@@ -392,7 +418,7 @@ final class EbSession {
     _desired = _desired.copyWith(
       scene: _desired.scene.copyWith(color: color, brightness: br),
     );
-    if (color != null) _latest[EbKeys.color] = ++_seq;
+    if (color != null) _byUser(color, _latest[EbKeys.color] = ++_seq);
     if (brightness != null) _latest[EbKeys.brightness] = ++_seq;
     if (!live && br == 0) {
       _offAtZero();

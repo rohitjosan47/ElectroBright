@@ -12,7 +12,12 @@ final class Hsv {
   final double v;
 
   /// 8-bit RGB (standard HSV -> RGB).
-  List<int> toRgb8() {
+  List<int> toRgb8() => <int>[
+    for (final double t in toRgb()) (t * 255).round().clamp(0, 255),
+  ];
+
+  /// RGB 0..1, unquantised (standard HSV -> RGB).
+  List<double> toRgb() {
     final double c = v * s;
     final double hp = (h % 360) / 60;
     final double x = c * (1 - ((hp % 2) - 1).abs());
@@ -25,8 +30,7 @@ final class Hsv {
       _ => (c, 0.0, x),
     };
     final double m = v - c;
-    int byte(double t) => ((t + m) * 255).round().clamp(0, 255);
-    return <int>[byte(r), byte(g), byte(b)];
+    return <double>[r + m, g + m, b + m];
   }
 
   /// HSV of 8-bit RGB. Keeps [previous]'s hue when the colour is (near) grey

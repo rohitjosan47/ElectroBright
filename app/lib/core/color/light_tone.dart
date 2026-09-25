@@ -9,6 +9,7 @@ import '../protocol/eb/mode_catalog.dart';
 import 'color_science.dart';
 import 'led_white_points.dart';
 import 'light_surfaces.dart';
+import 'steady_colour.dart';
 
 /// What a light looks like to the eye: the sum of its emitters (R, G, B and
 /// every white LED at its own colour temperature), at full intensity;
@@ -24,15 +25,22 @@ final class DisplayColor {
   final double brightness;
   final bool off;
 
+  /// [steady]: the light's colour kept steady at low channel values
+  /// (used when it shows [s]'s colour).
   static DisplayColor ofScene(
     EbScene s, {
     required bool sleeping,
     LedWhitePoints whitePoints = const LedWhitePoints(),
+    SteadyLevels? steady,
   }) {
     final ChannelLayout layout = s.layout;
     LinearRgb c;
     if (EbModeCatalog.usesPickedColor(s)) {
-      c = emitted(s.color, whitePoints);
+      final LinearRgb raw = emitted(s.color, whitePoints);
+      // Black stays black (the light is off), whatever hue is held.
+      c = raw.max <= 1e-6
+          ? raw
+          : SteadyLevels.colourOf(steady, s.color, whitePoints) ?? raw;
     } else {
       // The effect makes its own colours: represent it by its accent colour,
       // shown the way this light renders colour (white temperature or

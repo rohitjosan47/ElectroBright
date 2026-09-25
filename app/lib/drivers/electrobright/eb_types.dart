@@ -105,13 +105,22 @@ final class EbView {
     required this.state,
     required Set<String> pending,
     this.firmware,
-  }) : pending = Set<String>.unmodifiable(pending);
+    this.colorOrigin = const EbColorOrigin.light(0),
+    Set<String> gestures = const <String>{},
+  }) : pending = Set<String>.unmodifiable(pending),
+       gestures = Set<String>.unmodifiable(gestures);
 
   final EbPhase phase;
   final EbDeviceState state;
 
+  /// Where [state]'s colour came from.
+  final EbColorOrigin colorOrigin;
+
   /// Keys (see [EbKeys]) with an unconfirmed change.
   final Set<String> pending;
+
+  /// Keys (see [EbKeys]) a finger is on right now.
+  final Set<String> gestures;
   final EbFirmware? firmware;
 
   Duration? timerRemaining(Duration now) {
@@ -120,6 +129,27 @@ final class EbView {
     final Duration left = d - now;
     return left.isNegative ? Duration.zero : left;
   }
+}
+
+/// Where the colour a session shows came from: a change made through the
+/// session ([byUser], with the sequence number [EbSession.setColor] returned
+/// for it; kept when the light confirms that value), or the light (adopted at
+/// a handshake, preset load or resync, or reverted after a lost write).
+@immutable
+final class EbColorOrigin {
+  const EbColorOrigin.user(this.seq) : byUser = true;
+  const EbColorOrigin.light(this.seq) : byUser = false;
+
+  final int seq;
+  final bool byUser;
+
+  @override
+  bool operator ==(Object other) =>
+      other is EbColorOrigin && other.seq == seq && other.byUser == byUser;
+  @override
+  int get hashCode => Object.hash(seq, byUser);
+  @override
+  String toString() => '${byUser ? 'user' : 'light'}#$seq';
 }
 
 /// Reconciliation keys (also the command lane's merge keys).

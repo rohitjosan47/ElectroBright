@@ -98,6 +98,7 @@ class _LightSettingsScreenState extends ConsumerState<LightSettingsScreen> {
               scene,
               sleeping: st.state!.sleeping,
               whitePoints: f.whitePoints,
+              steady: ref.watch(steadyLevelsProvider(widget.fixtureId)),
             ),
             dark: dark,
           );

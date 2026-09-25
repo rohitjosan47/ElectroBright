@@ -52,6 +52,7 @@ class LightTile extends ConsumerWidget {
             scene,
             sleeping: sleeping,
             whitePoints: f.whitePoints,
+            steady: ref.watch(steadyLevelsProvider(fixtureId)),
           );
     final Color orb = dc == null || dc.off
         ? fg.withValues(alpha: 0.12)

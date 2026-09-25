@@ -156,14 +156,49 @@ class _GlassIconButtonState extends State<GlassIconButton> {
 }
 
 /// Segmented control with a glass thumb that slides on a liquid spring.
+/// The thumb always stays inside its track: inset by [inset], concentric
+/// with it, stretched by its speed and squashed against an end, never past
+/// it (nothing is clipped).
 class GlassSegmented<T> extends StatefulWidget {
   const GlassSegmented({
     required this.segments,
     required this.selected,
     required this.onChanged,
     this.thumbTier = GlassTier.chrome,
+    this.elevated = true,
     super.key,
   });
+
+  static const double height = 44;
+
+  /// Track padding around the thumb.
+  static const double inset = 3;
+
+  /// Corner radii: the track a capsule, the thumb concentric inside it.
+  static const double trackRadius = height / 2;
+  static const double thumbRadius = trackRadius - inset;
+
+  /// The thumb inside a track's inner box of [inner] width for spring
+  /// position [x] (in segments) at [velocity] (segments/s): widened by its
+  /// speed (liquid stretch); past an end its far edge stops there and the
+  /// thumb squashes instead of moving on.
+  @visibleForTesting
+  static ({double left, double right}) thumbSpan({
+    required double x,
+    required double velocity,
+    required int n,
+    required double inner,
+  }) {
+    final double w = inner / n;
+    final double stretch = (velocity.abs() * 0.06).clamp(0.0, 0.35) * w;
+    final double narrowest = math.min(w, math.max(w * 0.7, height));
+    final double left = (x * w - stretch / 2).clamp(0.0, inner - narrowest);
+    final double right = (x * w + w + stretch / 2).clamp(
+      left + narrowest,
+      inner,
+    );
+    return (left: left, right: right);
+  }
 
   final List<(T, String)> segments;
   final T selected;
@@ -172,6 +207,10 @@ class GlassSegmented<T> extends StatefulWidget {
   /// Real refraction by default; the control screen can afford up to seven
   /// chrome surfaces (measured on device), panel tier is for denser screens.
   final GlassTier thumbTier;
+
+  /// Casts the track's drop shadow (off inside a panel, see
+  /// [GlassSurface.elevated]).
+  final bool elevated;
 
   @override
   State<GlassSegmented<T>> createState() => _GlassSegmentedState<T>();
@@ -195,8 +234,14 @@ class _GlassSegmentedState<T> extends State<GlassSegmented<T>>
     if (Motion.reduced(context)) {
       _x.value = target;
     } else {
-      _x.animateWith(
-        SpringSimulation(Motion.liquid, _x.value, target, _x.velocity),
+      unawaited(
+        _x
+            .animateWith(
+              SpringSimulation(Motion.liquid, _x.value, target, _x.velocity),
+            )
+            // Rest exactly on the segment (the spring stops within
+            // tolerance, a hair squashed against an end).
+            .then((_) => _x.value = target),
       );
     }
   }
@@ -210,53 +255,43 @@ class _GlassSegmentedState<T> extends State<GlassSegmented<T>>
   @override
   Widget build(BuildContext context) {
     final bool dark = ToneScope.darkOf(context);
-    final Color? edge = dark ? null : Color(ToneScope.of(context).accent);
     final Haptics h = HapticsScope.of(context);
     final int n = widget.segments.length;
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
     return SizedBox(
-      height: 44,
+      height: GlassSegmented.height,
       child: GlassSurface(
-        radius: Radii.capsule,
-        padding: const EdgeInsets.all(3),
+        radius: GlassSegmented.trackRadius,
+        padding: const EdgeInsets.all(GlassSegmented.inset),
+        elevated: widget.elevated,
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints c) {
-            final double w = c.maxWidth / n;
             return Stack(
+              clipBehavior: Clip.none,
               children: <Widget>[
                 AnimatedBuilder(
                   animation: _x,
                   builder: (BuildContext context, _) {
-                    // Liquid stretch: the thumb widens with its speed.
-                    final double stretch = (_x.velocity.abs() * 0.06).clamp(
-                      0.0,
-                      0.35,
-                    );
+                    final ({double left, double right}) span =
+                        GlassSegmented.thumbSpan(
+                          x: _x.value,
+                          velocity: _x.velocity,
+                          n: n,
+                          inner: c.maxWidth,
+                        );
                     return Positioned(
-                      left: _x.value * w - stretch * w / 2,
-                      width: w * (1 + stretch),
+                      left: span.left,
+                      width: span.right - span.left,
                       top: 0,
                       bottom: 0,
-                      child: DecoratedBox(
-                        position: DecorationPosition.foreground,
-                        // Light: the thumb's accent edge separates it from
-                        // the track (>= 3:1); dark keeps the glass alone.
-                        decoration: edge == null
-                            ? const BoxDecoration()
-                            : ShapeDecoration(
-                                shape: RoundedSuperellipseBorder(
-                                  borderRadius: BorderRadius.circular(
-                                    Radii.capsule,
-                                  ),
-                                  side: BorderSide(color: edge, width: 1.5),
-                                ),
-                              ),
-                        child: GlassSurface(
-                          tier: widget.thumbTier,
-                          radius: Radii.capsule,
-                          tinted: false,
-                          child: const SizedBox.expand(),
-                        ),
+                      // Its edge is the glass's own rim (no border), and it
+                      // casts no shadow outside itself.
+                      child: GlassSurface(
+                        tier: widget.thumbTier,
+                        radius: GlassSegmented.thumbRadius,
+                        tinted: false,
+                        elevated: false,
+                        child: const SizedBox.expand(),
                       ),
                     );
                   },

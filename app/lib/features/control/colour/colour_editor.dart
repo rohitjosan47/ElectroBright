@@ -4,6 +4,7 @@ import '../../../core/color/color_science.dart';
 import '../../../core/color/colour_engine.dart';
 import '../../../core/color/led_white_points.dart';
 import '../../../core/color/light_tone.dart';
+import '../../../core/color/steady_colour.dart';
 import '../../../core/model/channel_color.dart';
 import '../../../core/model/channel_layout.dart';
 import '../../../core/model/light_capabilities.dart';
@@ -12,11 +13,18 @@ import '../../../design/components/glass_controls.dart';
 import '../../../design/controls/glass_slider.dart';
 import '../../../design/controls/hue_wheel.dart';
 import '../../../design/tokens/tokens.dart';
+import '../../../design/tone/screen_colour.dart';
 import '../../../design/tone/tone_scope.dart';
 import '../../../l10n/app_localizations.dart';
 
 /// Called with the new colour; [live] while a finger is still dragging.
-typedef ColourChanged = void Function(ChannelColor color, {required bool live});
+/// [intent]: what the user picked, before 8-bit encoding (the editor always
+/// passes it).
+typedef ColourChanged = void Function(
+  ChannelColor color, {
+  required bool live,
+  ColourIntent? intent,
+});
 
 /// Picks a colour the way this light can make it: a level (single white),
 /// warm-to-cool temperature (tunable white), the colour wheel (RGB), the
@@ -40,6 +48,7 @@ class ColourEditor extends StatefulWidget {
   final LedWhitePoints whitePoints;
   final VoidCallback? onGestureStart;
   final VoidCallback? onGestureEnd;
+
   final bool showChannels;
   final bool enabled;
 
@@ -113,7 +122,7 @@ class _ColourEditorState extends State<ColourEditor> {
     final ChannelColor c = _engine.encode(i, _layout);
     _model.value = (intent: i, encoded: c);
     if (!live) _rebuild();
-    widget.onChanged(c, live: live);
+    widget.onChanged(c, live: live, intent: i);
   }
 
   void _rebuild() => setState(() => _tree = null);
@@ -121,7 +130,7 @@ class _ColourEditorState extends State<ColourEditor> {
   void _start() => widget.onGestureStart?.call();
 
   void _end() {
-    widget.onChanged(_encoded, live: false);
+    widget.onChanged(_encoded, live: false, intent: _intent);
     widget.onGestureEnd?.call();
     _rebuild();
   }
@@ -163,6 +172,7 @@ class _ColourEditorState extends State<ColourEditor> {
             if (_sub == _Sub.custom) (_Sub.custom, l.tabCustom),
           ],
           selected: _sub,
+          elevated: false,
           onChanged: (_Sub s) {
             // Switching is explicit: the other side goes to zero.
             if (s == _Sub.white) {
@@ -190,8 +200,11 @@ class _ColourEditorState extends State<ColourEditor> {
               enabled: widget.enabled,
               onStart: _start,
               onEnd: _end,
-              onChanged: (ChannelColor c, {required bool live}) =>
-                  _apply(RawIntent(c), live: live),
+              onChanged: (
+                ChannelColor c, {
+                required bool live,
+                ColourIntent? intent,
+              }) => _apply(RawIntent(c), live: live),
             ),
           ),
         ],
@@ -228,6 +241,7 @@ class _ColourEditorState extends State<ColourEditor> {
           label: l.whiteLed,
           value: '${(white * 100).round()} %',
           child: GlassSlider(
+            elevated: false,
             value: white,
             semanticLabel: l.whiteLed,
             enabled: widget.enabled,
@@ -246,6 +260,7 @@ class _ColourEditorState extends State<ColourEditor> {
       label: l.level,
       value: '${(level * 100).round()} %',
       child: GlassSlider(
+        elevated: false,
         value: level,
         semanticLabel: l.level,
         enabled: widget.enabled,
@@ -278,6 +293,7 @@ class _ColourEditorState extends State<ColourEditor> {
               label: l.temperature,
               value: l.kelvinValue((k / 10).round() * 10),
               child: GlassSlider(
+                elevated: false,
                 value: k,
                 min: range.min,
                 max: range.max,
@@ -301,6 +317,7 @@ class _ColourEditorState extends State<ColourEditor> {
               label: l.level,
               value: '${(w.level * 100).round()} %',
               child: GlassSlider(
+                elevated: false,
                 value: w.level,
                 semanticLabel: l.level,
                 enabled: widget.enabled,
@@ -343,12 +360,15 @@ class _Channels extends StatelessWidget {
         title: Text(l.channels),
         children: <Widget>[
           for (int i = 0; i < value.layout.n; i++)
+            // Spacing only between sliders: the last one sits as far from
+            // the panel's bottom edge as the panel's padding, like the sides.
             Padding(
-              padding: const EdgeInsets.only(bottom: Space.xs),
+              padding: EdgeInsets.only(top: i == 0 ? 0 : Space.xs),
               child: _Labelled(
                 label: channelName(l, value.layout.roles[i]),
                 value: '${value[i]}',
                 child: GlassSlider(
+                  elevated: false,
                   value: value[i].toDouble(),
                   max: 255,
                   semanticLabel: channelName(l, value.layout.roles[i]),
@@ -432,10 +452,12 @@ class _Labelled extends StatelessWidget {
   }
 }
 
-/// Screen colour of a channel colour (for swatches).
-Color swatchOf(ChannelColor c, LedWhitePoints wp) {
+/// Screen colour of a channel colour at full intensity (for swatches).
+/// [steady]: the light's colour kept steady at low channel values (used when
+/// it shows [c]).
+Color swatchOf(ChannelColor c, LedWhitePoints wp, {SteadyLevels? steady}) {
   final LinearRgb lin = DisplayColor.emitted(c, wp);
   return lin.max <= 0
       ? const Color(0xFF202228)
-      : Color(ColorScience.toArgb(lin.normalized()));
+      : screenColour(SteadyLevels.colourOf(steady, c, wp) ?? lin.normalized());
 }
