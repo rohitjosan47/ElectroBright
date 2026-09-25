@@ -1,7 +1,8 @@
 #pragma once
 // Single source of truth for what each mode exposes. MODE_CAPABILITIES is
-// generated from this table, and the slider names must stay in sync with
-// electrobright_app/lib/features/dashboard/domain/mode_definition.dart.
+// generated from this table, and the app's copy must match it:
+// app/lib/core/protocol/eb/mode_catalog.dart (checked by
+// app/test/cross_repo/mode_registry_sync_test.dart).
 
 #include <stdint.h>
 

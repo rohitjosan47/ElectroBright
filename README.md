@@ -19,13 +19,12 @@ ElectroBright/
 │   ├── fixtures/                  # one sketch per fixture type (RGBW, RGB, RGBCCT, CCT, W)
 │   ├── test/                      # host unit, simulation and golden tests (make)
 │   └── tools/                     # IDE setup, build script, conformance suite, gamma-table generator
-├── app/                           # Flutter app v2 (iOS, Android) — in progress
-├── electrobright_app/             # Flutter app (iOS, Android, macOS)
+├── app/                           # Flutter app (iOS, Android)
 └── docs/
-    ├── protocol.md                        # BLE protocol contract for every fixture (layouts, frames, STATUS)
-    ├── wiring_guide.md                    # circuit, MOSFETs, buck converter and pinout (all fixtures)
-    ├── ESP32C3_Backup_Power_Solution.md   # supercapacitor ride-through for the controller
-    └── app_specifications.md              # app features and controls
+    ├── app.md                     # app features, controls per light type, code layout
+    ├── protocol.md                # BLE protocol contract for every fixture (layouts, frames, STATUS)
+    ├── wiring_guide.md            # circuit, MOSFETs, buck converter and pinout (all fixtures)
+    └── backup_power.md            # supercapacitor ride-through for the controller
 ```
 
 ## Quick Start
@@ -44,16 +43,17 @@ The [firmware README](firmware/README.md) covers:
 
 ### 2. Mobile App (Flutter)
 ```bash
-cd electrobright_app
-flutter pub get
-flutter run
+cd app
+flutter run                              # simulator: choose "Try demo lights"
+flutter run --release -d <iphone-id>     # install on an iPhone (Developer Mode on)
 ```
+Details, including every control per light type, are in [docs/app.md](docs/app.md).
 
 ### 3. Tests
 ```bash
 make -C firmware/test                # firmware: host unit, simulation and golden tests
 make -C firmware/test conformance    # protocol conformance of every fixture against the simulator
-cd electrobright_app && flutter test         # app
+app/tool/check.sh                    # everything: format, analyze, firmware tests, conformance, app tests
 ```
 
 ## Documentation
@@ -63,5 +63,5 @@ cd electrobright_app && flutter test         # app
   - build, test and diagnostics.
 * [BLE Protocol](docs/protocol.md) — the contract every fixture implements and the app speaks.
 * [Hardware Wiring Guide](docs/wiring_guide.md) — circuit schematics, parts, resistor values and ESP32-C3 pin connections.
-* [Backup Power Solution](docs/ESP32C3_Backup_Power_Solution.md) — keeping the controller alive through short power cuts.
-* [App Specifications](docs/app_specifications.md) — every app feature and control.
+* [App](docs/app.md) — every app feature and control, per light type; code layout; how to run and test.
+* [Backup Power](docs/backup_power.md) — keeping the controller alive through short power cuts.

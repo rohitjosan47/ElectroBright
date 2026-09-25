@@ -345,4 +345,10 @@ Regenerate the gamma table with `tools/gen_gamma_lut.py`.
 - **Done:** RGBW, RGB, RGBCCT, CCT, W. This covers every common strip type.
 - **Core limits:** up to 5 LED channels (`kMaxChannels`, `Command::args`, frames 5–9 bytes). The buzzer takes the first LEDC channel after the LEDs, and the C3 has 6 channels.
 - **Modes per layout:** a layout can drop modes it cannot show (its `modes` mask, announced as CAPS `MODES`).
-- **App:** the app must accept `LAYOUT=RGB` / `RGBCCT` / `CCT` / `W`, size colours and STATUS by `n`, use the salted frame, and hide the modes that CAPS `MODES` leaves out. For RGBCCT and CCT it should offer a Kelvin control that mixes CW/WW. See [`docs/protocol.md`](../docs/protocol.md).
+- **App:** the app (`app/`) reads each light's layout and CAPS `MODES`, and builds its controls from them. It offers a colour temperature control on CCT and RGBCCT and an intensity-only control on W. See [`docs/app.md`](../docs/app.md).
+- **A new fixture type** is added in three places:
+  - the firmware: a `layouts::` entry and a fixture sketch;
+  - `firmware/test/Fixtures.h`;
+  - the app's `EbFixtureCatalog`.
+
+  The cross-repo tests fail until all three agree.

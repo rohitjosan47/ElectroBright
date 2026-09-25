@@ -1,17 +1,11 @@
-# electrobright
+# ElectroBright app
 
-ElectroBright lighting controller
+Flutter app (iOS, Android) for every ElectroBright fixture: RGBW, RGB, RGBCCT, CCT and W. The controls follow what each light's firmware reports it can do.
 
-## Getting Started
+```bash
+flutter run                              # simulator: choose "Try demo lights"
+flutter run --release -d <iphone-id>     # install on an iPhone
+tool/check.sh                            # format, analyze, firmware + app tests
+```
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The full guide is [docs/app.md](../docs/app.md), and the wire contract is [docs/protocol.md](../docs/protocol.md).
