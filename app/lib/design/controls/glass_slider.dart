@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -33,12 +34,14 @@ class GlassSlider extends StatefulWidget {
     this.fill,
     this.height = 44,
     this.leading,
+    this.leadingBuilder,
     this.trailing,
     this.trailingBuilder,
     this.valueText,
     this.enabled = true,
     super.key,
-  }) : assert(trailing == null || trailingBuilder == null);
+  }) : assert(trailing == null || trailingBuilder == null),
+       assert(leading == null || leadingBuilder == null);
 
   final double value;
   final double min;
@@ -57,9 +60,14 @@ class GlassSlider extends StatefulWidget {
   final Widget? leading;
   final Widget? trailing;
 
+  /// Leading widget that follows the shown value (finger, spring), given the
+  /// track [width] too (e.g. to read well over the fill or the empty track).
+  /// Rebuilt only when [valueText] of the value changes.
+  final Widget Function(double value, double width)? leadingBuilder;
+
   /// Trailing widget that follows the shown value (finger, spring). Rebuilt
   /// only when [valueText] of the value changes, e.g. per whole percent.
-  final Widget Function(double value)? trailingBuilder;
+  final Widget Function(double value, double width)? trailingBuilder;
   final String semanticLabel;
   final String Function(double value)? valueText;
   final bool enabled;
@@ -229,16 +237,24 @@ class _GlassSliderState extends State<GlassSlider>
   }
 
   Widget _body(BuildContext context, LightTone tone, Color fill, Haptics h) {
-    final Widget Function(double)? trailingBuilder = widget.trailingBuilder;
-    final Widget? trailing = trailingBuilder == null
-        ? widget.trailing
-        : ValueListenableBuilder<String>(
-            valueListenable: _shown,
-            builder: (BuildContext context, _, _) => trailingBuilder(_v.value),
-          );
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
         final double width = c.maxWidth;
+        Widget? follow(
+          Widget Function(double value, double width)? builder,
+          Widget? fixed,
+        ) => builder == null
+            ? fixed
+            : ValueListenableBuilder<String>(
+                valueListenable: _shown,
+                builder: (BuildContext context, _, _) =>
+                    builder(_v.value, width),
+              );
+        final Widget? leading = follow(widget.leadingBuilder, widget.leading);
+        final Widget? trailing = follow(
+          widget.trailingBuilder,
+          widget.trailing,
+        );
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onHorizontalDragDown: widget.enabled
@@ -296,11 +312,11 @@ class _GlassSliderState extends State<GlassSlider>
                           Expanded(
                             child: Align(
                               alignment: AlignmentDirectional.centerStart,
-                              child: widget.leading == null
+                              child: leading == null
                                   ? null
                                   : FittedBox(
                                       fit: BoxFit.scaleDown,
-                                      child: widget.leading,
+                                      child: leading,
                                     ),
                             ),
                           ),
@@ -373,15 +389,16 @@ class _TrackPainter extends CustomPainter {
         Paint()..color = Color.lerp(t.first, t.last, fraction)!,
       );
     } else if (fraction > 0) {
-      // Pill slider: the filled part glows in the light's colour. It is a
-      // capsule at least as wide as it is tall (the lowest value is a round
-      // dot at the start, never a squashed sliver), so 0 is empty and 1 % is
-      // not; its leading end carries a grip like a thumb.
+      // Pill slider: the filled part in its colour, fraction × width all the
+      // way down to 0. Drawn inside the track's clip, so its left end is the
+      // track's own round end; its right end rounds only as far as it is
+      // wide (never pinched), and a soft bloom glows at the leading edge.
       final double h = size.height;
-      final double w = h + fraction * (size.width - h);
+      final double w = fraction * size.width;
       final Rect rect = Rect.fromLTWH(0, 0, w, h);
+      final Radius end = Radius.circular(math.min(h / 2, w / 2));
       canvas.drawRRect(
-        RRect.fromRectAndRadius(rect, Radius.circular(h / 2)),
+        RRect.fromRectAndCorners(rect, topRight: end, bottomRight: end),
         Paint()
           ..shader = LinearGradient(
             colors: <Color>[
@@ -390,20 +407,18 @@ class _TrackPainter extends CustomPainter {
             ],
           ).createShader(rect),
       );
-      final bool lightFill = fill.computeLuminance() > 0.45;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(
-            center: Offset(w - h * 0.2, h / 2),
-            width: 3,
-            height: h * 0.4,
-          ),
-          const Radius.circular(1.5),
-        ),
+      final Offset edge = Offset(w, h / 2);
+      final double bloom = h * 0.9;
+      canvas.drawCircle(
+        edge,
+        bloom,
         Paint()
-          ..color = lightFill
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.85),
+          ..shader = RadialGradient(
+            colors: <Color>[
+              fill.withValues(alpha: dark ? 0.35 : 0.28),
+              fill.withValues(alpha: 0),
+            ],
+          ).createShader(Rect.fromCircle(center: edge, radius: bloom)),
       );
     }
     canvas.restore();

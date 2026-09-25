@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
@@ -6,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/app_session.dart';
 import '../../app/providers.dart';
+import '../../core/color/color_science.dart';
 import '../../core/color/colour_engine.dart';
+import '../../core/color/led_white_points.dart';
 import '../../core/color/light_tone.dart';
 import '../../core/model/channel_color.dart';
 import '../../core/model/channel_layout.dart';
@@ -21,6 +24,7 @@ import '../../design/controls/glass_slider.dart';
 import '../../design/glass/glass_surface.dart';
 import '../../design/haptics/haptics.dart';
 import '../../design/tokens/tokens.dart';
+import '../../design/tone/light_level.dart';
 import '../../design/tone/tone_scope.dart';
 import '../../drivers/electrobright/eb_types.dart';
 import '../../l10n/app_localizations.dart';
@@ -91,6 +95,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     final AppLocalizations l = AppLocalizations.of(context);
     final String? message = switch (e) {
       EbStorageWarning() => l.errorStorage,
+      EbOfflineChangesExpired() => l.offlineChangeNotApplied,
       EbCommandFailed(:final EbResult result)
           when result.outcome == EbOutcome.failed =>
         l.errorGeneric,
@@ -190,6 +195,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
               enabled: enabled,
               fg: fg,
               session: session,
+              whitePoints: f.whitePoints,
             ),
           ),
           const SizedBox(height: Space.m),
@@ -442,9 +448,74 @@ class _Tone extends ConsumerWidget {
         ),
         dark: Theme.of(context).brightness == Brightness.dark,
       ),
-      child: child,
+      child: _LevelGlide(fixtureId: fixture.id, layout: layout, child: child),
     );
   }
+}
+
+/// The brightness the pill shows (0 while sleeping), gliding on a
+/// Motion.smooth spring for the canvas and the orb (LightLevel). Listening,
+/// not watching: brightness frames never rebuild the screen.
+class _LevelGlide extends ConsumerStatefulWidget {
+  const _LevelGlide({
+    required this.fixtureId,
+    required this.layout,
+    required this.child,
+  });
+  final String fixtureId;
+  final ChannelLayout layout;
+  final Widget child;
+
+  @override
+  ConsumerState<_LevelGlide> createState() => _LevelGlideState();
+}
+
+class _LevelGlideState extends ConsumerState<_LevelGlide>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _level = AnimationController.unbounded(
+    vsync: this,
+    value: _target(ref.read(fixtureStatusProvider(widget.fixtureId))),
+  );
+
+  /// Never connected: shown at full, like the factory look it displays.
+  double _target(FixtureStatus s) {
+    final EbDeviceState? st = s.state;
+    if (st == null || st.scene.layout != widget.layout) return 1;
+    return st.sleeping ? 0 : st.scene.brightness / 255;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    ref.listenManual<double>(
+      fixtureStatusProvider(widget.fixtureId).select(_target),
+      (_, double target) => _glide(target),
+    );
+  }
+
+  void _glide(double target) {
+    if (Motion.reduced(context)) {
+      _level
+        ..stop()
+        ..value = target;
+      return;
+    }
+    unawaited(
+      _level.animateWith(
+        SpringSimulation(Motion.smooth, _level.value, target, _level.velocity),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _level.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      LightLevel(level: _level, child: widget.child);
 }
 
 /// The light as an orb: its effect, colour and whether it shines.
@@ -455,7 +526,7 @@ class _Orb extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ({EbScene look, bool on}) o = ref.watch(
+    final ({EbScene look, bool on, bool known}) o = ref.watch(
       fixtureStatusProvider(fixture.id).select(
         (FixtureStatus s) => (
           look: _lookOf(s, layout),
@@ -463,6 +534,7 @@ class _Orb extends ConsumerWidget {
               s.state != null &&
               !s.state!.sleeping &&
               s.state!.scene.brightness > 0,
+          known: s.state != null,
         ),
       ),
     );
@@ -476,6 +548,8 @@ class _Orb extends ConsumerWidget {
       spec: mode,
       color: swatchOf(o.look.color, fixture.whitePoints),
       on: o.on,
+      // Known lights follow their brightness; unknown ones stay dimmed.
+      level: o.known ? LightLevel.of(context) : null,
       size: 160,
       speed: mode.hasSpeed ? 0.5 + o.look.speed / 10 : 1,
     );
@@ -626,6 +700,23 @@ class _Header extends StatelessWidget {
   }
 }
 
+/// The brightness pill's fill: the light's colour, lifted to read as a glow
+/// on glass; a white (almost no chroma) takes its temperature's tint.
+Color _pillFill(Color swatch, {required bool dark}) {
+  final LinearRgb lin = ColorScience.fromArgb(swatch.toARGB32());
+  Oklch o = ColorScience.toOklch(lin);
+  if (o.c < 0.04) {
+    final double k = ColorScience.estimateKelvin(lin);
+    o = Oklch(o.l, 0.06, k < 4500 ? 70 : 245);
+  }
+  o = Oklch(o.l.clamp(dark ? 0.58 : 0.62, dark ? 0.8 : 0.82), o.c, o.h);
+  return Color(
+    ColorScience.toArgb(
+      ColorScience.fromOklch(ColorScience.toGamut(o)).clamp01(),
+    ),
+  );
+}
+
 /// Brightness (on a single-white light: its intensity). 0 turns the light
 /// off on release. A sleeping light shows 0 (the brightness it wakes to is
 /// kept by the session). On a single-white light whose channel is below full,
@@ -638,6 +729,7 @@ class BrightnessPill extends ConsumerWidget {
     required this.enabled,
     required this.fg,
     required this.session,
+    this.whitePoints = const LedWhitePoints(),
     super.key,
   });
 
@@ -646,26 +738,51 @@ class BrightnessPill extends ConsumerWidget {
   final bool enabled;
   final Color fg;
   final FixtureSession? session;
+  final LedWhitePoints whitePoints;
+
+  /// What the pill says: "Off" at 0 (released there, or asleep), otherwise
+  /// the percentage, never "0 %" while the light still gives some light.
+  static String label(AppLocalizations l, double x) =>
+      x <= 0 ? l.brightnessOff : '${math.max(1, (x * 100).round())} %';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
-    final ({int brightness, int level, bool sleeping}) p = ref.watch(
-      fixtureStatusProvider(fixtureId).select((FixtureStatus s) {
-        final EbScene? scene = s.state?.scene;
-        final bool known = scene != null && scene.layout == layout;
-        return (
-          brightness: known ? scene.brightness : 255,
-          level: known ? scene.color[0] : 255,
-          sleeping: s.state?.sleeping ?? false,
+    final ({int brightness, int level, bool sleeping, EbScene look}) p = ref
+        .watch(
+          fixtureStatusProvider(fixtureId).select((FixtureStatus s) {
+            final EbScene? scene = s.state?.scene;
+            final bool known = scene != null && scene.layout == layout;
+            return (
+              brightness: known ? scene.brightness : 255,
+              level: known ? scene.color[0] : 255,
+              sleeping: s.state?.sleeping ?? false,
+              look: _lookOf(s, layout),
+            );
+          }),
         );
-      }),
-    );
     final bool single = layout == ChannelLayout.w;
     final int brightness = p.sleeping ? 0 : p.brightness;
     final FixtureSession? s = enabled ? session : null;
     final bool partial = single && p.level < 255 && brightness > 0;
-    String percent(double x) => '${(x * 100).round()} %';
+    final bool dark = ToneScope.darkOf(context);
+    // The light's own colour, as the orb shows it.
+    final EbModeSpec mode = presentMode(
+      EbModeCatalog.byId(p.look.mode),
+      layout,
+      whitePoints,
+      l,
+    );
+    final Color fill = _pillFill(
+      mode.colorUse == EbColorUse.never
+          ? Color(mode.gradient.first)
+          : swatchOf(p.look.color, whitePoints),
+      dark: dark,
+    );
+    // Icon and text over the fill take the colour that reads on it.
+    final Color onFill = fill.computeLuminance() > 0.45
+        ? const Color(0xFF15171C)
+        : Colors.white;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -675,15 +792,38 @@ class BrightnessPill extends ConsumerWidget {
           semanticLabel: single ? l.intensity : l.brightness,
           enabled: s != null,
           height: 56,
-          valueText: percent,
-          leading: Icon(Icons.wb_sunny_outlined, color: fg, size: 20),
-          trailingBuilder: (double x) => Text(
-            percent(x),
-            style: TextStyle(
-              color: fg,
-              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-            ),
-          ),
+          fill: fill,
+          valueText: (double x) => label(l, x),
+          // The sun follows the level: small and faint low, full at the top.
+          leadingBuilder: (double x, double width) {
+            final bool overFill = x * width >= Space.m + 24;
+            return SizedBox.square(
+              dimension: 24,
+              child: Center(
+                child: Icon(
+                  Icons.wb_sunny_outlined,
+                  key: const ValueKey<String>('brightness-icon'),
+                  size: 15 + 6 * x,
+                  color: (overFill ? onFill : fg).withValues(
+                    alpha: x <= 0 ? 0.4 : 0.55 + 0.45 * x,
+                  ),
+                ),
+              ),
+            );
+          },
+          trailingBuilder: (double x, double width) {
+            final bool overFill = x * width >= width - Space.m - 20;
+            return Text(
+              label(l, x),
+              style: TextStyle(
+                color: (overFill ? onFill : fg).withValues(
+                  alpha: x <= 0 ? 0.6 : 1,
+                ),
+                fontWeight: FontWeight.w500,
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              ),
+            );
+          },
           onChangeStart: (_) => s?.beginGesture(EbKeys.brightness),
           onChanged: (double x) =>
               s?.setBrightness((x * 255).round(), live: true),

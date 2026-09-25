@@ -212,6 +212,13 @@ final class EbDivergence extends EbEvent {
   final String key;
 }
 
+/// Changes made while the light was unreachable waited their whole window
+/// and were dropped (raised by the FixtureSession, once per expiry); the
+/// controls are back at the light's real values.
+final class EbOfflineChangesExpired extends EbEvent {
+  const EbOfflineChangesExpired();
+}
+
 /// The light stopped answering; the owner should drop and reconnect the link.
 final class EbUnresponsive extends EbEvent {
   const EbUnresponsive();

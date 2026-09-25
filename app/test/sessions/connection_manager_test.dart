@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:electrobright/core/ble/ble_central.dart';
 import 'package:electrobright/core/model/fixture.dart';
 import 'package:electrobright/core/model/channel_color.dart';
 import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/util/scheduler.dart';
+import 'package:electrobright/drivers/electrobright/eb_types.dart';
 import 'package:electrobright/sessions/connection_manager.dart';
 import 'package:electrobright/sessions/discovery.dart';
 import 'package:electrobright/sessions/fixture_session.dart';
@@ -129,20 +132,135 @@ void main() {
     },
   );
 
-  test('offline changes older than 10 s are dropped', () async {
-    final _World w = _World();
-    w.manager.want('f0', WantReason.screen);
-    await w.run(const Duration(seconds: 1));
-    w.central.setAvailable('dev0', available: false);
-    await w.run(const Duration(milliseconds: 100));
-    unawaited(w.s(0).setMode(9));
-    await w.run(const Duration(seconds: 12));
-    w.central.setAvailable('dev0', available: true);
-    await w.run(const Duration(seconds: 40));
-    expect(w.s(0).status.phase, LinkPhase.ready);
-    expect(w.central.fixtures.first.model.scene.mode, 1);
-    await w.dispose();
-  });
+  test(
+    'offline changes older than 60 s are dropped, with one message',
+    () async {
+      final _World w = _World();
+      w.manager.want('f0', WantReason.screen);
+      await w.run(const Duration(seconds: 1));
+      final List<EbEvent> events = <EbEvent>[];
+      final StreamSubscription<EbEvent> sub = w.s(0).events.listen(events.add);
+      w.central.setAvailable('dev0', available: false);
+      await w.run(const Duration(milliseconds: 100));
+      unawaited(w.s(0).setMode(9));
+      await w.run(const Duration(seconds: 50));
+      expect(events.whereType<EbOfflineChangesExpired>(), isEmpty);
+      await w.run(const Duration(seconds: 12));
+      expect(events.whereType<EbOfflineChangesExpired>(), hasLength(1));
+      await sub.cancel();
+      w.central.setAvailable('dev0', available: true);
+      await w.run(const Duration(seconds: 40));
+      expect(w.s(0).status.phase, LinkPhase.ready);
+      expect(w.central.fixtures.first.model.scene.mode, 1);
+      await w.dispose();
+    },
+  );
+
+  test(
+    'brightness set while not connected is shown, sent if back in 60 s',
+    () async {
+      final _World w = _World();
+      w.manager.want('f0', WantReason.screen);
+      await w.run(const Duration(seconds: 1));
+      w.central.setAvailable('dev0', available: false);
+      await w.run(const Duration(milliseconds: 100));
+      w.s(0).setBrightness(60, live: true);
+      w.s(0).setBrightness(60);
+      // The control keeps what the user chose (no spring back)...
+      expect(w.s(0).status.state!.scene.brightness, 60);
+      expect(w.s(0).status.state!.sleeping, isFalse);
+      // ...while the light is away, within the window.
+      await w.run(const Duration(seconds: 30));
+      expect(w.s(0).status.state!.scene.brightness, 60);
+      w.central.setAvailable('dev0', available: true);
+      await w.run(const Duration(seconds: 40));
+      expect(w.s(0).status.phase, LinkPhase.ready);
+      expect(w.central.fixtures.first.model.scene.brightness, 60);
+      expect(w.s(0).status.offlineBrightness, isNull);
+      await w.dispose();
+    },
+  );
+
+  test(
+    'an offline brightness that runs out glides back, one message',
+    () async {
+      final _World w = _World();
+      w.manager.want('f0', WantReason.screen);
+      await w.run(const Duration(seconds: 1));
+      final model = w.central.fixtures.first.model;
+      final int real = model.scene.brightness;
+      final List<EbEvent> events = <EbEvent>[];
+      final StreamSubscription<EbEvent> sub = w.s(0).events.listen(events.add);
+      w.central.setAvailable('dev0', available: false);
+      await w.run(const Duration(milliseconds: 100));
+      // A drag to 0 made out of range must not turn the light off later.
+      w.s(0).setBrightness(0);
+      expect(w.s(0).status.state!.sleeping, isTrue);
+      await w.run(const Duration(seconds: 61));
+      // Back to the light's real value, said once.
+      expect(w.s(0).status.offlineBrightness, isNull);
+      expect(w.s(0).status.state!.sleeping, isFalse);
+      expect(w.s(0).status.state!.scene.brightness, real);
+      expect(events.whereType<EbOfflineChangesExpired>(), hasLength(1));
+      // When the light returns, nothing is sent: it stays on.
+      w.central.setAvailable('dev0', available: true);
+      await w.run(const Duration(seconds: 40));
+      expect(w.s(0).status.phase, LinkPhase.ready);
+      expect(model.sleeping, isFalse);
+      expect(model.scene.brightness, real);
+      expect(events.whereType<EbOfflineChangesExpired>(), hasLength(1));
+      await sub.cancel();
+      await w.dispose();
+    },
+  );
+
+  test(
+    'released at 0 while not connected: shown off, turned off when back',
+    () async {
+      final _World w = _World();
+      w.manager.want('f0', WantReason.screen);
+      await w.run(const Duration(seconds: 1));
+      final model = w.central.fixtures.first.model;
+      expect(model.sleeping, isFalse);
+      w.central.setAvailable('dev0', available: false);
+      await w.run(const Duration(milliseconds: 100));
+      w.s(0).setBrightness(0);
+      expect(w.s(0).status.state!.sleeping, isTrue);
+      w.central.setAvailable('dev0', available: true);
+      await w.run(const Duration(seconds: 6));
+      expect(w.s(0).status.phase, LinkPhase.ready);
+      expect(model.sleeping, isTrue);
+      // The level it wakes to is its old one, stored after the fade.
+      expect(model.scene.brightness, 255);
+      expect(w.s(0).status.state!.sleeping, isTrue);
+      await w.dispose();
+    },
+  );
+
+  test(
+    'link lost while waiting to store the wake level: stored when back',
+    () async {
+      final _World w = _World();
+      w.manager.want('f0', WantReason.screen);
+      await w.run(const Duration(seconds: 1));
+      final model = w.central.fixtures.first.model;
+      w.s(0).setBrightness(150);
+      await w.run(const Duration(seconds: 1));
+      w.s(0).setBrightness(0);
+      // SLEEP answered, the fade wait not over yet: the link drops.
+      await w.run(const Duration(milliseconds: 200));
+      expect(model.sleeping, isTrue);
+      expect(model.scene.brightness, 0);
+      w.central.setAvailable('dev0', available: false);
+      await w.run(const Duration(seconds: 2));
+      w.central.setAvailable('dev0', available: true);
+      await w.run(const Duration(seconds: 6));
+      expect(w.s(0).status.phase, LinkPhase.ready);
+      expect(model.sleeping, isTrue);
+      expect(model.scene.brightness, 150);
+      await w.dispose();
+    },
+  );
 
   test('a missing light becomes unavailable but keeps retrying', () async {
     final _World w = _World();

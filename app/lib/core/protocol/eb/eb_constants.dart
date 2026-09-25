@@ -27,6 +27,9 @@ abstract final class Eb {
   static const int minLevel = 1;
   static const int maxLevel = 10;
   static const int timerMaxSeconds = 86400;
+
+  /// Length of the SLEEP / WAKE fade (cfg::kSleepFadeMs).
+  static const int sleepFadeMs = 400;
   static const int maxLineLength = 96;
 
   /// Every mode supported (CAPS carries no MODES key then).

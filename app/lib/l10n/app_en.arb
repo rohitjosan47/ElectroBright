@@ -132,6 +132,7 @@
   "tabPresets": "Presets",
   "tabCustom": "Custom",
   "brightness": "Brightness",
+  "brightnessOff": "Off",
   "intensity": "Intensity",
   "outputPercent": "Output {percent} %",
   "@outputPercent": {
@@ -156,6 +157,7 @@
   "channels": "Channels",
   "whites": "Whites",
   "offlineNote": "Not connected — changes are sent when the light is back.",
+  "offlineChangeNotApplied": "The light couldn't be reached, so the change wasn't applied.",
   "modeIgnoresColour": "This effect makes its own colours.",
   "switchToSolid": "Switch to Solid",
   "speed": "Speed",

@@ -60,6 +60,9 @@ final class FwSimLink implements BleLink {
   int writesWithoutResponse = 0;
   final List<Uint8List> written = <Uint8List>[];
 
+  /// App time of each entry of [written].
+  final List<Duration> writtenAt = <Duration>[];
+
   @override
   String get deviceId => 'fwsim';
 
@@ -98,6 +101,7 @@ final class FwSimLink implements BleLink {
     writes++;
     if (!withResponse) writesWithoutResponse++;
     written.add(value);
+    writtenAt.add(scheduler.now);
     final String hex = value
         .map((int b) => b.toRadixString(16).padLeft(2, '0'))
         .join();

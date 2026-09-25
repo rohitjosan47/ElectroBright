@@ -5,6 +5,7 @@ library;
 
 import 'package:electrobright/core/model/channel_color.dart';
 import 'package:electrobright/core/model/channel_layout.dart';
+import 'package:electrobright/core/protocol/eb/eb_constants.dart';
 import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/drivers/electrobright/eb_session.dart';
 import 'package:electrobright/drivers/electrobright/eb_types.dart';
@@ -127,6 +128,113 @@ void main() {
         await h.expectConverged();
       },
     );
+  });
+
+  group('turning off at zero', () {
+    /// Brightness of a binary frame, or null for a text write.
+    int? frameBrightness(List<int> w) =>
+        w.isNotEmpty && w[0] == 0xAA ? w[w.length - 2] : null;
+    bool isSleep(List<int> w) =>
+        w.isNotEmpty &&
+        w[0] != 0xAA &&
+        String.fromCharCodes(w).contains('SLEEP');
+
+    test(
+      'release at 0: 0 frame, one SLEEP, the level only after the fade',
+      () async {
+        h = await EbHarness.start();
+        h.session.setBrightness(180);
+        await h.settle();
+        await h.link.sounds();
+        final int from = h.link.written.length;
+        // As the brightness pill does it.
+        h.session.beginGesture(EbKeys.brightness);
+        for (final int b in <int>[140, 90, 40, 0]) {
+          h.session.setBrightness(b, live: true);
+          await h.wait(const Duration(milliseconds: 30));
+        }
+        h.session.setBrightness(0);
+        h.session.endGesture(EbKeys.brightness);
+
+        // The light, every 5 ms for a second: the output (brightness × the
+        // linear 400 ms sleep-fade gain, as RenderEngine renders it) never
+        // rises once it is asleep.
+        Duration t = Duration.zero;
+        Duration? asleepAt;
+        double lastOutput = double.infinity;
+        while (t < const Duration(seconds: 1)) {
+          await h.wait(const Duration(milliseconds: 5));
+          t += const Duration(milliseconds: 5);
+          final Map<String, Object?> d = await h.link.deviceState();
+          final bool asleep = d['sleeping'] == 1;
+          final int b =
+              (d['scene']! as Map<String, Object?>)['brightness']! as int;
+          if (!asleep) continue;
+          asleepAt ??= t;
+          final double since = (t - asleepAt).inMicroseconds / 1000;
+          if (since < Eb.sleepFadeMs) {
+            expect(b, 0, reason: 'brightness during the fade (${since}ms)');
+          }
+          final double gain = (1 - since / Eb.sleepFadeMs).clamp(0.0, 1.0);
+          final double output = b / 255 * gain;
+          expect(output, lessThanOrEqualTo(lastOutput), reason: '${since}ms');
+          lastOutput = output;
+        }
+        await h.settle();
+
+        // On the wire: the 0 frame before the one SLEEP, nothing brighter
+        // for at least the fade after it, then the level for power-on.
+        final List<List<int>> writes = h.link.written.sublist(from);
+        final List<Duration> at = h.link.writtenAt.sublist(from);
+        final List<int> sleeps = <int>[
+          for (int i = 0; i < writes.length; i++)
+            if (isSleep(writes[i])) i,
+        ];
+        expect(sleeps, hasLength(1), reason: 'exactly one SLEEP');
+        final int sleep = sleeps.single;
+        final int lastFrameBefore = <int>[
+          for (int i = 0; i < sleep; i++)
+            if (frameBrightness(writes[i]) != null) i,
+        ].last;
+        expect(frameBrightness(writes[lastFrameBefore]), 0);
+        final List<int> brighterAfter = <int>[
+          for (int i = sleep + 1; i < writes.length; i++)
+            if ((frameBrightness(writes[i]) ?? 0) > 0) i,
+        ];
+        expect(brighterAfter, hasLength(1), reason: 'one restore frame');
+        expect(frameBrightness(writes[brighterAfter.single]), 180);
+        expect(
+          at[brighterAfter.single] - at[sleep],
+          greaterThanOrEqualTo(const Duration(milliseconds: Eb.sleepFadeMs)),
+        );
+        expect(await h.link.sounds(), <String>['Sleep']);
+        expect(h.view.sleeping, isTrue);
+        expect(h.view.scene.brightness, 180);
+        await h.expectConverged();
+        // Power on: back at the level from before the drag.
+        await h.run(h.session.setPower(on: true));
+        await h.settle();
+        expect(h.view.sleeping, isFalse);
+        expect(h.view.scene.brightness, 180);
+        await h.expectConverged();
+      },
+    );
+
+    test('power on before the level was stored still wakes to it', () async {
+      h = await EbHarness.start();
+      h.session.setBrightness(120);
+      await h.settle();
+      h.session.beginGesture(EbKeys.brightness);
+      h.session.setBrightness(0, live: true);
+      h.session.setBrightness(0);
+      h.session.endGesture(EbKeys.brightness);
+      await h.wait(const Duration(milliseconds: 150));
+      await h.run(h.session.setPower(on: true));
+      await h.settle();
+      expect(h.view.sleeping, isFalse);
+      expect(h.view.scene.brightness, 120);
+      await h.expectConverged();
+    });
   });
 
   group('modes and settings', () {

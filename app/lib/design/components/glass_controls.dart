@@ -478,6 +478,7 @@ class LightOrb extends StatelessWidget {
     required this.spec,
     required this.color,
     required this.on,
+    this.level,
     this.size = 180,
     this.speed = 1,
     super.key,
@@ -486,23 +487,38 @@ class LightOrb extends StatelessWidget {
   final EbModeSpec spec;
   final Color color;
   final bool on;
+
+  /// The light's brightness as it glides (0..1): the orb's intensity follows
+  /// it at paint time. Without it the orb is simply lit or dimmed by [on].
+  final Animation<double>? level;
   final double size;
   final double speed;
+
+  static final Animatable<double> _intensity = Tween<double>(
+    begin: 0.18,
+    end: 1,
+  );
 
   @override
   Widget build(BuildContext context) {
     final List<Color> palette = <Color>[
       for (final int c in spec.gradient) Color(c),
     ];
+    final Animation<double>? level = this.level;
+    Widget dim(Widget child) => level != null
+        ? FadeTransition(opacity: _intensity.animate(level), child: child)
+        : AnimatedOpacity(
+            opacity: on ? 1 : 0.18,
+            duration: Motion.medium,
+            child: child,
+          );
     return Semantics(
       image: true,
       label: on ? '${spec.name}, on' : 'Off',
       child: SizedBox.square(
         dimension: size,
-        child: AnimatedOpacity(
-          opacity: on ? 1 : 0.18,
-          duration: Motion.medium,
-          child: GlyphSwitcher(
+        child: dim(
+          GlyphSwitcher(
             glyph: spec.glyph,
             child: ModeGlyph(
               glyph: spec.glyph,

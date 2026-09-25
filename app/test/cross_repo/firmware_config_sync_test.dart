@@ -12,6 +12,7 @@ void main() {
   test('limits and identity match Config.h', () {
     expect(configInt(c, 'kNumModes'), Eb.numModes);
     expect(configInt(c, 'kNumPresets'), Eb.numPresets);
+    expect(configInt(c, 'kSleepFadeMs'), Eb.sleepFadeMs);
     expect(configInt(c, 'kMinLevel'), Eb.minLevel);
     expect(configInt(c, 'kMaxLevel'), Eb.maxLevel);
     expect(configInt(c, 'kTimerMaxSeconds'), Eb.timerMaxSeconds);

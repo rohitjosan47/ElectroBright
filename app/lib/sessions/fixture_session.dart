@@ -42,6 +42,7 @@ final class FixtureStatus {
     this.attempt = 0,
     this.incompatibility,
     this.detail,
+    this.offlineBrightness,
   });
 
   final LinkPhase phase;
@@ -63,8 +64,33 @@ final class FixtureStatus {
 
   bool get isReady => phase == LinkPhase.ready && view != null;
 
-  /// What the UI should render: live when connected, else the last known.
-  EbDeviceState? get state => view?.state ?? lastKnown;
+  /// Brightness set while not connected, sent when the light is back
+  /// (0 = turned off at zero). Shown instead of the last known one, so the
+  /// control keeps what the user chose.
+  final int? offlineBrightness;
+
+  /// What the UI should render: live when connected, else the last known
+  /// with the change waiting to be sent.
+  EbDeviceState? get state {
+    final EbView? v = view;
+    if (v != null) return v.state;
+    final EbDeviceState? s = lastKnown;
+    final int? b = offlineBrightness;
+    if (s == null || b == null) return s;
+    return b == 0
+        ? s.copyWith(sleeping: true)
+        : s.copyWith(scene: s.scene.copyWith(brightness: b), sleeping: false);
+  }
+
+  FixtureStatus _withOffline(int? brightness) => FixtureStatus(
+    phase: phase,
+    view: view,
+    lastKnown: lastKnown,
+    attempt: attempt,
+    incompatibility: incompatibility,
+    detail: detail,
+    offlineBrightness: view == null ? brightness : null,
+  );
 }
 
 /// One saved light: its (optional) live driver session plus the last-known
@@ -75,8 +101,21 @@ final class FixtureSession {
   Fixture fixture;
   final Scheduler _scheduler;
 
-  /// Offline changes older than this are dropped instead of replayed.
-  static const Duration offlineWindow = Duration(seconds: 10);
+  /// How long a change made while the light is unreachable waits for it.
+  /// Then it is dropped, the controls glide back to the light's real values
+  /// and one message says so (EbOfflineChangesExpired). Kept in memory only:
+  /// an app restart drops pending changes.
+  static const Duration offlineWindow = Duration(seconds: 60);
+
+  /// Fires when the oldest pending offline change runs out of time.
+  Cancelable? _expiry;
+
+  /// Brightness set while not connected (see [FixtureStatus.offlineBrightness]).
+  int? _offlineBrightness;
+
+  /// Released at 0 and the link dropped before the level to wake to reached
+  /// the light: stored after the next handshake if it is still asleep at 0.
+  int? _pendingWake;
 
   FixtureStatus _status = const FixtureStatus(phase: LinkPhase.idle);
   final StreamController<FixtureStatus> _statuses =
@@ -173,11 +212,16 @@ final class FixtureSession {
       ),
     );
     _replayOffline(s);
+    _offlineBrightness = null;
+    final int? wake = _pendingWake;
+    _pendingWake = null;
+    if (wake != null) s.storeWakeBrightness(wake);
   }
 
   /// The link ended (the manager already knows).
   Future<void> linkClosed() async {
     final EbSession? s = _session;
+    _pendingWake = s?.pendingWakeBrightness ?? _pendingWake;
     if (s != null && s.phase != EbPhase.connecting) {
       _status = FixtureStatus(
         phase: _status.phase,
@@ -199,6 +243,7 @@ final class FixtureSession {
   }
 
   Future<void> dispose() async {
+    _expiry?.cancel();
     await _detach();
     // Listeners get the done event; closing has nothing to wait for.
     unawaited(_statuses.close());
@@ -206,8 +251,8 @@ final class FixtureSession {
   }
 
   void _set(FixtureStatus s) {
-    _status = s;
-    if (!_statuses.isClosed) _statuses.add(s);
+    _status = s._withOffline(_offlineBrightness);
+    if (!_statuses.isClosed) _statuses.add(_status);
   }
 
   // ---- intents -----------------------------------------------------------------
@@ -222,25 +267,69 @@ final class FixtureSession {
       _status.phase == LinkPhase.handshaking ||
       _status.phase == LinkPhase.ready;
 
+  bool get _live {
+    final EbSession? s = _session;
+    return s != null &&
+        s.phase != EbPhase.closed &&
+        _status.phase == LinkPhase.ready;
+  }
+
   Future<EbResult> _intent(
     String key,
     Future<EbResult> Function(EbSession s) action, {
     Duration keep = offlineWindow,
   }) {
     final EbSession? s = _session;
-    if (s != null &&
-        s.phase != EbPhase.closed &&
-        _status.phase == LinkPhase.ready) {
-      return action(s);
-    }
+    if (_live) return action(s!);
     if (_reconnecting) {
       _offline[key] = (
         _scheduler.now,
         keep,
         (EbSession x) => unawaited(action(x)),
       );
+      _armExpiry();
     }
     return Future<EbResult>.value(EbResult.disconnected);
+  }
+
+  void _armExpiry() {
+    _expiry?.cancel();
+    _expiry = null;
+    if (_offline.isEmpty) return;
+    final Duration now = _scheduler.now;
+    Duration next = _offline.values
+        .map(
+          ((Duration, Duration, void Function(EbSession)) e) =>
+              e.$1 + e.$2 - now,
+        )
+        .reduce((Duration a, Duration b) => a < b ? a : b);
+    if (next.isNegative) next = Duration.zero;
+    _expiry = _scheduler.after(next, _expire);
+  }
+
+  /// Drops the changes whose window ran out; a dropped brightness stops
+  /// being shown, so the control glides back to the light's value.
+  void _expire() {
+    _expiry = null;
+    final Duration now = _scheduler.now;
+    final List<String> expired = <String>[
+      for (final MapEntry<
+            String,
+            (Duration, Duration, void Function(EbSession))
+          >
+          e
+          in _offline.entries)
+        if (now - e.value.$1 >= e.value.$2) e.key,
+    ];
+    if (expired.isNotEmpty) {
+      expired.forEach(_offline.remove);
+      if (expired.contains(EbKeys.brightness)) {
+        _offlineBrightness = null;
+        _set(_status);
+      }
+      if (!_events.isClosed) _events.add(const EbOfflineChangesExpired());
+    }
+    _armExpiry();
   }
 
   void _replayOffline(EbSession s) {
@@ -249,11 +338,13 @@ final class FixtureSession {
         _offline.values
             .where(
               ((Duration, Duration, void Function(EbSession)) e) =>
-                  now - e.$1 <= e.$2,
+                  now - e.$1 < e.$2,
             )
             .toList()
           ..sort((a, b) => a.$1.compareTo(b.$1));
     _offline.clear();
+    _expiry?.cancel();
+    _expiry = null;
     for (final (Duration, Duration, void Function(EbSession)) e in fresh) {
       e.$3(s);
     }
@@ -291,12 +382,23 @@ final class FixtureSession {
     }, keep: keepOffline),
   );
 
-  void setBrightness(int b, {bool live = false}) => unawaited(
-    _intent(EbKeys.brightness, (EbSession s) {
-      s.setBrightness(b, live: live);
-      return Future<EbResult>.value(EbResult.ok);
-    }),
-  );
+  /// Not connected, the change is kept and shown for [offlineWindow], and
+  /// sent if the light is back in time (a release at 0 then turns it off).
+  /// Otherwise the control glides back to the light's value.
+  void setBrightness(int b, {bool live = false}) {
+    final bool offline = !_live && _reconnecting;
+    unawaited(
+      _intent(EbKeys.brightness, (EbSession s) {
+        s.setBrightness(b, live: live);
+        return Future<EbResult>.value(EbResult.ok);
+      }),
+    );
+    if (offline) {
+      _offlineBrightness = b;
+      _pendingWake = null;
+      _set(_status);
+    }
+  }
 
   void beginGesture(String key) => _session?.beginGesture(key);
   void endGesture(String key) => _session?.endGesture(key);

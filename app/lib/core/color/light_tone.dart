@@ -118,6 +118,7 @@ final class LightTone {
   const LightTone({
     required this.dark,
     required this.canvas,
+    required this.canvasDim,
     required this.glow,
     required this.glowStrength,
     required this.accent,
@@ -128,8 +129,13 @@ final class LightTone {
 
   final bool dark;
 
-  /// Three background stops, top (where the light "spills in") to bottom.
+  /// Three background stops, top (where the light "spills in") to bottom,
+  /// for the light at full brightness.
   final List<int> canvas;
+
+  /// The top stop for the light at its lowest brightness (the canvas blends
+  /// between this and [canvas] first as the light dims).
+  final int canvasDim;
   final int glow;
 
   /// 0..1: how strongly the glow shows (follows brightness, 0 when off).
@@ -165,6 +171,9 @@ final class LightTone {
     Oklch stop(double l, double maxC) =>
         ColorScience.toGamut(Oklch(l, math.min(o.c, maxC), o.h));
     final double lift = d.off ? 0 : d.brightness;
+    final int canvasDim = dark
+        ? _argb(stop(0.19, 0.11 * 0.4))
+        : _argb(stop(0.93, 0.06 * 0.4));
     final List<int> canvas = dark
         ? <int>[
             _argb(stop(0.19 + 0.07 * lift, 0.11 * (0.4 + 0.6 * lift))),
@@ -190,6 +199,7 @@ final class LightTone {
     return LightTone(
       dark: dark,
       canvas: canvas,
+      canvasDim: canvasDim,
       glow: _argb(
         ColorScience.toGamut(Oklch(0.75, math.min(o.c * 1.2, 0.2), o.h)),
       ),
@@ -233,6 +243,7 @@ final class LightTone {
     return LightTone(
       dark: t < 0.5 ? a.dark : b.dark,
       canvas: <int>[for (int i = 0; i < 3; i++) mix(a.canvas[i], b.canvas[i])],
+      canvasDim: mix(a.canvasDim, b.canvasDim),
       glow: mix(a.glow, b.glow),
       glowStrength: a.glowStrength + (b.glowStrength - a.glowStrength) * t,
       accent: mix(a.accent, b.accent),
@@ -249,6 +260,7 @@ final class LightTone {
       other.canvas[0] == canvas[0] &&
       other.canvas[1] == canvas[1] &&
       other.canvas[2] == canvas[2] &&
+      other.canvasDim == canvasDim &&
       other.glow == glow &&
       other.glowStrength == glowStrength &&
       other.accent == accent &&

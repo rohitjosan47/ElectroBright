@@ -214,15 +214,15 @@ void main() {
       find.byKey(const ValueKey<String>('brightness')),
       const Offset(-2000, 0),
     );
-    // The pill stays empty while the session restores the brightness the
-    // light wakes to (no pop back up).
-    for (int i = 0; i < 20; i++) {
-      await t.pump(const Duration(milliseconds: 100));
-      expect(pillValue(t), '0 %');
+    // "Off" on every frame from the release on, through the sleep fade and
+    // the level stored for power-on afterwards (no pop back up).
+    for (int i = 0; i < 150; i++) {
+      await t.pump(const Duration(milliseconds: 16));
+      expect(pillValue(t), 'Off', reason: 'frame $i');
     }
     expect(d.model('Hallway').sleeping, isTrue);
     expect(d.session('Hallway').status.state!.scene.brightness, 179);
-    expect(find.text('0 %'), findsOneWidget);
+    expect(find.text('Off'), findsOneWidget);
     // Power on: back to where it was.
     await t.tap(
       find.byWidgetPredicate(
@@ -237,7 +237,7 @@ void main() {
     await DemoApp.shutDown(t);
   });
 
-  testWidgets('a nearly empty brightness pill is a dot, not a sliver', (
+  testWidgets('the brightness fill is its fraction of the track, no grip', (
     WidgetTester t,
   ) async {
     final DemoApp d = await open(t, 'Desk strip');
@@ -253,16 +253,32 @@ void main() {
     );
     final Size size = t.getSize(track);
     final double h = size.height;
-    final RRect fill = RRect.fromRectAndRadius(
-      Rect.fromLTWH(0, 0, h + 5 / 255 * (size.width - h), h),
-      Radius.circular(h / 2),
-    );
-    expect(fill.width, greaterThanOrEqualTo(fill.height));
+    // About 2 % of the track (no minimum width), its end rounded only as
+    // far as it is wide.
+    final double w = 5 / 255 * size.width;
+    expect(w / size.width, closeTo(0.02, 0.001));
+    final Radius end = Radius.circular(w / 2 < h / 2 ? w / 2 : h / 2);
     expect(
       track,
       paints
         ..clipRRect()
-        ..rrect(rrect: fill),
+        ..rrect(
+          rrect: RRect.fromRectAndCorners(
+            Rect.fromLTWH(0, 0, w, h),
+            topRight: end,
+            bottomRight: end,
+          ),
+        )
+        ..circle(),
+    );
+    // One rounded rect (the fill): no grip bar.
+    expect(
+      track,
+      isNot(
+        paints
+          ..rrect()
+          ..rrect(),
+      ),
     );
     await DemoApp.shutDown(t);
   });
@@ -477,4 +493,46 @@ void main() {
     expect(scaleOf(), closeTo(1, 0.001));
     await DemoApp.shutDown(t);
   });
+
+  testWidgets(
+    'a brightness change the light never got glides back, said once',
+    (WidgetTester t) async {
+      final SemanticsHandle semantics = t.ensureSemantics();
+      final DemoApp d = await open(t, 'Desk strip');
+      expect(pillValue(t), '100 %');
+      d.radio.setAvailable('demo-rgb', available: false);
+      await t.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      await settle(t);
+      expect(
+        find.byKey(const ValueKey<String>('offline-note')),
+        findsOneWidget,
+      );
+      // Dragged while unreachable: the pill keeps it for the window...
+      await t.drag(
+        find.byKey(const ValueKey<String>('brightness')),
+        const Offset(-120, 0),
+      );
+      await settle(t, 1);
+      final String dragged = pillValue(t)!;
+      expect(dragged, isNot('100 %'));
+      await settle(t, 50);
+      expect(pillValue(t), dragged);
+      // ...then glides back to the light's value, with one message.
+      for (int i = 0; i < 150 && pillValue(t) != '100 %'; i++) {
+        await t.pump(const Duration(milliseconds: 100));
+      }
+      expect(pillValue(t), '100 %');
+      expect(
+        find.text(
+          "The light couldn't be reached, so the change wasn't applied.",
+        ),
+        findsOneWidget,
+      );
+      await settle(t, 3); // the message fades
+      semantics.dispose();
+      await DemoApp.shutDown(t);
+    },
+  );
 }

@@ -126,6 +126,20 @@ final class EbSession {
   int? _gestureStartBrightness;
   int _lastLitBrightness = 255;
   Cancelable? _timerWatch;
+
+  /// Released at 0: the brightness to store in the sleeping light once its
+  /// sleep fade is over (so power-on comes back there), and the pending wait.
+  int? _wakeBrightness;
+  Cancelable? _wakeTimer;
+
+  /// Bumped by each turn-off at zero and by every power-on: a stale wait
+  /// never stores anything.
+  int _offRun = 0;
+
+  /// How long after SLEEP is answered the light's fade is surely over.
+  static const Duration wakeBrightnessDelay = Duration(
+    milliseconds: Eb.sleepFadeMs + 150,
+  );
   Duration? _modeSettingsAt;
   bool _resyncQueued = false;
   bool _resyncAgain = false;
@@ -173,8 +187,14 @@ final class EbSession {
   Duration get now => _scheduler.now;
 
   /// Nothing queued, in flight, or waiting to be confirmed.
+  /// Nothing in flight or scheduled (including the level to wake to that a
+  /// release at 0 still has to store).
   bool get isIdle =>
-      _commands.isIdle && _stream.isIdle && !_writer.isBusy && !_resyncQueued;
+      _commands.isIdle &&
+      _stream.isIdle &&
+      !_writer.isBusy &&
+      !_resyncQueued &&
+      _wakeTimer == null;
 
   static EbDeviceState _defaultState(ChannelLayout layout) => EbDeviceState(
     scene: EbScene.defaults(layout),
@@ -293,6 +313,7 @@ final class EbSession {
     if (_phase == EbPhase.closed) return;
     _phase = EbPhase.closed;
     _timerWatch?.cancel();
+    _wakeTimer?.cancel();
     _writer.close(reason);
     _stream.close();
     _commands.close();
@@ -336,6 +357,7 @@ final class EbSession {
     if (key == EbKeys.color) {
       _stream.submit(terminal: true);
     } else if (key == EbKeys.brightness) {
+      // The one place a brightness gesture ending at 0 turns the light off.
       if (_desired.scene.brightness == 0) {
         _offAtZero();
       } else {
@@ -405,15 +427,37 @@ final class EbSession {
       scene: _desired.scene.copyWith(brightness: brightness),
     );
     _latest[EbKeys.brightness] = ++_seq;
-    if (!live && brightness == 0) {
+    // Inside a brightness gesture the release (endGesture) turns it off, so
+    // a release sends exactly one SLEEP.
+    if (!live && brightness == 0 && !_gestures.contains(EbKeys.brightness)) {
       _offAtZero();
     } else {
-      _stream.submit(terminal: !live);
+      _stream.submit(terminal: !live || brightness == 0);
     }
     _changed();
   }
 
+  /// About to wake the light: a pending wait for the level to wake to is
+  /// over. If that level was not sent yet, it is sent now, ahead of the wake
+  /// (the caller fences), so the light wakes to it rather than to 0. True
+  /// when it sent one.
+  bool _wakeBrightnessFirst() {
+    _offRun++;
+    final int? wake = _wakeBrightness;
+    _cancelWakeBrightness();
+    if (wake == null || !_desired.sleeping || _desired.scene.brightness != 0) {
+      return false;
+    }
+    _desired = _desired.copyWith(
+      scene: _desired.scene.copyWith(brightness: wake),
+    );
+    _latest[EbKeys.brightness] = ++_seq;
+    _stream.submit(terminal: true);
+    return true;
+  }
+
   Future<EbResult> setPower({required bool on}) {
+    final bool fence = on && _wakeBrightnessFirst();
     if (_desired.sleeping == !on && !_latest.containsKey(EbKeys.power)) {
       return Future<EbResult>.value(EbResult.skipped);
     }
@@ -424,7 +468,36 @@ final class EbSession {
     return _send(SetPower(on: on), <String>[
       EbKeys.power,
       if (!on) EbKeys.timer,
-    ]);
+    ], fence: fence);
+  }
+
+  /// Released at 0 and the link dropped before the level to wake to was
+  /// stored: that level (the owner stores it after reconnecting).
+  int? get pendingWakeBrightness => _wakeBrightness;
+
+  /// Stores [brightness] in a light that is still asleep at 0 (after a
+  /// reconnect); frames never wake it. False when that no longer applies.
+  bool storeWakeBrightness(int brightness) {
+    if ((_phase != EbPhase.ready && _phase != EbPhase.resyncing) ||
+        !_desired.sleeping ||
+        _desired.scene.brightness != 0 ||
+        _gestures.contains(EbKeys.brightness) ||
+        brightness <= 0) {
+      return false;
+    }
+    _desired = _desired.copyWith(
+      scene: _desired.scene.copyWith(brightness: brightness),
+    );
+    _latest[EbKeys.brightness] = ++_seq;
+    _stream.submit(terminal: true);
+    _changed();
+    return true;
+  }
+
+  void _cancelWakeBrightness() {
+    _wakeTimer?.cancel();
+    _wakeTimer = null;
+    _wakeBrightness = null;
   }
 
   Future<EbResult> setMode(int mode) {
@@ -435,11 +508,15 @@ final class EbSession {
       return _desired.sleeping ? setPower(on: true) : _skipped;
     }
     final bool wakes = _desired.sleeping;
+    final bool fence = wakes && _wakeBrightnessFirst();
     _desired = _desired.copyWith(
       scene: _desired.scene.copyWith(mode: mode),
       sleeping: false,
     );
-    return _send(SetMode(mode), <String>[EbKeys.mode, if (wakes) EbKeys.power]);
+    return _send(SetMode(mode), <String>[
+      EbKeys.mode,
+      if (wakes) EbKeys.power,
+    ], fence: fence);
   }
 
   Future<EbResult> setSpeed(int mode, int value) {
@@ -596,30 +673,39 @@ final class EbSession {
     return _commands.enqueue(command, seq: seq, fence: fence);
   }
 
-  /// Released at brightness 0: fence (so the dark frames land first), SLEEP,
-  /// then store the pre-drag brightness in the sleeping light so the next
-  /// power-on comes back there (frames never wake it).
+  /// Released at brightness 0: fence (so the 0 frame lands first), one
+  /// SLEEP, and once the light's sleep fade is over, store the pre-drag
+  /// brightness in the sleeping light so the next power-on comes back there
+  /// (frames never wake it). Sent during the fade, the light would scale it
+  /// by the fading gain and visibly flash back up.
   void _offAtZero() {
     final int restore = (_gestureStartBrightness ?? 0) > 0
         ? _gestureStartBrightness!
         : _lastLitBrightness;
+    final int run = ++_offRun;
+    _cancelWakeBrightness();
+    // Pending from now: a link lost before SLEEP is answered keeps it too.
+    _wakeBrightness = restore;
+    // The 0 frame goes out (reliably) first; the fence below waits for it.
+    _stream.submit(terminal: true);
     _desired = _desired.copyWith(sleeping: true, timerDeadline: null);
     unawaited(
       _send(const SetPower(on: false), <String>[
         EbKeys.power,
         EbKeys.timer,
       ], fence: true).then((EbResult r) {
-        if (!r.isSuccess || !_desired.sleeping) return;
-        if (_desired.scene.brightness != 0 ||
-            _gestures.contains(EbKeys.brightness)) {
+        if (run != _offRun) return;
+        if (!r.isSuccess) {
+          if (r.outcome != EbOutcome.disconnected) _cancelWakeBrightness();
           return;
         }
-        _desired = _desired.copyWith(
-          scene: _desired.scene.copyWith(brightness: restore),
-        );
-        _latest[EbKeys.brightness] = ++_seq;
-        _stream.submit(terminal: true);
-        _changed();
+        _wakeTimer = _scheduler.after(wakeBrightnessDelay, () {
+          _wakeTimer = null;
+          if (run != _offRun) return;
+          final int? wake = _wakeBrightness;
+          _wakeBrightness = null;
+          if (wake != null) storeWakeBrightness(wake);
+        });
       }),
     );
   }
