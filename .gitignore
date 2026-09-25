@@ -1,11 +1,6 @@
 .DS_Store
 *.zip
 *.log
-electrobright_app/.dart_tool/
-electrobright_app/.flutter-plugins*
-electrobright_app/build/
-electrobright_app/.idea/
-electrobright_app/*.iml
-electrobright_app/.pub-cache/
-electrobright_app/.pub/
+
+# Firmware host-test build output
 firmware/test/build/
