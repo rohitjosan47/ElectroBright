@@ -37,9 +37,16 @@ class _ToneScopeState extends State<ToneScope>
   void didUpdateWidget(ToneScope old) {
     super.didUpdateWidget(old);
     if (widget.tone == _to) return;
+    final bool reduced = Motion.reduced(context);
+    // A glide in flight (a colour drag changes the tone every frame): aim it
+    // at the new tone and let it run on, instead of starting over each frame.
+    if (_c.isAnimating && !reduced && widget.tone.dark == _to.dark) {
+      _to = widget.tone;
+      return;
+    }
     _from = _current;
     _to = widget.tone;
-    if (Motion.reduced(context) || _from.dark != _to.dark) {
+    if (reduced || _from.dark != _to.dark) {
       _from = _to;
       _c.value = 1;
     } else {

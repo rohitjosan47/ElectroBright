@@ -108,49 +108,34 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     final AppLocalizations l = AppLocalizations.of(context);
     final Fixture? f = ref.watch(fixtureProvider(widget.fixtureId));
     if (f == null) return const Scaffold();
-    final FixtureStatus st = ref.watch(fixtureStatusProvider(widget.fixtureId));
+    // Neither colour nor brightness frames rebuild the screen: the tone, the
+    // orb, the pill and the tab body each watch what they show.
+    final _ScreenState st = ref.watch(
+      fixtureStatusProvider(widget.fixtureId).select(_screenState),
+    );
     final LightCapabilities caps =
         ref.watch(capabilitiesProvider(widget.fixtureId)) ??
         LightCapabilities.assumed(f.layout);
     final FixtureSession? session = ref.watch(
       fixtureSessionProvider(widget.fixtureId),
     );
-    final EbScene? known = st.state?.scene;
-    // Nothing known yet (never connected): the light's factory look, disabled.
-    final EbScene scene = known != null && known.layout == caps.layout
-        ? known
-        : EbScene.defaults(caps.layout);
-    final bool sleeping = st.state?.sleeping ?? false;
+    final bool sleeping = st.sleeping;
     final bool ready = st.phase == LinkPhase.ready;
     final bool reconnecting =
         st.phase == LinkPhase.waiting ||
         st.phase == LinkPhase.connecting ||
         st.phase == LinkPhase.handshaking;
     // Changes made while reconnecting are replayed when the light is back.
-    final bool enabled =
-        session != null && known != null && (ready || reconnecting);
+    final bool enabled = session != null && st.known && (ready || reconnecting);
 
     final List<ControlTab> tabs = tabsFor(caps.colourSurface);
     final ControlTab tab = tabs.contains(_tab) ? _tab! : tabs.first;
     final bool dark = Theme.of(context).brightness == Brightness.dark;
-    final LightTone tone = LightTone.derive(
-      DisplayColor.ofScene(
-        scene,
-        sleeping: sleeping,
-        whitePoints: f.whitePoints,
-      ),
-      dark: dark,
-    );
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
-    final EbModeSpec mode = presentMode(
-      EbModeCatalog.byId(scene.mode),
-      caps.layout,
-      f.whitePoints,
-      l,
-    );
 
-    return ToneScope(
-      tone: tone,
+    return _Tone(
+      fixture: f,
+      layout: caps.layout,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: AmbientCanvas(
@@ -164,7 +149,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
             children: <Widget>[
               _Header(
                 fixture: f,
-                status: st,
+                live: st.live,
                 sleeping: sleeping,
                 fg: fg,
                 onPower: enabled
@@ -173,31 +158,23 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
               ),
               const SizedBox(height: Space.m),
               Center(
-                child: LightOrb(
-                  spec: mode,
-                  color: swatchOf(scene.color, f.whitePoints),
-                  on: !sleeping && scene.brightness > 0 && known != null,
-                  size: 160,
-                  speed: mode.hasSpeed ? 0.5 + scene.speed / 10 : 1,
+                child: RepaintBoundary(
+                  child: _Orb(fixture: f, layout: caps.layout),
                 ),
               ),
               if (!ready) ...<Widget>[
                 const SizedBox(height: Space.s),
-                Text(
-                  known == null ? presenceText(l, st) : l.offlineNote,
-                  key: const ValueKey<String>('offline-note'),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: fg.withValues(alpha: 0.7),
-                    fontSize: 13,
-                  ),
+                _OfflineNote(
+                  fixtureId: widget.fixtureId,
+                  known: st.known,
+                  fg: fg,
                 ),
               ],
               const SizedBox(height: Space.s),
               ControlToolbar(
                 fixtureId: widget.fixtureId,
                 session: session,
-                soundOn: st.state?.soundOn ?? false,
+                soundOn: st.soundOn,
                 sleeping: sleeping,
                 enabled: enabled,
                 onSettings: () => unawaited(
@@ -210,11 +187,14 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                 ),
               ),
               const SizedBox(height: Space.m),
-              BrightnessPill(
-                scene: scene,
-                enabled: enabled,
-                fg: fg,
-                session: session,
+              RepaintBoundary(
+                child: BrightnessPill(
+                  fixtureId: widget.fixtureId,
+                  layout: caps.layout,
+                  enabled: enabled,
+                  fg: fg,
+                  session: session,
+                ),
               ),
               const SizedBox(height: Space.m),
               GlassSegmented<ControlTab>(
@@ -225,32 +205,30 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                 onChanged: (ControlTab t) => setState(() => _tab = t),
               ),
               const SizedBox(height: Space.m),
-              switch (tab) {
-                ControlTab.colour || ControlTab.white => _ColourTab(
-                  scene: scene,
-                  fixture: f,
-                  session: session,
-                  enabled: enabled,
-                  fg: fg,
-                ),
-                ControlTab.effects => EffectsPanel(
-                  scene: scene,
-                  capabilities: caps,
-                  whitePoints: f.whitePoints,
-                  session: session,
-                  enabled: enabled,
-                ),
-                ControlTab.presets => PresetsPanel(
-                  fixtureId: widget.fixtureId,
-                  scene: scene,
-                  onLight: st.state?.presets ?? const <int>{},
-                  capabilities: caps,
-                  whitePoints: f.whitePoints,
-                  session: session,
-                  // Presets need the light now (no offline replay).
-                  enabled: enabled && ready,
-                ),
-              },
+              RepaintBoundary(
+                child: switch (tab) {
+                  ControlTab.colour || ControlTab.white => _ColourTab(
+                    fixture: f,
+                    layout: caps.layout,
+                    session: session,
+                    enabled: enabled,
+                    fg: fg,
+                  ),
+                  ControlTab.effects => _EffectsTab(
+                    fixture: f,
+                    capabilities: caps,
+                    session: session,
+                    enabled: enabled,
+                  ),
+                  ControlTab.presets => _PresetsTab(
+                    fixture: f,
+                    capabilities: caps,
+                    session: session,
+                    // Presets need the light now (no offline replay).
+                    enabled: enabled && ready,
+                  ),
+                },
+              ),
             ],
           ),
         ),
@@ -266,16 +244,196 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   };
 }
 
+/// What the control screen itself shows of a light's status: no colour, no
+/// brightness (those change every frame of a drag).
+typedef _ScreenState = ({
+  LinkPhase phase,
+  bool live,
+  bool known,
+  bool sleeping,
+  bool soundOn,
+});
+
+_ScreenState _screenState(FixtureStatus s) => (
+  phase: s.phase,
+  live: s.isReady,
+  known: s.state != null,
+  sleeping: s.state?.sleeping ?? false,
+  soundOn: s.state?.soundOn ?? false,
+);
+
+/// The light's look without its brightness (the pill's alone): its scene at
+/// full, or the factory look while nothing is known (never connected).
+EbScene _lookOf(FixtureStatus s, ChannelLayout layout) {
+  final EbScene? scene = s.state?.scene;
+  return (scene != null && scene.layout == layout
+          ? scene
+          : EbScene.defaults(layout))
+      .copyWith(brightness: 255);
+}
+
+/// The screen's palette, from the light's colour and whether it sleeps.
+class _Tone extends ConsumerWidget {
+  const _Tone({
+    required this.fixture,
+    required this.layout,
+    required this.child,
+  });
+  final Fixture fixture;
+  final ChannelLayout layout;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ({EbScene look, bool sleeping}) t = ref.watch(
+      fixtureStatusProvider(fixture.id).select(
+        (FixtureStatus s) =>
+            (look: _lookOf(s, layout), sleeping: s.state?.sleeping ?? false),
+      ),
+    );
+    return ToneScope(
+      tone: LightTone.derive(
+        DisplayColor.ofScene(
+          t.look,
+          sleeping: t.sleeping,
+          whitePoints: fixture.whitePoints,
+        ),
+        dark: Theme.of(context).brightness == Brightness.dark,
+      ),
+      child: child,
+    );
+  }
+}
+
+/// The light as an orb: its effect, colour and whether it shines.
+class _Orb extends ConsumerWidget {
+  const _Orb({required this.fixture, required this.layout});
+  final Fixture fixture;
+  final ChannelLayout layout;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ({EbScene look, bool on}) o = ref.watch(
+      fixtureStatusProvider(fixture.id).select(
+        (FixtureStatus s) => (
+          look: _lookOf(s, layout),
+          on:
+              s.state != null &&
+              !s.state!.sleeping &&
+              s.state!.scene.brightness > 0,
+        ),
+      ),
+    );
+    final EbModeSpec mode = presentMode(
+      EbModeCatalog.byId(o.look.mode),
+      layout,
+      fixture.whitePoints,
+      AppLocalizations.of(context),
+    );
+    return LightOrb(
+      spec: mode,
+      color: swatchOf(o.look.color, fixture.whitePoints),
+      on: o.on,
+      size: 160,
+      speed: mode.hasSpeed ? 0.5 + o.look.speed / 10 : 1,
+    );
+  }
+}
+
+/// Effects follow the whole look except brightness.
+class _EffectsTab extends ConsumerWidget {
+  const _EffectsTab({
+    required this.fixture,
+    required this.capabilities,
+    required this.session,
+    required this.enabled,
+  });
+  final Fixture fixture;
+  final LightCapabilities capabilities;
+  final FixtureSession? session;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => EffectsPanel(
+    scene: ref.watch(
+      fixtureStatusProvider(fixture.id)
+          .select((FixtureStatus s) => _lookOf(s, capabilities.layout)),
+    ),
+    capabilities: capabilities,
+    whitePoints: fixture.whitePoints,
+    session: session,
+    enabled: enabled,
+  );
+}
+
+/// Why the controls are dimmed (connecting, offline...).
+class _OfflineNote extends ConsumerWidget {
+  const _OfflineNote({
+    required this.fixtureId,
+    required this.known,
+    required this.fg,
+  });
+  final String fixtureId;
+  final bool known;
+  final Color fg;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppLocalizations l = AppLocalizations.of(context);
+    return Text(
+      known
+          ? l.offlineNote
+          : presenceText(l, ref.watch(fixtureStatusProvider(fixtureId))),
+      key: const ValueKey<String>('offline-note'),
+      textAlign: TextAlign.center,
+      style: TextStyle(color: fg.withValues(alpha: 0.7), fontSize: 13),
+    );
+  }
+}
+
+/// Presets compare against the whole look, brightness included.
+class _PresetsTab extends ConsumerWidget {
+  const _PresetsTab({
+    required this.fixture,
+    required this.capabilities,
+    required this.session,
+    required this.enabled,
+  });
+  final Fixture fixture;
+  final LightCapabilities capabilities;
+  final FixtureSession? session;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final EbDeviceState? state = ref.watch(
+      fixtureStatusProvider(fixture.id).select((FixtureStatus s) => s.state),
+    );
+    final EbScene? known = state?.scene;
+    return PresetsPanel(
+      fixtureId: fixture.id,
+      scene: known != null && known.layout == capabilities.layout
+          ? known
+          : EbScene.defaults(capabilities.layout),
+      onLight: state?.presets ?? const <int>{},
+      capabilities: capabilities,
+      whitePoints: fixture.whitePoints,
+      session: session,
+      enabled: enabled,
+    );
+  }
+}
+
 class _Header extends StatelessWidget {
   const _Header({
     required this.fixture,
-    required this.status,
+    required this.live,
     required this.sleeping,
     required this.fg,
     required this.onPower,
   });
   final Fixture fixture;
-  final FixtureStatus status;
+  final bool live;
   final bool sleeping;
   final Color fg;
   final VoidCallback? onPower;
@@ -317,7 +475,7 @@ class _Header extends StatelessWidget {
         GlassIconButton(
           icon: Icons.power_settings_new_rounded,
           label: sleeping ? l.powerOn : l.powerOff,
-          active: status.isReady && !sleeping,
+          active: live && !sleeping,
           haptic: sleeping ? HapticEvent.powerOn : HapticEvent.powerOff,
           onPressed: onPower,
         ),
@@ -327,43 +485,58 @@ class _Header extends StatelessWidget {
 }
 
 /// Brightness (on a single-white light: its intensity). 0 turns the light
-/// off on release. On a single-white light whose channel is below full, the
-/// caption shows the real output and offers to move it all into the pill.
-class BrightnessPill extends StatelessWidget {
+/// off on release. A sleeping light shows 0 (the brightness it wakes to is
+/// kept by the session). On a single-white light whose channel is below full,
+/// the caption shows the real output and offers to move it all into the pill;
+/// its row is always laid out so the pill never moves.
+class BrightnessPill extends ConsumerWidget {
   const BrightnessPill({
-    required this.scene,
+    required this.fixtureId,
+    required this.layout,
     required this.enabled,
     required this.fg,
     required this.session,
     super.key,
   });
 
-  final EbScene scene;
+  final String fixtureId;
+  final ChannelLayout layout;
   final bool enabled;
   final Color fg;
   final FixtureSession? session;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
-    final bool single = scene.layout == ChannelLayout.w;
-    final int level = scene.color[0];
+    final ({int brightness, int level, bool sleeping}) p = ref.watch(
+      fixtureStatusProvider(fixtureId).select((FixtureStatus s) {
+        final EbScene? scene = s.state?.scene;
+        final bool known = scene != null && scene.layout == layout;
+        return (
+          brightness: known ? scene.brightness : 255,
+          level: known ? scene.color[0] : 255,
+          sleeping: s.state?.sleeping ?? false,
+        );
+      }),
+    );
+    final bool single = layout == ChannelLayout.w;
+    final int brightness = p.sleeping ? 0 : p.brightness;
     final FixtureSession? s = enabled ? session : null;
-    final double v = scene.brightness / 255;
-    final bool partial = single && level < 255 && scene.brightness > 0;
+    final bool partial = single && p.level < 255 && brightness > 0;
+    String percent(double x) => '${(x * 100).round()} %';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         GlassSlider(
           key: const ValueKey<String>('brightness'),
-          value: v,
+          value: brightness / 255,
           semanticLabel: single ? l.intensity : l.brightness,
           enabled: s != null,
           height: 56,
-          valueText: (double x) => '${(x * 100).round()} %',
+          valueText: percent,
           leading: Icon(Icons.wb_sunny_outlined, color: fg, size: 20),
-          trailing: Text(
-            '${(v * 100).round()} %',
+          trailingBuilder: (double x) => Text(
+            percent(x),
             style: TextStyle(
               color: fg,
               fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
@@ -377,40 +550,52 @@ class BrightnessPill extends StatelessWidget {
             s?.endGesture(EbKeys.brightness);
           },
         ),
-        if (partial)
-          Padding(
-            padding: const EdgeInsets.only(top: Space.xs),
-            child: Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    l.outputPercent(
-                      (ColourEngine.output(level, scene.brightness) * 100)
-                          .round(),
-                    ),
-                    key: const ValueKey<String>('output-caption'),
-                    style: TextStyle(
-                      color: fg.withValues(alpha: 0.7),
-                      fontSize: 13,
-                    ),
+        if (single)
+          AnimatedOpacity(
+            key: const ValueKey<String>('output-row'),
+            opacity: partial ? 1 : 0,
+            duration: Motion.reduced(context) ? Duration.zero : Motion.fast,
+            child: IgnorePointer(
+              ignoring: !partial,
+              child: ExcludeSemantics(
+                excluding: !partial,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: Space.xs),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          l.outputPercent(
+                            (ColourEngine.output(p.level, brightness) * 100)
+                                .round(),
+                          ),
+                          key: const ValueKey<String>('output-caption'),
+                          style: TextStyle(
+                            color: fg.withValues(alpha: 0.7),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      ActionChip(
+                        label: Text(l.useFullRange),
+                        // Same light output, all of it on the pill: channel
+                        // to full, brightness scaled down, in one frame.
+                        onPressed: s == null || !partial
+                            ? null
+                            : () => s.setLook(
+                                color: ChannelColor(
+                                  ChannelLayout.w,
+                                  const <int>[255],
+                                ),
+                                brightness: (p.level * brightness / 255)
+                                    .round()
+                                    .clamp(1, 255),
+                              ),
+                      ),
+                    ],
                   ),
                 ),
-                ActionChip(
-                  label: Text(l.useFullRange),
-                  // Same light output, all of it on the pill: channel to
-                  // full, brightness scaled down, in one frame.
-                  onPressed: s == null
-                      ? null
-                      : () => s.setLook(
-                          color: ChannelColor(ChannelLayout.w, const <int>[
-                            255,
-                          ]),
-                          brightness: (level * scene.brightness / 255)
-                              .round()
-                              .clamp(1, 255),
-                        ),
-                ),
-              ],
+              ),
             ),
           ),
       ],
@@ -418,25 +603,36 @@ class BrightnessPill extends StatelessWidget {
   }
 }
 
-class _ColourTab extends StatelessWidget {
+/// The colour controls: they follow only the light's colour (and whether
+/// its effect uses it).
+class _ColourTab extends ConsumerWidget {
   const _ColourTab({
-    required this.scene,
     required this.fixture,
+    required this.layout,
     required this.session,
     required this.enabled,
     required this.fg,
   });
-  final EbScene scene;
   final Fixture fixture;
+  final ChannelLayout layout;
   final FixtureSession? session;
   final bool enabled;
   final Color fg;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
+    final ({ChannelColor color, bool ignored}) c = ref.watch(
+      fixtureStatusProvider(fixture.id).select((FixtureStatus s) {
+        final EbScene look = _lookOf(s, layout);
+        return (
+          color: look.color,
+          ignored: !EbModeCatalog.usesPickedColor(look),
+        );
+      }),
+    );
     final FixtureSession? s = enabled ? session : null;
-    final bool ignored = !EbModeCatalog.usesPickedColor(scene);
+    final bool ignored = c.ignored;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -469,7 +665,7 @@ class _ColourTab extends StatelessWidget {
         GlassSurface(
           padding: const EdgeInsets.all(Space.m),
           child: ColourEditor(
-            value: scene.color,
+            value: c.color,
             whitePoints: fixture.whitePoints,
             enabled: s != null,
             onGestureStart: () => s?.beginGesture(EbKeys.color),

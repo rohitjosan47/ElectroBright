@@ -27,6 +27,19 @@ void main() {
   Future<void> settle(WidgetTester t, [int seconds = 2]) =>
       DemoApp.settle(t, seconds);
 
+  /// The single-white output caption is showing (its row is always there).
+  bool captionShown(WidgetTester t) =>
+      t
+          .widget<AnimatedOpacity>(
+            find.byKey(const ValueKey<String>('output-row')),
+          )
+          .opacity ==
+      1;
+
+  /// What the brightness pill says to accessibility ("70 %").
+  String? pillValue(WidgetTester t) =>
+      t.getSemantics(find.byKey(const ValueKey<String>('brightness'))).value;
+
   Future<DemoApp> open(WidgetTester t, String name) async {
     t.view.physicalSize = const Size(1179, 6000);
     t.view.devicePixelRatio = 3;
@@ -55,19 +68,24 @@ void main() {
       findsOneWidget,
     );
     // Channel at half: the caption shows the real output; nothing rewrites
-    // the channel until the user asks.
-    expect(find.byKey(const ValueKey<String>('output-caption')), findsNothing);
+    // the channel until the user asks. Its row is always laid out, so
+    // nothing under the pill jumps when it appears.
+    expect(captionShown(t), isFalse);
+    final Finder tabs = find.byType(GlassSegmented<ControlTab>);
+    final Rect below = t.getRect(tabs);
     d
         .session('Hallway')
         .setColor(ChannelColor(ChannelLayout.w, const <int>[128]));
     await settle(t);
+    expect(captionShown(t), isTrue);
+    expect(t.getRect(tabs), below);
     expect(find.text('Output 50 %'), findsOneWidget);
     expect(d.twin('Hallway').color[0], 128);
     await t.tap(find.text('Use full range'));
     await settle(t);
     expect(d.twin('Hallway').color[0], 255);
     expect(d.twin('Hallway').brightness, 128);
-    expect(find.byKey(const ValueKey<String>('output-caption')), findsNothing);
+    expect(captionShown(t), isFalse);
     await DemoApp.shutDown(t);
   });
 
@@ -170,6 +188,72 @@ void main() {
     await settle(t);
     expect(find.byKey(const ValueKey<String>('offline-note')), findsOneWidget);
     expect(find.byType(HueWheel), findsOneWidget);
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('brightness to 0 turns the light off; power on restores it', (
+    WidgetTester t,
+  ) async {
+    final SemanticsHandle semantics = t.ensureSemantics();
+    final DemoApp d = await open(t, 'Hallway');
+    d.session('Hallway').setBrightness(179);
+    await settle(t);
+    expect(pillValue(t), '70 %');
+    // Drag to the far left and let go.
+    await t.drag(
+      find.byKey(const ValueKey<String>('brightness')),
+      const Offset(-2000, 0),
+    );
+    // The pill stays empty while the session restores the brightness the
+    // light wakes to (no pop back up).
+    for (int i = 0; i < 20; i++) {
+      await t.pump(const Duration(milliseconds: 100));
+      expect(pillValue(t), '0 %');
+    }
+    expect(d.model('Hallway').sleeping, isTrue);
+    expect(d.session('Hallway').status.state!.scene.brightness, 179);
+    expect(find.text('0 %'), findsOneWidget);
+    // Power on: back to where it was.
+    await t.tap(
+      find.byWidgetPredicate(
+        (Widget w) => w is GlassIconButton && w.label == 'Turn on',
+      ),
+    );
+    await settle(t);
+    expect(d.model('Hallway').sleeping, isFalse);
+    expect(pillValue(t), '70 %');
+    expect(find.text('70 %'), findsOneWidget);
+    semantics.dispose();
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('a nearly empty brightness pill is a dot, not a sliver', (
+    WidgetTester t,
+  ) async {
+    final DemoApp d = await open(t, 'Desk strip');
+    d.session('Desk strip').setBrightness(5); // 2 %
+    await settle(t);
+    final Finder track = find.descendant(
+      of: find.byKey(const ValueKey<String>('brightness')),
+      matching: find.byWidgetPredicate(
+        (Widget w) =>
+            w is CustomPaint &&
+            w.painter.runtimeType.toString() == '_TrackPainter',
+      ),
+    );
+    final Size size = t.getSize(track);
+    final double h = size.height;
+    final RRect fill = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, 0, h + 5 / 255 * (size.width - h), h),
+      Radius.circular(h / 2),
+    );
+    expect(fill.width, greaterThanOrEqualTo(fill.height));
+    expect(
+      track,
+      paints
+        ..clipRRect()
+        ..rrect(rrect: fill),
+    );
     await DemoApp.shutDown(t);
   });
 }
