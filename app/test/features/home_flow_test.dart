@@ -2,7 +2,10 @@ import 'package:electrobright/app.dart';
 import 'package:electrobright/app/app_session.dart';
 import 'package:electrobright/bootstrap/service_registry.dart';
 import 'package:electrobright/core/store/json_store.dart';
+import 'package:electrobright/design/gallery/gallery.dart';
 import 'package:electrobright/features/add_fixture/add_light_screen.dart';
+import 'package:electrobright/features/home/home_screen.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -105,5 +108,40 @@ void main() {
       () => Future<void>.delayed(const Duration(milliseconds: 200)),
     );
     await settle(t, 1);
+  });
+
+  group('settings sheet', () {
+    Future<void> openSheet(WidgetTester t) async {
+      await t.pumpWidget(app(JsonStore.memory()));
+      await t.pump();
+      await t.tap(find.text('Try demo lights'));
+      await settle(t);
+      await t.tap(find.bySemanticsLabel('Settings'));
+      await settle(t, 1);
+      expect(find.byType(BottomSheet), findsOneWidget);
+    }
+
+    tearDown(() => debugShowDeveloperTools = kDebugMode);
+
+    testWidgets('profile and release builds: no developer tools', (
+      WidgetTester t,
+    ) async {
+      debugShowDeveloperTools = false;
+      await openSheet(t);
+      expect(find.text('Use my real lights'), findsOneWidget);
+      expect(find.text('Diagnostics'), findsNothing);
+      expect(find.text('Design gallery'), findsNothing);
+    });
+
+    testWidgets('debug builds: the gallery and the lab open from it', (
+      WidgetTester t,
+    ) async {
+      debugShowDeveloperTools = true;
+      await openSheet(t);
+      expect(find.byKey(const ValueKey<String>('settings-lab')), findsOne);
+      await t.tap(find.byKey(const ValueKey<String>('settings-gallery')));
+      await settle(t, 1);
+      expect(find.byType(ComponentGallery), findsOneWidget);
+    });
   });
 }

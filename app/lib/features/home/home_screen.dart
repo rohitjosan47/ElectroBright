@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -24,6 +25,12 @@ import 'light_tile.dart';
 import '../diagnostics/ble_lab.dart';
 import '../firmware_update/firmware_update_screen.dart';
 import '../fixture_settings/light_settings_screen.dart';
+
+/// Whether Home's settings sheet offers the developer tools (BLE diagnostics
+/// lab, design gallery): debug builds only, never profile or release. Tests
+/// may flip it. The gallery also opens with `--dart-define=EB_START=gallery`.
+@visibleForTesting
+bool debugShowDeveloperTools = kDebugMode;
 
 /// Home: every saved light with its type and state, plus lights nearby that
 /// are not added yet.
@@ -199,16 +206,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               title: Text(app.demo ? l.switchToRealLights : l.switchToDemo),
               onTap: () => Navigator.of(ctx).pop('mode'),
             ),
-            ListTile(
-              leading: const Icon(Icons.science_outlined),
-              title: Text(l.diagnostics),
-              onTap: () => Navigator.of(ctx).pop('lab'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.palette_outlined),
-              title: Text(l.designGallery),
-              onTap: () => Navigator.of(ctx).pop('gallery'),
-            ),
+            if (debugShowDeveloperTools) ...<Widget>[
+              ListTile(
+                key: const ValueKey<String>('settings-lab'),
+                leading: const Icon(Icons.science_outlined),
+                title: Text(l.diagnostics),
+                onTap: () => Navigator.of(ctx).pop('lab'),
+              ),
+              ListTile(
+                key: const ValueKey<String>('settings-gallery'),
+                leading: const Icon(Icons.palette_outlined),
+                title: Text(l.designGallery),
+                onTap: () => Navigator.of(ctx).pop('gallery'),
+              ),
+            ],
           ],
         ),
       ),
