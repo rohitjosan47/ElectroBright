@@ -2,7 +2,7 @@
 
 A three-channel ElectroBright light (red, green and blue) on the RGBW board without its white channel. It has every mode and feature of the RGBW light:
 - all 13 modes, with the same sliders;
-- 25 presets, the sleep timer and sound;
+- 15 presets (slots 0..14), the sleep timer and sound;
 - DIAG and factory reset.
 
 This sketch is the shared core ([`firmware/core`](../../core/ElectroBrightCore)) plus [`Fixture.h`](Fixture.h).
@@ -10,7 +10,7 @@ This sketch is the shared core ([`firmware/core`](../../core/ElectroBrightCore))
 | | |
 |---|---|
 | Model id / BLE name | `EB-C3-RGB-V1` / `ElectroBright_C3_RGB_V1` |
-| CAPS | `CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,LAYOUT=RGB` |
+| CAPS | `CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,LAYOUT=RGB` |
 | Channels (wire order) | R, G, B |
 | Colour on the wire | `COLOR:r,g,b` and `POLICE_COLOR_A/B:r,g,b`; 7-byte binary frame `[AA, seq, R, G, B, Br, cs]`, salt 0x56; STATUS has 20 fields |
 | Flash namespace | `eb3rgb` (separate from RGBW) |

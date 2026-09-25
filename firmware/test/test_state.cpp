@@ -16,7 +16,99 @@ TEST(store_empty_flash_gives_defaults_and_no_presets) {
   CHECK(memcmp(&s, &d, sizeof(Scene)) == 0);
   CHECK_EQ(set.soundEnabled, 1);
   CHECK_EQ(store.presetMask(), 0u);
-  CHECK_EQ(kv.writes, 0);  // loading never writes
+  // The first load marks the preset format (one write); later loads write
+  // nothing and erase nothing.
+  CHECK_EQ(kv.writes, 1);
+  CHECK(kv.data["pv"] == std::vector<uint8_t>{StateStore::kPresetFormat});
+  StateStore store2(kv, st, fx::rgbw::kProfile);
+  const int erases = kv.erases;
+  store2.load(s, set);
+  CHECK_EQ(kv.writes, 1);
+  CHECK_EQ(kv.erases, erases);
+  CHECK_EQ(store2.presetMask(), 0u);
+}
+
+TEST(store_wipes_presets_of_older_firmware_once) {
+  // Flash of the 25-slot firmware: presets (one beyond the new range), a
+  // scene and settings, no preset format marker.
+  MockKv kv;
+  Stats st;
+  Scene live = state::defaultScene(fx::rgbw::kProfile.defaults);
+  live.mode = 9;
+  live.color = {12, 34, 56, 78};
+  std::vector<uint8_t> rec(scenecodec::recordSize(layouts::kRgbw));
+  scenecodec::pack(live, layouts::kRgbw, rec.data());
+  kv.data["scene"] = rec;
+  kv.data["p03"] = rec;
+  kv.data["p14"] = rec;
+  kv.data["p20"] = rec;
+  {
+    StateStore seed(kv, st, fx::rgbw::kProfile);
+    Settings muted = state::defaultSettings();
+    muted.soundEnabled = 0;
+    CHECK(seed.saveSettings(muted));  // written without touching presets
+  }
+  const std::vector<uint8_t> sceneBefore = kv.data["scene"];
+  const std::vector<uint8_t> settingsBefore = kv.data["set"];
+  kv.writes = 0;
+
+  StateStore store(kv, st, fx::rgbw::kProfile);
+  Scene s;
+  Settings set;
+  store.load(s, set);
+  CHECK_EQ(store.presetMask(), 0u);
+  CHECK(kv.data.count("p03") == 0);
+  CHECK(kv.data.count("p14") == 0);
+  CHECK(kv.data.count("p20") == 0);
+  CHECK(kv.data["pv"] == std::vector<uint8_t>{StateStore::kPresetFormat});
+  CHECK_EQ(kv.writes, 1);  // only the marker
+  // The live scene and the settings are kept, on flash and in memory.
+  CHECK(kv.data["scene"] == sceneBefore);
+  CHECK(kv.data["set"] == settingsBefore);
+  CHECK_EQ(s.mode, 9);
+  CHECK(s.color == live.color);
+  CHECK_EQ(set.soundEnabled, 0);
+  Scene out;
+  CHECK(!store.loadPreset(3, out));
+  CHECK(!store.loadPreset(14, out));
+}
+
+TEST(store_keeps_presets_saved_on_the_current_format) {
+  MockKv kv;
+  Stats st;
+  kv.markPresetFormat();
+  Scene p = state::defaultScene(fx::rgbw::kProfile.defaults);
+  p.mode = 6;
+  std::vector<uint8_t> rec(scenecodec::recordSize(layouts::kRgbw));
+  scenecodec::pack(p, layouts::kRgbw, rec.data());
+  kv.data["p05"] = rec;
+
+  StateStore store(kv, st, fx::rgbw::kProfile);
+  Scene s;
+  Settings set;
+  store.load(s, set);
+  CHECK_EQ(store.presetMask(), 1u << 5);
+  CHECK_EQ(kv.erases, 0);
+  CHECK_EQ(kv.writes, 0);
+  Scene out;
+  CHECK(store.loadPreset(5, out));
+  CHECK_EQ(out.mode, 6);
+}
+
+TEST(store_retries_the_wipe_when_an_erase_fails) {
+  MockKv kv;
+  Stats st;
+  kv.failWrites = true;  // erases and writes fail
+  StateStore store(kv, st, fx::rgbw::kProfile);
+  Scene s;
+  Settings set;
+  store.load(s, set);
+  CHECK(kv.data.count("pv") == 0);  // not marked: the next boot wipes again
+  CHECK(Stats::get(st.nvsFailures) > 0u);
+  kv.failWrites = false;
+  StateStore store2(kv, st, fx::rgbw::kProfile);
+  store2.load(s, set);
+  CHECK(kv.data["pv"] == std::vector<uint8_t>{StateStore::kPresetFormat});
 }
 
 TEST(store_debounces_scene_writes) {
@@ -26,22 +118,23 @@ TEST(store_debounces_scene_writes) {
   Scene s;
   Settings set;
   store.load(s, set);
+  const int w0 = kv.writes;  // the preset format marker
 
   s.color = {1, 2, 3, 4};
   store.noteSceneChanged(0);
   store.tick(1000, s);
-  CHECK_EQ(kv.writes, 0);
+  CHECK_EQ(kv.writes, w0);
   store.tick(2999, s);
-  CHECK_EQ(kv.writes, 0);
+  CHECK_EQ(kv.writes, w0);
   store.tick(3000, s);
-  CHECK_EQ(kv.writes, 1);
+  CHECK_EQ(kv.writes, w0 + 1);
   store.tick(10000, s);
-  CHECK_EQ(kv.writes, 1);  // nothing pending
+  CHECK_EQ(kv.writes, w0 + 1);  // nothing pending
 
   // Unchanged data is never rewritten.
   store.noteSceneChanged(20000);
   store.tick(30000, s);
-  CHECK_EQ(kv.writes, 1);
+  CHECK_EQ(kv.writes, w0 + 1);
 }
 
 TEST(store_max_latency_bounds_continuous_streaming) {
@@ -51,15 +144,16 @@ TEST(store_max_latency_bounds_continuous_streaming) {
   Scene s;
   Settings set;
   store.load(s, set);
+  const int w0 = kv.writes;  // the preset format marker
   // A change every 100 ms forever: the debounce alone would never fire.
   uint32_t t = 0;
   for (; t < 20000; t += 100) {
     s.color.r = static_cast<uint8_t>(t / 100);
     store.noteSceneChanged(t);
     store.tick(t, s);
-    if (kv.writes > 0) break;
+    if (kv.writes > w0) break;
   }
-  CHECK_EQ(kv.writes, 1);
+  CHECK_EQ(kv.writes, w0 + 1);
   CHECK(t >= cfg::kPersistMaxLatencyMs && t < cfg::kPersistMaxLatencyMs + 200);
 }
 
@@ -93,6 +187,7 @@ TEST(store_rejects_corrupt_or_foreign_records) {
   MockKv kv;
   Stats st;
   StateStore store(kv, st, fx::rgbw::kProfile);
+  kv.markPresetFormat();  // the bad presets are validated, not wiped
   // Wrong size.
   kv.data["scene"] = std::vector<uint8_t>(5, 0);
   // Right size, invalid mode.
@@ -126,22 +221,23 @@ TEST(store_presets_save_load_delete_and_mask) {
   s.mode = 12;
   CHECK(store.savePreset(0, s));
   s.mode = 4;
-  CHECK(store.savePreset(24, s));
-  CHECK_EQ(store.presetMask(), (1u << 0) | (1u << 24));
-  CHECK(!store.savePreset(25, s));
+  CHECK(store.savePreset(14, s));
+  CHECK_EQ(store.presetMask(), (1u << 0) | (1u << 14));
+  CHECK(!store.savePreset(15, s));
 
   Scene out;
   CHECK(store.loadPreset(0, out));
   CHECK_EQ(out.mode, 12);
   CHECK(store.deletePreset(0));
   CHECK(!store.loadPreset(0, out));
-  CHECK_EQ(store.presetMask(), 1u << 24);
+  CHECK_EQ(store.presetMask(), 1u << 14);
   CHECK(store.deletePreset(5));  // deleting an empty slot is fine
 
-  // Presets survive a reload (mask rebuilt from flash).
+  // Presets survive a reload (mask rebuilt from flash): the one-time wipe
+  // ran on the first load only.
   StateStore store2(kv, st, fx::rgbw::kProfile);
   store2.load(s, set);
-  CHECK_EQ(store2.presetMask(), 1u << 24);
+  CHECK_EQ(store2.presetMask(), 1u << 14);
 }
 
 TEST(store_factory_reset_erases_everything) {

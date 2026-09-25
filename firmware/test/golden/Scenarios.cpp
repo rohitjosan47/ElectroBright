@@ -7,6 +7,9 @@
 //   3.5.0  5- and 9-byte 0xAA writes (single-white / RGBCCT frames) count as
 //          bad binary frames (DIAG binbad) instead of going to the text parser,
 //          so the STATUS after them is answered instead of swallowed
+//   3.6.0  VERSION; kNumPresets 25 → 15, CAPS gained PRESETS=15, legacy
+//          presets wiped once on first boot (marker key pv): PRESET_*:15 is
+//          out of range, and DIAG nvsw counts the marker write
 // Any other difference means RGBW behaviour changed.
 //
 //   make golden-record     rewrite the golden file (only when a change is intended)
@@ -320,7 +323,7 @@ std::string transcripts() {
          {"RGBW:1,2,3", "RGBW:1,2,3,4,5", "RGBW:256,0,0,0", "COLOR:a,b,c,d", "COLOR:1,,2,3", "BRIGHTNESS:300",
           "BRIGHTNESS:", "MODE:0", "MODE:14", "SPEED:0", "SPEED:11", "FREQUENCY:11", "FIREWORK_COLOR_MODE:2",
           "CLUB_COLOR_MODE:2", "POLICE_COLOR_MODE:2", "POLICE_COLOR_A:1,2,3", "POLICE_COLOR_B:1,2,3,4,5",
-          "PRESET_SAVE:25", "PRESET_LOAD:3", "PRESET_DELETE:25", "MODE_SPEED:14,5", "MODE_SPEED:1,0",
+          "PRESET_SAVE:15", "PRESET_LOAD:3", "PRESET_DELETE:15", "MODE_SPEED:14,5", "MODE_SPEED:1,0",
           "MODE_FREQUENCY:0,5", "MODE_CAPABILITIES:14", "TIMER:86401", "TIMER:-1", "BOGUS", "", "STATUS:1",
           "PING:", "RGBW:99999999999,0,0,0", "RGBW:+1,0,0,0"}) {
       t.line(c);
@@ -333,8 +336,8 @@ std::string transcripts() {
     Transcript t("presets");
     t.dev->setMtu(247);
     for (const char* c : {"COLOR:10,20,30,40", "MODE:6", "MODE_SPEED:6,2", "PRESET_SAVE:0", "COLOR:1,1,1,1",
-                          "MODE:11", "PRESET_SAVE:24", "PRESET_LIST", "PRESET_LOAD:0", "MODE_SETTINGS",
-                          "PRESET_DELETE:0", "PRESET_LIST", "PRESET_LOAD:0", "SLEEP", "PRESET_LOAD:24"}) {
+                          "MODE:11", "PRESET_SAVE:14", "PRESET_LIST", "PRESET_LOAD:0", "MODE_SETTINGS",
+                          "PRESET_DELETE:0", "PRESET_LIST", "PRESET_LOAD:0", "SLEEP", "PRESET_LOAD:14"}) {
       t.line(c);
     }
     t.advance(16000);

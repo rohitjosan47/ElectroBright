@@ -1,7 +1,7 @@
 # ElectroBright W fixture (single white)
 
 A single-channel ElectroBright light for single-colour white strips. It has the same features as the other fixtures:
-- presets, the sleep timer and sound;
+- 15 presets (slots 0..14), the sleep timer and sound;
 - DIAG and factory reset;
 - **12 of the 13 modes**: every mode except Rainbow.
 
@@ -10,7 +10,7 @@ This sketch is the shared core ([`firmware/core`](../../core/ElectroBrightCore))
 | | |
 |---|---|
 | Model id / BLE name | `EB-C3-W-V1` / `ElectroBright_C3_W_V1` |
-| CAPS | `CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,LAYOUT=W,MODES=1DFF` |
+| CAPS | `CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,LAYOUT=W,MODES=1DFF` |
 | Channels | W |
 | Colour on the wire | `COLOR:w` and `POLICE_COLOR_A/B:w`; 5-byte binary frame `[AA, seq, W, Br, cs]`, salt 0x54; STATUS has 14 fields |
 | Flash namespace | `eb3w` (separate from the other fixtures) |

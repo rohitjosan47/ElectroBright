@@ -5,10 +5,10 @@ The original ElectroBright light: four channels, red, green, blue and a white LE
 | | |
 |---|---|
 | Model id / BLE name | `EB-C3-RGBW-V1` / `ElectroBright_C3_V1` |
-| CAPS | `CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,LAYOUT=RGBW` |
+| CAPS | `CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,LAYOUT=RGBW` |
 | Channels (wire order) | R, G, B, W |
 | Colour on the wire | `COLOR:r,g,b,w` (alias `RGBW:`); 8-byte binary frame, plus the legacy 7/6-byte frames; STATUS has 23 fields |
-| Flash namespace | `eb3`: presets from firmware 3.4.0 are kept |
+| Flash namespace | `eb3`: updating clears saved presets once; colour, mode and the sound setting are kept |
 
 ## Wiring
 

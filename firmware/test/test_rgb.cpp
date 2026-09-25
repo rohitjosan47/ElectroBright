@@ -63,7 +63,7 @@ TEST(rgb_reports_its_identity_and_layout) {
   r.send("CAPS");
   CHECK_STR(r.env.lines[0], "INFO:EB-C3-RGB-V1");
   CHECK_STR(r.env.lines[1], std::string("VERSION:") + cfg::kFirmwareVersion);
-  CHECK_STR(r.env.lines[2], "CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,LAYOUT=RGB");
+  CHECK_STR(r.env.lines[2], "CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,LAYOUT=RGB");
 }
 
 // ---- Text protocol ------------------------------------------------------------------
@@ -208,6 +208,7 @@ TEST(rgb_store_rejects_records_with_a_white_value) {
   // Same record size as RGB (neither has warm white); written with W kept.
   std::vector<uint8_t> rec(scenecodec::recordSize(layouts::kRgbw));
   scenecodec::pack(bad, layouts::kRgbw, rec.data());
+  kv.markPresetFormat();  // the preset is rejected as invalid, not wiped
   kv.data["scene"] = rec;
   kv.data["p02"] = rec;
   StateStore store(kv, st, kRgb);

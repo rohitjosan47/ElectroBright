@@ -7,6 +7,7 @@
 namespace {
 constexpr const char* kSceneKey = "scene";
 constexpr const char* kSettingsKey = "set";
+constexpr const char* kPresetFormatKey = "pv";  // presets are "p00".."p24": no clash
 }  // namespace
 
 void StateStore::presetKey(uint8_t id, char out[4]) {
@@ -51,6 +52,7 @@ void StateStore::load(Scene& scene, Settings& settings) {
     settings = state::defaultSettings();
   }
 
+  ensurePresetFormat();
   presetMask_ = 0;
   for (uint8_t i = 0; i < cfg::kNumPresets; ++i) {
     char key[4];
@@ -61,6 +63,26 @@ void StateStore::load(Scene& scene, Settings& settings) {
     }
   }
   dirty_ = false;
+}
+
+void StateStore::ensurePresetFormat() {
+  uint8_t format = 0;
+  if (kv_.read(kPresetFormatKey, &format, sizeof(format)) && format == kPresetFormat) return;
+  // Older firmware's presets (or none, on a new device): drop every slot it
+  // could have used. A key that is already absent erases fine.
+  bool cleared = true;
+  for (uint8_t i = 0; i < kLegacyPresetSlots; ++i) {
+    char key[4];
+    presetKey(i, key);
+    if (!kv_.erase(key)) {
+      cleared = false;
+      Stats::inc(stats_.nvsFailures);
+    }
+  }
+  // Marked only once every old slot is gone; otherwise the next boot retries.
+  if (!cleared) return;
+  const uint8_t current = kPresetFormat;
+  noteWrite(kv_.write(kPresetFormatKey, &current, sizeof(current)));
 }
 
 void StateStore::noteSceneChanged(uint32_t nowMs) {

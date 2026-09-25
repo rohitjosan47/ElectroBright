@@ -23,7 +23,8 @@ Against the firmware simulator (no hardware; firmware/test/build/fwsim/fwsim):
     python3 fw_conformance.py --fwsim ../test/build/fwsim/fwsim --fixture rgb
 
 The suite restores the fixture's colour / mode / brightness / sound when it
-finishes and only uses preset slot 24 (deleted afterwards if it was empty).
+finishes and only uses preset slot 14, the last of 15 (deleted afterwards if
+it was empty).
 """
 
 import argparse
@@ -36,7 +37,8 @@ NUS_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 NUS_RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"  # phone -> device
 NUS_TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  # device -> phone
 NAME_PREFIX = "ElectroBright_C3_"
-TEST_SLOT = 24
+PRESET_SLOTS = 15  # firmware: cfg::kNumPresets, announced as CAPS PRESETS=
+TEST_SLOT = PRESET_SLOTS - 1
 
 # Channel roles per layout, in wire order (firmware: fixture/ChannelLayout.h).
 LAYOUTS = {
@@ -283,6 +285,8 @@ async def suite_handshake(fx, R, info, caps, expect_version):
     R.check(re.match(rf"^INFO:EB-C3-{L.name}-V\d+$", info or "") is not None, "INFO identifies model and layout", info)
     R.check(caps is not None and "PROTOCOL=1" in caps, "CAPS reports PROTOCOL=1", caps)
     R.check(caps is not None and f"LAYOUT={L.name}" in caps, f"CAPS reports LAYOUT={L.name}", caps)
+    R.check(caps is not None and f"PRESETS={PRESET_SLOTS}" in caps.split(":", 1)[1].split(","),
+            f"CAPS reports PRESETS={PRESET_SLOTS}", caps)
     st = await fx.cmd("STATUS", "STATUS:")
     R.check(st is not None and len(st[7:].split(",")) == L.status_fields, f"STATUS has {L.status_fields} fields", st)
     ms = await fx.cmd("MODE_SETTINGS", "MODE_SETTINGS:")
@@ -350,7 +354,7 @@ async def suite_errors(fx, R):
              f"COLOR:{csv([1] * (L.n + 1))}": "ERROR:FORMAT",
              f"COLOR:{csv([256] + [0] * (L.n - 1))}": "ERROR:FORMAT",
              f"POLICE_COLOR_A:{csv([1] * (L.n + 1))}": "ERROR:FORMAT",
-             "BRIGHTNESS:x": "ERROR:BRIGHTNESS_INVALID", "PRESET_LOAD:25": "ERROR:PRESET_ID",
+             "BRIGHTNESS:x": "ERROR:BRIGHTNESS_INVALID", "PRESET_LOAD:15": "ERROR:PRESET_ID",
              "TIMER:86401": "ERROR:FORMAT", "NOPE": "ERROR:UNKNOWN_CMD"}
     if not L.has_w:
         cases["RGBW:1,2,3,4"] = "ERROR:UNKNOWN_CMD"

@@ -3,11 +3,11 @@
 Firmware for ElectroBright BLE light fixtures. One **shared core** holds everything the fixtures have in common:
 - all 13 modes and effects;
 - the BLE protocol;
-- presets, the sleep timer, sound, diagnostics and persistence.
+- 15 presets (`PRESET_SAVE` / `PRESET_LOAD` / `PRESET_DELETE` take slots 0..14), the sleep timer, sound, diagnostics and persistence.
 
 Each **fixture** is a small Arduino sketch that adds only its identity, channel layout and wiring. Every fixture works with the ElectroBright app. The protocol contract is in [`docs/protocol.md`](../docs/protocol.md), and the hardware is described in [`docs/wiring_guide.md`](../docs/wiring_guide.md).
 
-Family version **3.5.0**
+Family version **3.6.0**
 
 | Fixture | Sketch | Channels | Model id | BLE name | Status |
 |---|---|---|---|---|---|
@@ -52,10 +52,10 @@ firmware/tools/build.sh            # every fixture
 firmware/tools/build.sh RGB        # one fixture (folder suffix)
 ```
 
-Reference build (3.5.0), per fixture: ≈655 KB flash (49 %) and 31.0 KB static RAM (9 %), with zero compiler warnings under `--warnings all`.
+Reference build (3.6.0), per fixture: ≈657 KB flash (50 %) and 31.0 KB static RAM (9 %), with zero compiler warnings under `--warnings all`.
 
 **First boot starts clean.** Each fixture stores its settings and presets in its own NVS namespace: `eb3` for RGBW, `eb3rgb` for RGB and `eb3rgbcct` for RGBCCT, `eb3cct` for CCT and `eb3w` for W.
-- An RGBW light updated from 3.4.0 keeps its presets, because the namespace and the byte layout are unchanged.
+- Updating to this firmware clears all saved presets once; colour, mode and the sound setting are kept.
 - Data from the original pre-3.x firmware (namespace `eeprom`) is erased once.
 
 ---
@@ -245,7 +245,7 @@ How this firmware differs from the original (pre-3.x) firmware:
   - Colour and brightness received while asleep update the stored values but do not wake the light. In the original firmware, a late drag packet after pressing Power turned it back on.
   - `WAKE`, `MODE` and `PRESET_LOAD` wake the light.
 - **Timer:** when it fires, the light fades out over 2 s and pushes an unsolicited `STATUS`.
-- **Presets:** loading a preset keeps the mute setting. Mute is a device setting, not part of a scene.
+- **Presets:** 15 slots, 0..14 (CAPS announces `PRESETS=15`). Loading a preset keeps the mute setting. Mute is a device setting, not part of a scene.
 - **Power-up:** sleep state is not persisted, so power-up always means light on.
 - **Persistence:** the live scene is saved 3 s after the last change, and at most 15 s after the first change. The sound setting and presets are saved immediately.
 

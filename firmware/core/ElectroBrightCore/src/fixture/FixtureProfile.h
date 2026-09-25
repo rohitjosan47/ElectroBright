@@ -24,7 +24,7 @@ struct FixtureProfile {
   const ChannelLayout* layout;
   const char* modelId;       // INFO reply: EB-C3-<LAYOUT>-V<n>
   const char* deviceName;    // BLE name; the app scans for the "ElectroBright_C3_" prefix
-  const char* capsReply;     // complete CAPS reply line, ends with LAYOUT=<layout name>
+  const char* capsReply;     // complete CAPS reply line: ...,PRESETS=<cfg::kNumPresets>,LAYOUT=<layout name>[,MODES=<hex>]
   const char* nvsNamespace;  // settings + presets (max 15 chars, unique per fixture)
   uint8_t pins[kMaxChannels];  // GPIO for each layout channel, in wire order
   uint8_t buzzerPin;

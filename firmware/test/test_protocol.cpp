@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "ElectroBright_RGBW/Fixture.h"
+#include "Fixtures.h"
 #include "protocol/BinaryFrame.h"
 #include "protocol/CommandParser.h"
 #include "protocol/Egress.h"
@@ -25,7 +26,7 @@ TEST(parser_accepts_every_app_command) {
       {"FREQUENCY:1", CmdId::Frequency, 1},          {"FIREWORK_COLOR_MODE:1", CmdId::FireworkColorMode, 1},
       {"CLUB_COLOR_MODE:0", CmdId::ClubColorMode, 1}, {"POLICE_COLOR_MODE:1", CmdId::PoliceColorMode, 1},
       {"POLICE_COLOR_A:1,2,3,4", CmdId::PoliceColorA, 4}, {"POLICE_COLOR_B:5,6,7,8", CmdId::PoliceColorB, 4},
-      {"PRESET_SAVE:24", CmdId::PresetSave, 1},      {"PRESET_LOAD:0", CmdId::PresetLoad, 1},
+      {"PRESET_SAVE:14", CmdId::PresetSave, 1},      {"PRESET_LOAD:0", CmdId::PresetLoad, 1},
       {"PRESET_DELETE:3", CmdId::PresetDelete, 1},   {"PRESET_LIST", CmdId::PresetList, 0},
       {"STATUS", CmdId::Status, 0},                  {"MODE_SETTINGS", CmdId::ModeSettings, 0},
       {"SLEEP", CmdId::Sleep, 0},                    {"WAKE", CmdId::Wake, 0},
@@ -78,7 +79,7 @@ TEST(parser_rejects_malformed_input_with_legacy_codes) {
       {"SPEED:11", ParseStatus::Range, "SPEED_OUT_OF_BOUNDS"},
       {"FREQUENCY:0", ParseStatus::Range, "FREQUENCY_INVALID"},
       {"BRIGHTNESS:999999999999", ParseStatus::Range, "BRIGHTNESS_INVALID"},
-      {"PRESET_LOAD:25", ParseStatus::Range, "PRESET_ID"},
+      {"PRESET_LOAD:15", ParseStatus::Range, "PRESET_ID"},
       {"TIMER:86401", ParseStatus::Range, "FORMAT"},
       {"CLUB_COLOR_MODE:2", ParseStatus::Range, "CLUB_COLOR_MODE_INVALID"},
       {"MODE_SPEED:14,5", ParseStatus::Range, "MODE_SPEED_INVALID"},
@@ -206,8 +207,8 @@ TEST(mode_settings_and_presets_replies) {
   CHECK_STR(buf, "MODE_SETTINGS:1,5;5,5;5,5;5,5;5,5;5,5;5,5;5,5;5,5;5,5;5,5;5,5;5,10");
   replies::presets(buf, sizeof(buf), 0);
   CHECK_STR(buf, "PRESETS:");
-  replies::presets(buf, sizeof(buf), (1u << 0) | (1u << 3) | (1u << 24));
-  CHECK_STR(buf, "PRESETS:0,3,24,");
+  replies::presets(buf, sizeof(buf), (1u << 0) | (1u << 3) | (1u << 14));
+  CHECK_STR(buf, "PRESETS:0,3,14,");
   replies::presetEmpty(buf, sizeof(buf), 12);
   CHECK_STR(buf, "ERROR:PRESET_EMPTY:12");
 }
@@ -299,4 +300,25 @@ TEST(egress_drops_oldest_whole_lines_when_full) {
   CHECK(wire[0] != 'a');                     // the oldest line was evicted
   CHECK_EQ(wire.size() % 100, 0u);           // only whole lines remain
   CHECK(wire.find('l') != std::string::npos);  // the newest line survived
+}
+
+TEST(caps_announce_the_preset_count_of_every_fixture) {
+  for (const NamedFixture& f : kAllFixtures) {
+    const std::string caps = f.profile->capsReply;
+    CHECK_EQ(caps.rfind("CAPS:", 0), size_t{0});
+    // Exactly one PRESETS= field, equal to the slot count the firmware has.
+    int found = 0;
+    size_t start = 5;
+    while (start <= caps.size()) {
+      size_t end = caps.find(',', start);
+      if (end == std::string::npos) end = caps.size();
+      const std::string field = caps.substr(start, end - start);
+      if (field.rfind("PRESETS=", 0) == 0) {
+        ++found;
+        CHECK_STR(field.substr(8), std::to_string(cfg::kNumPresets));
+      }
+      start = end + 1;
+    }
+    CHECK_EQ(found, 1);
+  }
 }

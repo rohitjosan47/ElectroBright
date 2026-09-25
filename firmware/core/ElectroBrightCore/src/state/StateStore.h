@@ -8,6 +8,9 @@
 //  * Settings and presets are written immediately (rare, user-initiated).
 //  * Every record carries a schema byte; anything that fails validation is
 //    treated as absent and replaced by defaults.
+//  * Presets carry a format marker ("pv"). Flash without the current one
+//    holds presets of older firmware (up to 25 slots): they are erased once,
+//    not migrated. The scene and settings are kept.
 
 #include <stdint.h>
 
@@ -18,12 +21,15 @@
 class StateStore {
  public:
   static constexpr uint8_t kSchema = 1;  // settings record (scenes: SceneCodec)
+  static constexpr uint8_t kPresetFormat = 2;  // "pv": 15 slots (older firmware: none, 25 slots)
+  static constexpr uint8_t kLegacyPresetSlots = 25;  // p00..p24, erased by the one-time wipe
 
   StateStore(IKeyValueStore& kv, Stats& stats, const FixtureProfile& fixture)
       : kv_(kv), stats_(stats), fixture_(fixture) {}
 
-  // Loads scene + settings (defaults for anything missing/invalid) and scans
-  // which preset slots are occupied.
+  // Loads scene + settings (defaults for anything missing/invalid), clears
+  // presets of an older format once, and scans which preset slots are
+  // occupied.
   void load(Scene& scene, Settings& settings);
 
   // Live scene debounce.
@@ -51,6 +57,7 @@ class StateStore {
   };
 
   static void presetKey(uint8_t id, char out[4]);
+  void ensurePresetFormat();
   bool writeScene(const Scene& scene);
   bool noteWrite(bool ok);
 

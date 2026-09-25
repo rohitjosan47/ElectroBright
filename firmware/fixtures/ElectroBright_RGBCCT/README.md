@@ -2,7 +2,7 @@
 
 A five-channel ElectroBright light: red, green and blue make colours, and cool white (CW) plus warm white (WW) make whites. It suits an RGB+CCT ("RGBWW", 6-pin) LED strip. It has every mode and feature of the other fixtures:
 - all 13 modes, with the same sliders;
-- 25 presets, the sleep timer and sound;
+- 15 presets (slots 0..14), the sleep timer and sound;
 - DIAG and factory reset.
 
 This sketch is the shared core ([`firmware/core`](../../core/ElectroBrightCore)) plus [`Fixture.h`](Fixture.h).
@@ -10,7 +10,7 @@ This sketch is the shared core ([`firmware/core`](../../core/ElectroBrightCore))
 | | |
 |---|---|
 | Model id / BLE name | `EB-C3-RGBCCT-V1` / `ElectroBright_C3_RGBCCT_V1` |
-| CAPS | `CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,LAYOUT=RGBCCT` |
+| CAPS | `CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,LAYOUT=RGBCCT` |
 | Channels (wire order) | R, G, B, CW, WW |
 | Colour on the wire | `COLOR:r,g,b,cw,ww` and `POLICE_COLOR_A/B:r,g,b,cw,ww`; 9-byte binary frame `[AA, seq, R, G, B, CW, WW, Br, cs]`, salt 0x50; STATUS has 26 fields |
 | Flash namespace | `eb3rgbcct` (separate from the other fixtures); 47-byte scene/preset records |

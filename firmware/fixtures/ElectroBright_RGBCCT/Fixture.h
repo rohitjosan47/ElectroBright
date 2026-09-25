@@ -16,7 +16,7 @@ namespace rgbcct {
 // Identity (the app matches these; the cross-repo tests read them).
 constexpr const char* kDeviceName = "ElectroBright_C3_RGBCCT_V1";
 constexpr const char* kModelId = "EB-C3-RGBCCT-V1";
-constexpr const char* kCapsReply = "CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,LAYOUT=RGBCCT";
+constexpr const char* kCapsReply = "CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,LAYOUT=RGBCCT";
 constexpr const char* kNvsNamespace = "eb3rgbcct";  // separate from the other fixtures
 
 // Wiring (RGBW board positions; W becomes cool white, warm white is added on

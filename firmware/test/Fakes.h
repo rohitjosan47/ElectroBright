@@ -25,6 +25,7 @@ class MockKv : public IKeyValueStore {
     return true;
   }
   bool erase(const char* key) override {
+    ++erases;
     if (failWrites) return false;
     data.erase(key);
     return true;
@@ -35,8 +36,12 @@ class MockKv : public IKeyValueStore {
     return true;
   }
 
+  // Flash already on the current preset format (no one-time wipe on load).
+  void markPresetFormat() { data["pv"] = {StateStore::kPresetFormat}; }
+
   std::map<std::string, std::vector<uint8_t>> data;
   int writes = 0;
+  int erases = 0;
   bool failWrites = false;
 };
 
