@@ -241,6 +241,27 @@ class _GlassSegmentedState<T> extends State<GlassSegmented<T>>
 }
 
 /// A lighting-mode tile: animated glyph, name, lit when active.
+/// The frame of an effect choice: the accent border and glow when selected
+/// (effect tiles and the Solid Color row).
+ShapeDecoration modeSelectionFrame(LightTone tone, {required bool selected}) =>
+    ShapeDecoration(
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(Radii.medium),
+        side: BorderSide(
+          color: selected ? Color(tone.accent) : Colors.transparent,
+          width: 2,
+        ),
+      ),
+      shadows: selected
+          ? <BoxShadow>[
+              BoxShadow(
+                color: Color(tone.glow).withValues(alpha: 0.35),
+                blurRadius: 20,
+              ),
+            ]
+          : const <BoxShadow>[],
+    );
+
 class ModeTile extends StatelessWidget {
   const ModeTile({
     required this.spec,
@@ -277,25 +298,9 @@ class ModeTile extends StatelessWidget {
           onTap();
         },
         child: AnimatedContainer(
-          duration: Motion.medium,
+          duration: Motion.reduced(context) ? Duration.zero : Motion.medium,
           curve: Motion.emphasized,
-          decoration: ShapeDecoration(
-            shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(Radii.medium),
-              side: BorderSide(
-                color: selected ? Color(tone.accent) : Colors.transparent,
-                width: 2,
-              ),
-            ),
-            shadows: selected
-                ? <BoxShadow>[
-                    BoxShadow(
-                      color: Color(tone.glow).withValues(alpha: 0.35),
-                      blurRadius: 20,
-                    ),
-                  ]
-                : const <BoxShadow>[],
-          ),
+          decoration: modeSelectionFrame(tone, selected: selected),
           child: GlassSurface(
             radius: Radii.medium,
             padding: const EdgeInsets.all(Space.s),

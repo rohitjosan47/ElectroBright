@@ -21,6 +21,7 @@ import '../../../drivers/electrobright/eb_types.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../sessions/fixture_session.dart';
 import '../colour/colour_editor.dart';
+import '../effects/effects_panel.dart';
 import '../effects/mode_presentation.dart';
 import 'preset_meta.dart';
 
@@ -77,12 +78,13 @@ class PresetsPanel extends ConsumerWidget {
             ),
           ),
         GridView.count(
-          crossAxisCount: large ? 2 : 3,
+          // 15 slots: 3 × 5, shaped like the effect tiles.
+          crossAxisCount: large ? 2 : effectColumns,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: Space.s,
           crossAxisSpacing: Space.s,
-          childAspectRatio: large ? 1.2 : 1.05,
+          childAspectRatio: large ? 1.2 : effectTileAspect,
           children: <Widget>[
             for (int slot = 0; slot < capabilities.presetSlots; slot++)
               _SlotTile(
@@ -112,6 +114,9 @@ class PresetsPanel extends ConsumerWidget {
     );
   }
 
+  // A light on firmware before 3.6.0 may still hold presets from the old
+  // format; they show as 'Preset N' without a preview until the light is
+  // updated to 3.6.0, which clears them.
   static String _name(AppLocalizations l, PresetMeta meta, int slot) =>
       meta[slot]?.name ?? l.presetDefaultName(slot + 1);
 

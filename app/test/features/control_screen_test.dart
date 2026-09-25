@@ -319,4 +319,73 @@ void main() {
     );
     await DemoApp.shutDown(t);
   });
+
+  testWidgets('effects: Solid Color on its own row, 12 effects in the grid', (
+    WidgetTester t,
+  ) async {
+    final DemoApp d = await open(t, 'Desk strip');
+    await t.tap(tab('Effects'));
+    await settle(t, 1);
+    final Finder grid = find.byKey(const ValueKey<String>('effects-grid'));
+    final GridView g = t.widget<GridView>(grid);
+    expect(
+      (g.childrenDelegate as SliverChildListDelegate).children,
+      hasLength(12),
+    );
+    expect(
+      (g.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount)
+          .crossAxisCount,
+      3,
+    );
+    // Solid Color is above the grid, not in it.
+    final Finder solid = find.byKey(const ValueKey<String>('mode-1'));
+    expect(solid, findsOneWidget);
+    expect(find.descendant(of: grid, matching: solid), findsNothing);
+    expect(t.getRect(solid).bottom, lessThan(t.getRect(grid).top));
+    // Another effect, then back to Solid Color.
+    await t.tap(find.byKey(const ValueKey<String>('mode-4')));
+    await settle(t);
+    expect(d.twin('Desk strip').mode, 4);
+    await t.tap(solid);
+    await settle(t);
+    expect(d.twin('Desk strip').mode, 1);
+    // Only the running effect's glyph animates.
+    await t.tap(find.byKey(const ValueKey<String>('mode-6')));
+    await settle(t);
+    final Iterable<ModeTile> tiles = t.widgetList<ModeTile>(
+      find.descendant(of: grid, matching: find.byType(ModeTile)),
+    );
+    expect(
+      tiles.where((ModeTile m) => m.animate).map((ModeTile m) => m.spec.id),
+      <int>[6],
+    );
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('presets: 15 empty slots in a 3 × 5 grid', (
+    WidgetTester t,
+  ) async {
+    await open(t, 'Living room');
+    await t.tap(tab('Presets'));
+    await settle(t, 1);
+    for (int slot = 0; slot < 15; slot++) {
+      expect(
+        find.byKey(ValueKey<String>('preset-$slot')),
+        findsOneWidget,
+        reason: 'slot $slot',
+      );
+    }
+    expect(find.byKey(const ValueKey<String>('preset-15')), findsNothing);
+    expect(find.text('Empty'), findsNWidgets(15));
+    // Three per row.
+    final double row0 = t
+        .getRect(find.byKey(const ValueKey<String>('preset-0')))
+        .top;
+    expect(t.getRect(find.byKey(const ValueKey<String>('preset-2'))).top, row0);
+    expect(
+      t.getRect(find.byKey(const ValueKey<String>('preset-3'))).top,
+      greaterThan(row0),
+    );
+    await DemoApp.shutDown(t);
+  });
 }

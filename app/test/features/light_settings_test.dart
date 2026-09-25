@@ -28,6 +28,7 @@ void main() {
     await t.tap(find.byKey(const ValueKey<String>('settings-caps')));
     await settle(t, 1);
     expect(find.text('12 of 13'), findsOneWidget);
+    expect(find.text('15 on the light'), findsOneWidget);
     expect(
       find.text("Rainbow isn't available on single-white lights."),
       findsOneWidget,

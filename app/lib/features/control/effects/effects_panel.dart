@@ -8,9 +8,13 @@ import '../../../core/model/channel_layout.dart';
 import '../../../core/model/light_capabilities.dart';
 import '../../../core/protocol/eb/eb_scene.dart';
 import '../../../core/protocol/eb/mode_catalog.dart';
+import '../../../core/color/light_tone.dart';
 import '../../../design/components/glass_controls.dart';
+import '../../../design/components/mode_glyph.dart';
 import '../../../design/controls/glass_slider.dart';
 import '../../../design/glass/glass_surface.dart';
+import '../../../design/haptics/haptics.dart';
+import '../../../design/haptics/haptics_scope.dart';
 import '../../../design/tokens/tokens.dart';
 import '../../../design/tone/tone_scope.dart';
 import '../../../l10n/app_localizations.dart';
@@ -19,8 +23,9 @@ import '../colour/colour_editor.dart';
 import 'mode_presentation.dart';
 
 /// The effects this light has (only those its firmware supports, shown in
-/// its own colours), the selected effect's sliders with the firmware's
-/// labels, its colour source and the police beacons.
+/// its own colours): Solid Color as a row of its own, the others in a grid;
+/// then the selected effect's sliders with the firmware's labels, its colour
+/// source and the police beacons.
 class EffectsPanel extends StatelessWidget {
   const EffectsPanel({
     required this.scene,
@@ -50,27 +55,47 @@ class EffectsPanel extends StatelessWidget {
         : const Color(0xFF15171C);
     final bool large = MediaQuery.textScalerOf(context).scale(1) > 1.5;
     final FixtureSession? s = enabled ? session : null;
+    void select(int mode) {
+      if (s != null) unawaited(s.setMode(mode));
+    }
+
+    final EbModeSpec? solid = modes
+        .where((EbModeSpec m) => m.id == EbModeCatalog.solid)
+        .firstOrNull;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        if (solid != null) ...<Widget>[
+          _SolidRow(
+            key: ValueKey<String>('mode-${solid.id}'),
+            spec: solid,
+            selected: scene.mode == solid.id,
+            color: colour,
+            fg: fg,
+            onTap: () => select(solid.id),
+          ),
+          const SizedBox(height: Space.m),
+        ],
         GridView.count(
-          crossAxisCount: large ? 2 : 3,
+          key: const ValueKey<String>('effects-grid'),
+          crossAxisCount: large ? 2 : effectColumns,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: Space.s,
           crossAxisSpacing: Space.s,
-          childAspectRatio: 0.95,
+          childAspectRatio: effectTileAspect,
           children: <Widget>[
             for (final EbModeSpec m in modes)
-              ModeTile(
-                key: ValueKey<String>('mode-${m.id}'),
-                spec: m,
-                selected: m.id == scene.mode,
-                color: colour,
-                onTap: () {
-                  if (s != null) unawaited(s.setMode(m.id));
-                },
-              ),
+              if (m.id != EbModeCatalog.solid)
+                ModeTile(
+                  key: ValueKey<String>('mode-${m.id}'),
+                  spec: m,
+                  selected: m.id == scene.mode,
+                  // Only the running effect moves (the orb shows it too).
+                  animate: m.id == scene.mode,
+                  color: colour,
+                  onTap: () => select(m.id),
+                ),
           ],
         ),
         if (capabilities.layout == ChannelLayout.w &&
@@ -99,6 +124,97 @@ class EffectsPanel extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Columns and tile shape of the effects grid (the presets grid matches).
+const int effectColumns = 3;
+const double effectTileAspect = 0.95;
+
+/// Solid Color, the everyday choice, as a full-width row above the effects.
+class _SolidRow extends StatelessWidget {
+  const _SolidRow({
+    required this.spec,
+    required this.selected,
+    required this.color,
+    required this.fg,
+    required this.onTap,
+    super.key,
+  });
+
+  final EbModeSpec spec;
+  final bool selected;
+  final Color color;
+  final Color fg;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final LightTone tone = ToneScope.of(context);
+    final Haptics h = HapticsScope.of(context);
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: spec.name,
+      hint: spec.description,
+      child: GestureDetector(
+        onTap: () {
+          h.play(HapticEvent.selection);
+          onTap();
+        },
+        child: AnimatedContainer(
+          duration: Motion.reduced(context) ? Duration.zero : Motion.medium,
+          curve: Motion.emphasized,
+          decoration: modeSelectionFrame(tone, selected: selected),
+          child: GlassSurface(
+            radius: Radii.medium,
+            padding: const EdgeInsets.symmetric(
+              horizontal: Space.m,
+              vertical: Space.s,
+            ),
+            child: Row(
+              children: <Widget>[
+                SizedBox.square(
+                  dimension: 40,
+                  child: ModeGlyph(
+                    glyph: spec.glyph,
+                    color: color,
+                    palette: <Color>[
+                      for (final int c in spec.gradient) Color(c),
+                    ],
+                    animate: selected,
+                  ),
+                ),
+                const SizedBox(width: Space.s),
+                Expanded(
+                  child: Text(
+                    spec.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: fg,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: Space.s),
+                // The colour it shows.
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: color,
+                    border: Border.all(color: fg.withValues(alpha: 0.25)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
