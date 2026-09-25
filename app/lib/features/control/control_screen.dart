@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/app_session.dart';
@@ -32,6 +33,10 @@ import 'effects/effects_panel.dart';
 import 'effects/mode_presentation.dart';
 import 'presets/presets_panel.dart';
 import 'timer_sheet.dart';
+
+/// `--dart-define=EB_PERF=1` shows Flutter's performance overlay on the
+/// control screen (frame timings while testing transitions and drags).
+const bool _perfOverlay = String.fromEnvironment('EB_PERF') == '1';
 
 /// The tabs a light gets, from what it can do.
 enum ControlTab { colour, white, effects, presets }
@@ -133,79 +138,74 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
 
-    return _Tone(
-      fixture: f,
-      layout: caps.layout,
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: AmbientCanvas(
-          child: ListView(
-            padding: EdgeInsets.fromLTRB(
-              Space.gutter,
-              MediaQuery.paddingOf(context).top + Space.s,
-              Space.gutter,
-              MediaQuery.paddingOf(context).bottom + Space.gutter,
+    final Widget body = AmbientCanvas(
+      child: ListView(
+        padding: EdgeInsets.fromLTRB(
+          Space.gutter,
+          MediaQuery.paddingOf(context).top + Space.s,
+          Space.gutter,
+          MediaQuery.paddingOf(context).bottom + Space.gutter,
+        ),
+        children: <Widget>[
+          _Header(
+            fixture: f,
+            live: st.live,
+            sleeping: sleeping,
+            fg: fg,
+            onPower: enabled
+                ? () => unawaited(session.setPower(on: sleeping))
+                : null,
+          ),
+          const SizedBox(height: Space.m),
+          Center(
+            child: RepaintBoundary(
+              child: _Orb(fixture: f, layout: caps.layout),
             ),
-            children: <Widget>[
-              _Header(
-                fixture: f,
-                live: st.live,
-                sleeping: sleeping,
-                fg: fg,
-                onPower: enabled
-                    ? () => unawaited(session.setPower(on: sleeping))
-                    : null,
-              ),
-              const SizedBox(height: Space.m),
-              Center(
-                child: RepaintBoundary(
-                  child: _Orb(fixture: f, layout: caps.layout),
+          ),
+          if (!ready) ...<Widget>[
+            const SizedBox(height: Space.s),
+            _OfflineNote(fixtureId: widget.fixtureId, known: st.known, fg: fg),
+          ],
+          const SizedBox(height: Space.s),
+          ControlToolbar(
+            fixtureId: widget.fixtureId,
+            session: session,
+            soundOn: st.soundOn,
+            sleeping: sleeping,
+            enabled: enabled,
+            onSettings: () => unawaited(
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      LightSettingsScreen(fixtureId: widget.fixtureId),
                 ),
               ),
-              if (!ready) ...<Widget>[
-                const SizedBox(height: Space.s),
-                _OfflineNote(
-                  fixtureId: widget.fixtureId,
-                  known: st.known,
-                  fg: fg,
-                ),
-              ],
-              const SizedBox(height: Space.s),
-              ControlToolbar(
-                fixtureId: widget.fixtureId,
-                session: session,
-                soundOn: st.soundOn,
-                sleeping: sleeping,
-                enabled: enabled,
-                onSettings: () => unawaited(
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) =>
-                          LightSettingsScreen(fixtureId: widget.fixtureId),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: Space.m),
-              RepaintBoundary(
-                child: BrightnessPill(
-                  fixtureId: widget.fixtureId,
-                  layout: caps.layout,
-                  enabled: enabled,
-                  fg: fg,
-                  session: session,
-                ),
-              ),
-              const SizedBox(height: Space.m),
-              GlassSegmented<ControlTab>(
-                segments: <(ControlTab, String)>[
-                  for (final ControlTab t in tabs) (t, _tabName(l, t)),
-                ],
-                selected: tab,
-                onChanged: (ControlTab t) => setState(() => _tab = t),
-              ),
-              const SizedBox(height: Space.m),
-              RepaintBoundary(
+            ),
+          ),
+          const SizedBox(height: Space.m),
+          RepaintBoundary(
+            child: BrightnessPill(
+              fixtureId: widget.fixtureId,
+              layout: caps.layout,
+              enabled: enabled,
+              fg: fg,
+              session: session,
+            ),
+          ),
+          const SizedBox(height: Space.m),
+          GlassSegmented<ControlTab>(
+            segments: <(ControlTab, String)>[
+              for (final ControlTab t in tabs) (t, _tabName(l, t)),
+            ],
+            selected: tab,
+            onChanged: (ControlTab t) => setState(() => _tab = t),
+          ),
+          const SizedBox(height: Space.m),
+          _TabSwitcher(
+            index: tabs.indexOf(tab),
+            child: KeyedSubtree(
+              key: ValueKey<ControlTab>(tab),
+              child: RepaintBoundary(
                 child: switch (tab) {
                   ControlTab.colour || ControlTab.white => _ColourTab(
                     fixture: f,
@@ -229,9 +229,32 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
                   ),
                 },
               ),
-            ],
+            ),
           ),
-        ),
+        ],
+      ),
+    );
+
+    return _Tone(
+      fixture: f,
+      layout: caps.layout,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: _perfOverlay
+            ? Stack(
+                children: <Widget>[
+                  body,
+                  Positioned(
+                    top: MediaQuery.paddingOf(context).top,
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(
+                      child: PerformanceOverlay.allEnabled(),
+                    ),
+                  ),
+                ],
+              )
+            : body,
       ),
     );
   }
@@ -242,6 +265,125 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     ControlTab.effects => l.tabEffects,
     ControlTab.presets => l.tabPresets,
   };
+}
+
+/// The tab body: a new panel fades in while sliding 12 px in the direction
+/// of travel (left towards a later tab) on a [Motion.snappy] spring, the old
+/// one fading and sliding out; the height glides so the page doesn't jump.
+/// Under Reduce Motion the panel is simply swapped.
+class _TabSwitcher extends StatefulWidget {
+  const _TabSwitcher({required this.index, required this.child});
+
+  /// Position of the tab shown (sets the direction of travel).
+  final int index;
+
+  /// The panel, keyed by its tab.
+  final Widget child;
+
+  @override
+  State<_TabSwitcher> createState() => _TabSwitcherState();
+}
+
+class _TabSwitcherState extends State<_TabSwitcher>
+    with SingleTickerProviderStateMixin {
+  static const double _slide = 12;
+
+  /// Progress of the switch; 1 = the new panel is in place.
+  late final AnimationController _t = AnimationController.unbounded(
+    vsync: this,
+    value: 1,
+  );
+  Widget? _out;
+  double _dir = 1;
+  int _switches = 0;
+
+  @override
+  void didUpdateWidget(_TabSwitcher old) {
+    super.didUpdateWidget(old);
+    if (widget.child.key == old.child.key) return;
+    if (Motion.reduced(context)) {
+      _t.stop();
+      _t.value = 1;
+      _out = null;
+      return;
+    }
+    _out = old.child;
+    _dir = widget.index >= old.index ? 1 : -1;
+    final int switchNo = ++_switches;
+    _t.value = 0;
+    _t
+        .animateWith(
+          // Done once the rest is invisible (0.06 px, 0.5 % opacity), so the
+          // two panels overlap for as few frames as possible.
+          SpringSimulation(
+            Motion.snappy,
+            0,
+            1,
+            0,
+            tolerance: const Tolerance(distance: 0.005, velocity: 0.05),
+          ),
+        )
+        .whenCompleteOrCancel(() {
+          // Only the latest switch clears its outgoing panel.
+          if (mounted && switchNo == _switches) setState(() => _out = null);
+        });
+  }
+
+  @override
+  void dispose() {
+    _t.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget panels = AnimatedBuilder(
+      animation: _t,
+      builder: (BuildContext context, _) {
+        final double t = _t.value.clamp(0.0, 1.0);
+        final Widget? out = _out;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            // The old panel on top of the list's flow, so the height
+            // follows the new one.
+            if (out != null)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: 1 - t,
+                    child: Transform.translate(
+                      offset: Offset(-_dir * _slide * t, 0),
+                      child: out,
+                    ),
+                  ),
+                ),
+              ),
+            Opacity(
+              opacity: out == null ? 1 : t,
+              child: Transform.translate(
+                offset: Offset(out == null ? 0 : _dir * _slide * (1 - t), 0),
+                child: widget.child,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    // Reduce Motion: no height glide either (a zero-length AnimatedSize
+    // would finish inside its own layout).
+    if (Motion.reduced(context)) return panels;
+    return AnimatedSize(
+      duration: Motion.medium,
+      curve: Motion.emphasized,
+      alignment: Alignment.topCenter,
+      clipBehavior: Clip.none,
+      child: panels,
+    );
+  }
 }
 
 /// What the control screen itself shows of a light's status: no colour, no

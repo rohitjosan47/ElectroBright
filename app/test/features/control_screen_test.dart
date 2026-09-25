@@ -3,6 +3,7 @@ import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/design/components/glass_controls.dart';
 import 'package:electrobright/design/controls/glass_slider.dart';
 import 'package:electrobright/design/controls/hue_wheel.dart';
+import 'package:electrobright/design/tokens/tokens.dart';
 import 'package:electrobright/features/control/colour/colour_editor.dart';
 import 'package:electrobright/features/control/control_screen.dart';
 import 'package:flutter/material.dart';
@@ -386,6 +387,94 @@ void main() {
       t.getRect(find.byKey(const ValueKey<String>('preset-3'))).top,
       greaterThan(row0),
     );
+    await DemoApp.shutDown(t);
+  });
+
+  group('tab transitions', () {
+    /// Horizontal offsets of the Transforms above [panel] (the slide).
+    List<double> slides(WidgetTester t, Finder panel) => <double>[
+      for (final Transform tr in t.widgetList<Transform>(
+        find.ancestor(of: panel, matching: find.byType(Transform)),
+      ))
+        tr.transform.getTranslation().x,
+    ];
+
+    testWidgets('a new panel slides and fades in, then settles', (
+      WidgetTester t,
+    ) async {
+      await open(t, 'Desk strip');
+      final Finder wheel = find.byType(HueWheel);
+      expect(wheel, findsOneWidget);
+      await t.tap(tab('Effects'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 40));
+      // Mid-switch: both panels, the new one arriving from the right.
+      final Finder grid = find.byKey(const ValueKey<String>('effects-grid'));
+      expect(grid, findsOneWidget);
+      expect(wheel, findsOneWidget);
+      expect(slides(t, grid).any((double x) => x > 0 && x <= 12), isTrue);
+      // Through Motion.medium: no exceptions, the new panel in place.
+      for (int ms = 40; ms < Motion.medium.inMilliseconds; ms += 16) {
+        await t.pump(const Duration(milliseconds: 16));
+        expect(t.takeException(), isNull);
+      }
+      expect(grid, findsOneWidget);
+      await settle(t, 1);
+      expect(wheel, findsNothing);
+      expect(slides(t, grid).every((double x) => x == 0), isTrue);
+      // Back to an earlier tab: it arrives from the left.
+      await t.tap(tab('Colour'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 40));
+      expect(slides(t, wheel).any((double x) => x < 0 && x >= -12), isTrue);
+      await settle(t, 1);
+      expect(grid, findsNothing);
+      await DemoApp.shutDown(t);
+    });
+
+    testWidgets('under Reduce Motion the switch completes in one frame', (
+      WidgetTester t,
+    ) async {
+      t.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(t.platformDispatcher.clearAccessibilityFeaturesTestValue);
+      await open(t, 'Desk strip');
+      await t.tap(tab('Effects'));
+      await t.pump();
+      final Finder grid = find.byKey(const ValueKey<String>('effects-grid'));
+      expect(grid, findsOneWidget);
+      expect(find.byType(HueWheel), findsNothing);
+      expect(slides(t, grid).every((double x) => x == 0), isTrue);
+      await DemoApp.shutDown(t);
+    });
+  });
+
+  testWidgets('a saved preset pulses its tile', (WidgetTester t) async {
+    final DemoApp d = await open(t, 'Living room');
+    await t.tap(tab('Presets'));
+    await settle(t, 1);
+    final Finder slot = find.byKey(const ValueKey<String>('preset-0'));
+    double scaleOf() => t
+        .widget<Transform>(
+          find.descendant(of: slot, matching: find.byType(Transform)).first,
+        )
+        .transform
+        .getMaxScaleOnAxis();
+    expect(scaleOf(), 1);
+    await t.tap(slot);
+    await settle(t, 1);
+    await t.tap(find.text('Save'));
+    // The light stores it, then the tile bumps up and back.
+    double peak = 1;
+    for (int i = 0; i < 30; i++) {
+      await t.pump(const Duration(milliseconds: 16));
+      peak = peak > scaleOf() ? peak : scaleOf();
+    }
+    expect(d.model('Living room').presetSlots, contains(0));
+    expect(peak, greaterThan(1.02));
+    expect(peak, lessThan(1.06));
+    await settle(t, 1);
+    expect(scaleOf(), closeTo(1, 0.001));
     await DemoApp.shutDown(t);
   });
 }

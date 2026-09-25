@@ -10,6 +10,7 @@ import '../../../core/model/light_capabilities.dart';
 import '../../../design/components/fixture_type.dart';
 import '../../../design/components/glass_controls.dart';
 import '../../../design/controls/glass_slider.dart';
+import '../../../design/glass/glass_surface.dart';
 import '../../../design/controls/hue_wheel.dart';
 import '../../../design/tokens/tokens.dart';
 import '../../../design/tone/tone_scope.dart';
@@ -157,6 +158,8 @@ class _ColourEditorState extends State<ColourEditor> {
       ],
       ColourSurface.colourPlusTunableWhite => <Widget>[
         GlassSegmented<_Sub>(
+          // Inside a panel: the screen's chrome budget goes to its main tabs.
+          thumbTier: GlassTier.panel,
           segments: <(_Sub, String)>[
             (_Sub.colour, l.tabColour),
             (_Sub.white, l.tabWhite),

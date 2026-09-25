@@ -99,14 +99,12 @@ class PresetsPanel extends ConsumerWidget {
                 fg: fg,
                 onTap: !enabled
                     ? null
-                    : () => unawaited(
-                        onLight.contains(slot)
-                            ? _load(context, ref, slot)
-                            : _save(context, ref, slot, ask: true),
-                      ),
+                    : () => onLight.contains(slot)
+                          ? _load(context, ref, slot)
+                          : _save(context, ref, slot, ask: true),
                 onLongPress: !enabled || !onLight.contains(slot)
                     ? null
-                    : () => unawaited(_menu(context, ref, slot)),
+                    : () => _menu(context, ref, slot),
               ),
           ],
         ),
@@ -123,11 +121,12 @@ class PresetsPanel extends ConsumerWidget {
   PresetMetaNotifier _meta(WidgetRef ref) =>
       ref.read(presetMetaProvider(fixtureId).notifier);
 
-  Future<void> _load(BuildContext context, WidgetRef ref, int slot) async {
+  /// True when the light loaded it (the tile then pulses).
+  Future<bool> _load(BuildContext context, WidgetRef ref, int slot) async {
     final FixtureSession? s = session;
-    if (s == null) return;
+    if (s == null) return false;
     final EbPresetResult r = await s.presetLoad(slot);
-    if (!context.mounted) return;
+    if (!context.mounted) return false;
     if (r.result.isSuccess) {
       _meta(ref).loaded(slot, r.scene);
       HapticsScope.of(context).play(HapticEvent.presetLoaded);
@@ -136,26 +135,28 @@ class PresetsPanel extends ConsumerWidget {
         AppLocalizations.of(context).presetLoaded,
         icon: Icons.check_circle_rounded,
       );
-    } else {
-      _failed(context, r.result);
+      return true;
     }
+    _failed(context, r.result);
+    return false;
   }
 
-  Future<void> _save(
+  /// True when the light stored it (the tile then pulses).
+  Future<bool> _save(
     BuildContext context,
     WidgetRef ref,
     int slot, {
     required bool ask,
   }) async {
     final FixtureSession? s = session;
-    if (s == null) return;
+    if (s == null) return false;
     String? name;
     if (ask) {
       name = await _askName(context, null);
-      if (name == null || !context.mounted) return;
+      if (name == null || !context.mounted) return false;
     }
     final EbPresetResult r = await s.presetSave(slot);
-    if (!context.mounted) return;
+    if (!context.mounted) return false;
     if (r.result.isSuccess) {
       _meta(ref).saved(slot, r.scene ?? scene, name: name);
       HapticsScope.of(context).play(HapticEvent.success);
@@ -164,12 +165,14 @@ class PresetsPanel extends ConsumerWidget {
         AppLocalizations.of(context).presetSaved,
         icon: Icons.check_circle_rounded,
       );
-    } else {
-      _failed(context, r.result);
+      return true;
     }
+    _failed(context, r.result);
+    return false;
   }
 
-  Future<void> _menu(BuildContext context, WidgetRef ref, int slot) async {
+  /// True when a load or overwrite from the menu succeeded.
+  Future<bool> _menu(BuildContext context, WidgetRef ref, int slot) async {
     final AppLocalizations l = AppLocalizations.of(context);
     HapticsScope.of(context).play(HapticEvent.longPress);
     final String? action = await showModalBottomSheet<String>(
@@ -203,25 +206,26 @@ class PresetsPanel extends ConsumerWidget {
         ),
       ),
     );
-    if (!context.mounted || action == null) return;
+    if (!context.mounted || action == null) return false;
     switch (action) {
       case 'load':
-        await _load(context, ref, slot);
+        return _load(context, ref, slot);
       case 'rename':
         final PresetMeta meta = ref.read(presetMetaProvider(fixtureId));
         final String? name = await _askName(context, meta[slot]?.name);
         if (name != null) _meta(ref).rename(slot, name);
       case 'overwrite':
-        await _save(context, ref, slot, ask: false);
+        return _save(context, ref, slot, ask: false);
       case 'clear':
         final EbResult r = await session!.presetDelete(slot);
-        if (!context.mounted) return;
+        if (!context.mounted) return false;
         if (r.isSuccess) {
           _meta(ref).clear(slot);
         } else {
           _failed(context, r);
         }
     }
+    return false;
   }
 
   void _failed(BuildContext context, EbResult r) {
@@ -251,7 +255,10 @@ class PresetsPanel extends ConsumerWidget {
   }
 }
 
-class _SlotTile extends StatelessWidget {
+/// One preset slot: the same selection and press motion as the effect
+/// tiles, and a success pulse when a load or save through it succeeds (an
+/// empty slot only presses; a save that fills it pulses).
+class _SlotTile extends StatefulWidget {
   const _SlotTile({
     required this.slot,
     required this.filled,
@@ -274,12 +281,36 @@ class _SlotTile extends StatelessWidget {
   final ChannelLayout layout;
   final LedWhitePoints whitePoints;
   final Color fg;
-  final VoidCallback? onTap;
-  final VoidCallback? onLongPress;
+
+  /// Each returns true when the light carried it out.
+  final Future<bool> Function()? onTap;
+  final Future<bool> Function()? onLongPress;
+
+  @override
+  State<_SlotTile> createState() => _SlotTileState();
+}
+
+class _SlotTileState extends State<_SlotTile> {
+  int _pulse = 0;
+
+  VoidCallback? _run(Future<bool> Function()? action) => action == null
+      ? null
+      : () => unawaited(
+          action().then((bool ok) {
+            if (ok && mounted) setState(() => _pulse++);
+          }),
+        );
 
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
+    final int slot = widget.slot;
+    final bool filled = widget.filled;
+    final String name = widget.name;
+    final ChannelLayout layout = widget.layout;
+    final LedWhitePoints whitePoints = widget.whitePoints;
+    final Color fg = widget.fg;
+    final EbScene? preview = widget.preview;
     final EbScene? p = preview?.layout == layout ? preview : null;
     final String? detail = p == null
         ? null
@@ -287,84 +318,72 @@ class _SlotTile extends StatelessWidget {
               ' · ${_level(p)} %';
     return Semantics(
       button: true,
-      selected: active,
+      selected: widget.active,
       label: filled ? name : '${l.presetEmpty}, ${l.presetSave}',
       value: detail,
-      child: GestureDetector(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: AnimatedContainer(
-          duration: Motion.medium,
-          decoration: ShapeDecoration(
-            shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(Radii.medium),
-              side: BorderSide(
-                color: active
-                    ? Color(ToneScope.of(context).accent)
-                    : Colors.transparent,
-                width: 2,
-              ),
-            ),
-          ),
-          child: GlassSurface(
-            radius: Radii.medium,
-            padding: const EdgeInsets.all(Space.s),
-            child: Opacity(
-              opacity: filled ? 1 : 0.55,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      Container(
-                        width: 22,
-                        height: 22,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: p != null
-                              ? swatchOf(p.color, whitePoints)
-                              : fg.withValues(alpha: 0.12),
-                        ),
-                        child: filled
-                            ? null
-                            : Icon(Icons.add_rounded, size: 16, color: fg),
+      child: ChoiceFrame(
+        selected: widget.active,
+        pulse: _pulse,
+        onTap: _run(widget.onTap),
+        onLongPress: _run(widget.onLongPress),
+        child: GlassSurface(
+          radius: Radii.medium,
+          padding: const EdgeInsets.all(Space.s),
+          child: Opacity(
+            opacity: filled ? 1 : 0.55,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: p != null
+                            ? swatchOf(p.color, whitePoints)
+                            : fg.withValues(alpha: 0.12),
                       ),
-                      const Spacer(),
-                      Text(
-                        '${slot + 1}',
-                        style: TextStyle(
-                          color: fg.withValues(alpha: 0.5),
-                          fontSize: 12,
-                          fontFeatures: const <FontFeature>[
-                            FontFeature.tabularFigures(),
-                          ],
-                        ),
+                      child: filled
+                          ? null
+                          : Icon(Icons.add_rounded, size: 16, color: fg),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${slot + 1}',
+                      style: TextStyle(
+                        color: fg.withValues(alpha: 0.5),
+                        fontSize: 12,
+                        fontFeatures: const <FontFeature>[
+                          FontFeature.tabularFigures(),
+                        ],
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+                const Spacer(),
+                Text(
+                  filled ? name : l.presetEmpty,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: fg,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
                   ),
-                  const Spacer(),
+                ),
+                if (filled && detail != null)
                   Text(
-                    filled ? name : l.presetEmpty,
+                    detail,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: fg,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
+                      color: fg.withValues(alpha: 0.6),
+                      fontSize: 11,
                     ),
                   ),
-                  if (filled && detail != null)
-                    Text(
-                      detail,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: fg.withValues(alpha: 0.6),
-                        fontSize: 11,
-                      ),
-                    ),
-                ],
-              ),
+              ],
             ),
           ),
         ),

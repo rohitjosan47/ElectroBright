@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
-import '../../core/color/light_tone.dart';
 import '../tokens/tokens.dart';
 import '../tone/tone_scope.dart';
 
@@ -65,12 +64,13 @@ class GlassSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final LightTone tone = ToneScope.of(context);
     final GlassPolicy? policy = GlassPolicy.maybeOf(context);
-    final bool dark = tone.dark;
+    // Untinted glass depends on light/dark only, not on every step of a
+    // tone glide (it is not rebuilt during colour drags).
+    final bool dark = ToneScope.darkOf(context);
     final Color tint = tinted
-        ? Color(tone.tint)
-        : (dark ? Colors.white : Colors.white);
+        ? Color(ToneScope.of(context).tint)
+        : Colors.white;
 
     if (policy?.solid ?? false) {
       return DecoratedBox(

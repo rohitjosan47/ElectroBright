@@ -1,23 +1,36 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 
 import '../../core/color/light_tone.dart';
 import '../tokens/tokens.dart';
 
 /// Provides the current [LightTone] (the palette derived from the light's
-/// colour), animated in OKLab whenever it changes.
+/// colour), gliding in OKLab on a [Motion.smooth] spring whenever it changes.
 class ToneScope extends StatefulWidget {
   const ToneScope({required this.tone, required this.child, super.key});
 
   final LightTone tone;
   final Widget child;
 
+  /// The whole palette: rebuilt on every step of a glide.
   static LightTone of(BuildContext context) {
-    final _ToneInherited? s = context
-        .dependOnInheritedWidgetOfExactType<_ToneInherited>();
+    final _ToneInherited? s = InheritedModel.inheritFrom<_ToneInherited>(
+      context,
+    );
     if (s != null) return s.tone;
     return LightTone.neutral(
       dark: Theme.of(context).brightness == Brightness.dark,
     );
+  }
+
+  /// Only whether the palette is dark: a widget that needs no more (untinted
+  /// glass, its icons) is not rebuilt while the light's colour glides.
+  static bool darkOf(BuildContext context) {
+    final _ToneInherited? s = InheritedModel.inheritFrom<_ToneInherited>(
+      context,
+      aspect: _ToneAspect.dark,
+    );
+    return s?.tone.dark ?? Theme.of(context).brightness == Brightness.dark;
   }
 
   @override
@@ -26,9 +39,10 @@ class ToneScope extends StatefulWidget {
 
 class _ToneScopeState extends State<ToneScope>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
+  /// Progress from [_from] to [_to]; 1 = arrived.
+  late final AnimationController _c = AnimationController.unbounded(
     vsync: this,
-    duration: Motion.tone,
+    value: 1,
   );
   late LightTone _from = widget.tone;
   late LightTone _to = widget.tone;
@@ -37,26 +51,29 @@ class _ToneScopeState extends State<ToneScope>
   void didUpdateWidget(ToneScope old) {
     super.didUpdateWidget(old);
     if (widget.tone == _to) return;
-    final bool reduced = Motion.reduced(context);
-    // A glide in flight (a colour drag changes the tone every frame): aim it
-    // at the new tone and let it run on, instead of starting over each frame.
-    if (_c.isAnimating && !reduced && widget.tone.dark == _to.dark) {
-      _to = widget.tone;
+    if (Motion.reduced(context) || widget.tone.dark != _to.dark) {
+      _c.stop();
+      _c.value = 1;
+      _from = _to = widget.tone;
       return;
     }
+    // A new target mid-glide (a colour drag changes it every frame): glide
+    // on from where the palette is now, keeping its speed, so a stream of
+    // changes is followed smoothly instead of restarting each time.
+    final double x = _c.value.clamp(0.0, 1.0);
+    final double speed = _c.isAnimating ? _c.velocity : 0;
+    final double carried = x < 1 ? (speed / (1 - x)).clamp(0.0, 8.0) : 0.0;
     _from = _current;
     _to = widget.tone;
-    if (reduced || _from.dark != _to.dark) {
-      _from = _to;
-      _c.value = 1;
-    } else {
-      _c.forward(from: 0);
-    }
+    _c
+      ..value = 0
+      ..animateWith(SpringSimulation(Motion.smooth, 0, 1, carried));
   }
 
-  LightTone get _current => _c.isAnimating
-      ? LightTone.lerp(_from, _to, Motion.emphasized.transform(_c.value))
-      : _to;
+  LightTone get _current {
+    final double x = _c.value.clamp(0.0, 1.0);
+    return x >= 1 ? _to : LightTone.lerp(_from, _to, x);
+  }
 
   @override
   void dispose() {
@@ -73,10 +90,18 @@ class _ToneScopeState extends State<ToneScope>
   );
 }
 
-class _ToneInherited extends InheritedWidget {
+enum _ToneAspect { dark }
+
+class _ToneInherited extends InheritedModel<_ToneAspect> {
   const _ToneInherited({required this.tone, required super.child});
   final LightTone tone;
 
   @override
   bool updateShouldNotify(_ToneInherited old) => old.tone != tone;
+
+  @override
+  bool updateShouldNotifyDependent(
+    _ToneInherited old,
+    Set<_ToneAspect> dependencies,
+  ) => dependencies.contains(_ToneAspect.dark) && old.tone.dark != tone.dark;
 }

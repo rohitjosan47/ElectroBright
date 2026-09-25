@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/misc.dart';
 import '../../app/providers.dart';
 import '../../bootstrap/service_registry.dart';
 import '../../design/components/glass_controls.dart';
+import '../../design/glass/glass_surface.dart';
 import '../../design/haptics/haptics.dart';
 import '../../design/tokens/tokens.dart';
 import '../../design/tone/tone_scope.dart';
@@ -335,6 +336,7 @@ class ControlToolbar extends ConsumerWidget {
             children: <Widget>[
               GlassIconButton(
                 key: const ValueKey<String>('timer-button'),
+                tier: GlassTier.panel,
                 icon: Icons.timer_outlined,
                 label: l.timer,
                 active: left != null,
@@ -352,6 +354,7 @@ class ControlToolbar extends ConsumerWidget {
               const SizedBox(width: Space.l),
               GlassIconButton(
                 key: const ValueKey<String>('sound-button'),
+                tier: GlassTier.panel,
                 icon: soundOn
                     ? Icons.volume_up_rounded
                     : Icons.volume_off_rounded,
@@ -366,6 +369,7 @@ class ControlToolbar extends ConsumerWidget {
                 const SizedBox(width: Space.l),
                 GlassIconButton(
                   key: const ValueKey<String>('settings-button'),
+                  tier: GlassTier.panel,
                   icon: Icons.tune_rounded,
                   label: l.lightSettings,
                   onPressed: onSettings,

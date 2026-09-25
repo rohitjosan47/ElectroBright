@@ -8,7 +8,6 @@ import '../../../core/model/channel_layout.dart';
 import '../../../core/model/light_capabilities.dart';
 import '../../../core/protocol/eb/eb_scene.dart';
 import '../../../core/protocol/eb/mode_catalog.dart';
-import '../../../core/color/light_tone.dart';
 import '../../../design/components/glass_controls.dart';
 import '../../../design/components/mode_glyph.dart';
 import '../../../design/controls/glass_slider.dart';
@@ -54,6 +53,7 @@ class EffectsPanel extends StatelessWidget {
         ? Colors.white
         : const Color(0xFF15171C);
     final bool large = MediaQuery.textScalerOf(context).scale(1) > 1.5;
+    final bool reduced = Motion.reduced(context);
     final FixtureSession? s = enabled ? session : null;
     void select(int mode) {
       if (s != null) unawaited(s.setMode(mode));
@@ -107,25 +107,71 @@ class EffectsPanel extends StatelessWidget {
               style: TextStyle(color: fg.withValues(alpha: 0.6), fontSize: 13),
             ),
           ),
-        if (current != null &&
-            (current.hasSpeed ||
-                current.hasFrequency ||
-                current.hasColorMode)) ...<Widget>[
-          const SizedBox(height: Space.m),
-          GlassSurface(
-            padding: const EdgeInsets.all(Space.m),
-            child: _ModeSettings(
-              mode: current,
-              scene: scene,
-              whitePoints: whitePoints,
-              session: s,
-              fg: fg,
+        // The selected effect's sliders: the card grows and shrinks into
+        // place and its content fades (another effect's content crossfades).
+        _GrowUnlessReduced(
+          reduced: reduced,
+          child: AnimatedSwitcher(
+            duration: reduced ? Duration.zero : Motion.medium,
+            switchInCurve: Motion.emphasized,
+            switchOutCurve: Motion.emphasized,
+            // The card's size follows the incoming content at once; the
+            // outgoing one fades on top.
+            layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+              alignment: Alignment.topCenter,
+              children: <Widget>[
+                for (final Widget p in previous)
+                  Positioned(top: 0, left: 0, right: 0, child: p),
+                ?current,
+              ],
             ),
+            child:
+                current != null &&
+                    (current.hasSpeed ||
+                        current.hasFrequency ||
+                        current.hasColorMode)
+                ? Padding(
+                    key: ValueKey<String>('mode-settings-${current.id}'),
+                    padding: const EdgeInsets.only(top: Space.m),
+                    child: GlassSurface(
+                      padding: const EdgeInsets.all(Space.m),
+                      child: _ModeSettings(
+                        mode: current,
+                        scene: scene,
+                        whitePoints: whitePoints,
+                        session: s,
+                        fg: fg,
+                      ),
+                    ),
+                  )
+                : const SizedBox(
+                    key: ValueKey<String>('no-mode-settings'),
+                    width: double.infinity,
+                  ),
           ),
-        ],
+        ),
       ],
     );
   }
+}
+
+/// Grows and shrinks [child]'s height into place (Motion.medium); under
+/// Reduce Motion it just takes the new height (a zero-length AnimatedSize
+/// would finish inside its own layout).
+class _GrowUnlessReduced extends StatelessWidget {
+  const _GrowUnlessReduced({required this.reduced, required this.child});
+  final bool reduced;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => reduced
+      ? child
+      : AnimatedSize(
+          duration: Motion.medium,
+          curve: Motion.emphasized,
+          alignment: Alignment.topCenter,
+          child: child,
+        );
 }
 
 /// Columns and tile shape of the effects grid (the presets grid matches).
@@ -151,67 +197,61 @@ class _SolidRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final LightTone tone = ToneScope.of(context);
     final Haptics h = HapticsScope.of(context);
     return Semantics(
       button: true,
       selected: selected,
       label: spec.name,
       hint: spec.description,
-      child: GestureDetector(
+      // The same selection and press motion as the effect tiles.
+      child: ChoiceFrame(
+        selected: selected,
         onTap: () {
           h.play(HapticEvent.selection);
           onTap();
         },
-        child: AnimatedContainer(
-          duration: Motion.reduced(context) ? Duration.zero : Motion.medium,
-          curve: Motion.emphasized,
-          decoration: modeSelectionFrame(tone, selected: selected),
-          child: GlassSurface(
-            radius: Radii.medium,
-            padding: const EdgeInsets.symmetric(
-              horizontal: Space.m,
-              vertical: Space.s,
-            ),
-            child: Row(
-              children: <Widget>[
-                SizedBox.square(
-                  dimension: 40,
-                  child: ModeGlyph(
-                    glyph: spec.glyph,
-                    color: color,
-                    palette: <Color>[
-                      for (final int c in spec.gradient) Color(c),
-                    ],
-                    animate: selected,
+        child: GlassSurface(
+          radius: Radii.medium,
+          padding: const EdgeInsets.symmetric(
+            horizontal: Space.m,
+            vertical: Space.s,
+          ),
+          child: Row(
+            children: <Widget>[
+              SizedBox.square(
+                dimension: 40,
+                child: ModeGlyph(
+                  glyph: spec.glyph,
+                  color: color,
+                  palette: <Color>[for (final int c in spec.gradient) Color(c)],
+                  animate: selected,
+                ),
+              ),
+              const SizedBox(width: Space.s),
+              Expanded(
+                child: Text(
+                  spec.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: fg,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
                   ),
                 ),
-                const SizedBox(width: Space.s),
-                Expanded(
-                  child: Text(
-                    spec.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: fg,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
-                  ),
+              ),
+              const SizedBox(width: Space.s),
+              // The colour it shows.
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color,
+                  border: Border.all(color: fg.withValues(alpha: 0.25)),
                 ),
-                const SizedBox(width: Space.s),
-                // The colour it shows.
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: color,
-                    border: Border.all(color: fg.withValues(alpha: 0.25)),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

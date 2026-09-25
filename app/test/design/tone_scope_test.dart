@@ -22,7 +22,7 @@ void main() {
     ),
   );
 
-  testWidgets('changes mid-glide land on time, on the latest tone', (
+  testWidgets('a stream of changes glides on and settles on the latest', (
     WidgetTester t,
   ) async {
     final LightTone red = tone(1, 0, 0);
@@ -30,15 +30,27 @@ void main() {
     final LightTone blue = tone(0, 0, 1);
     await t.pumpWidget(scope(red));
     await t.pumpWidget(scope(green));
-    // A new tone every frame for a while.
+    // A new tone every frame (a colour drag): retargeted, never snapped.
     for (int i = 0; i < 10; i++) {
       await t.pump(const Duration(milliseconds: 16));
       await t.pumpWidget(scope(i.isEven ? blue : green));
+      expect(seen, isNot(anyOf(blue, green)));
     }
     await t.pumpWidget(scope(blue));
-    // One glide from the first change: done after Motion.tone, not later.
-    await t.pump(Motion.tone - const Duration(milliseconds: 160));
-    await t.pump(const Duration(milliseconds: 1));
+    await t.pump(const Duration(milliseconds: 16));
+    expect(seen, isNot(blue));
+    await t.pumpAndSettle();
+    expect(seen, blue);
+  });
+
+  testWidgets('one change glides instead of jumping', (WidgetTester t) async {
+    final LightTone red = tone(1, 0, 0);
+    final LightTone blue = tone(0, 0, 1);
+    await t.pumpWidget(scope(red));
+    await t.pumpWidget(scope(blue));
+    await t.pump(const Duration(milliseconds: 50));
+    expect(seen, isNot(anyOf(red, blue)));
+    await t.pump(Motion.tone * 2);
     expect(seen, blue);
   });
 
@@ -55,5 +67,52 @@ void main() {
     await t.pumpWidget(reduced(blue));
     await t.pump();
     expect(seen, blue);
+  });
+
+  testWidgets('light/dark-only readers are not rebuilt while the tone glides', (
+    WidgetTester t,
+  ) async {
+    int darkBuilds = 0;
+    int fullBuilds = 0;
+    Widget scoped(LightTone l) => ToneScope(
+      tone: l,
+      child: Column(
+        children: <Widget>[
+          Builder(
+            builder: (BuildContext context) {
+              ToneScope.darkOf(context);
+              darkBuilds++;
+              return const SizedBox();
+            },
+          ),
+          Builder(
+            builder: (BuildContext context) {
+              ToneScope.of(context);
+              fullBuilds++;
+              return const SizedBox();
+            },
+          ),
+        ],
+      ),
+    );
+    await t.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: scoped(tone(1, 0, 0)),
+      ),
+    );
+    await t.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: scoped(tone(0, 0, 1)),
+      ),
+    );
+    // From here only the glide runs: the full reader follows every step,
+    // the light/dark reader is left alone.
+    final int dark0 = darkBuilds;
+    final int full0 = fullBuilds;
+    await t.pumpAndSettle();
+    expect(darkBuilds, dark0);
+    expect(fullBuilds - full0, greaterThan(3));
   });
 }

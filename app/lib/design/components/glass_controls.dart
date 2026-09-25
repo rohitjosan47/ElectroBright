@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -44,12 +45,15 @@ class _GlassIconButtonState extends State<GlassIconButton> {
 
   @override
   Widget build(BuildContext context) {
-    final LightTone tone = ToneScope.of(context);
+    // The palette only matters when lit; otherwise light/dark is enough, so
+    // the glass is not rebuilt while the light's colour glides.
+    final LightTone? tone = widget.active ? ToneScope.of(context) : null;
+    final bool dark = ToneScope.darkOf(context);
     final Haptics h = HapticsScope.of(context);
     final bool enabled = widget.onPressed != null;
-    final Color fg = widget.active
+    final Color fg = tone != null
         ? Color(tone.onAccent)
-        : (tone.dark ? Colors.white : const Color(0xFF15171C));
+        : (dark ? Colors.white : const Color(0xFF15171C));
     return Semantics(
       button: true,
       enabled: enabled,
@@ -77,7 +81,7 @@ class _GlassIconButtonState extends State<GlassIconButton> {
             opacity: enabled ? 1 : 0.4,
             child: SizedBox.square(
               dimension: widget.size,
-              child: widget.active
+              child: tone != null
                   ? DecoratedBox(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
@@ -121,12 +125,17 @@ class GlassSegmented<T> extends StatefulWidget {
     required this.segments,
     required this.selected,
     required this.onChanged,
+    this.thumbTier = GlassTier.chrome,
     super.key,
   });
 
   final List<(T, String)> segments;
   final T selected;
   final ValueChanged<T> onChanged;
+
+  /// Real refraction for the screen's main tabs; panel tier for a segmented
+  /// control inside a panel (the chrome budget is four per screen).
+  final GlassTier thumbTier;
 
   @override
   State<GlassSegmented<T>> createState() => _GlassSegmentedState<T>();
@@ -164,10 +173,10 @@ class _GlassSegmentedState<T> extends State<GlassSegmented<T>>
 
   @override
   Widget build(BuildContext context) {
-    final LightTone tone = ToneScope.of(context);
+    final bool dark = ToneScope.darkOf(context);
     final Haptics h = HapticsScope.of(context);
     final int n = widget.segments.length;
-    final Color fg = tone.dark ? Colors.white : const Color(0xFF15171C);
+    final Color fg = dark ? Colors.white : const Color(0xFF15171C);
     return SizedBox(
       height: 44,
       child: GlassSurface(
@@ -191,11 +200,11 @@ class _GlassSegmentedState<T> extends State<GlassSegmented<T>>
                       width: w * (1 + stretch),
                       top: 0,
                       bottom: 0,
-                      child: const GlassSurface(
-                        tier: GlassTier.chrome,
+                      child: GlassSurface(
+                        tier: widget.thumbTier,
                         radius: Radii.capsule,
                         tinted: false,
-                        child: SizedBox.expand(),
+                        child: const SizedBox.expand(),
                       ),
                     );
                   },
@@ -240,28 +249,158 @@ class _GlassSegmentedState<T> extends State<GlassSegmented<T>>
   }
 }
 
-/// A lighting-mode tile: animated glyph, name, lit when active.
-/// The frame of an effect choice: the accent border and glow when selected
-/// (effect tiles and the Solid Color row).
-ShapeDecoration modeSelectionFrame(LightTone tone, {required bool selected}) =>
-    ShapeDecoration(
-      shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(Radii.medium),
-        side: BorderSide(
-          color: selected ? Color(tone.accent) : Colors.transparent,
-          width: 2,
+/// The frame of a choice (effect tile, Solid Color row, preset slot): the
+/// accent border and glow at [selection] 0..1.
+ShapeDecoration modeSelectionFrame(LightTone tone, double selection) {
+  final double t = selection.clamp(0.0, 1.0);
+  return ShapeDecoration(
+    shape: RoundedSuperellipseBorder(
+      borderRadius: BorderRadius.circular(Radii.medium),
+      side: BorderSide(
+        color: Color(tone.accent).withValues(alpha: t),
+        width: 2,
+      ),
+    ),
+    shadows: t == 0
+        ? const <BoxShadow>[]
+        : <BoxShadow>[
+            BoxShadow(
+              color: Color(tone.glow).withValues(alpha: 0.35 * t),
+              blurRadius: 20,
+            ),
+          ],
+  );
+}
+
+/// One of several choices (effect tile, Solid Color row, preset slot), all
+/// moving alike: the frame lights up on a [Motion.snappy] spring when
+/// [selected], the surface presses in under the finger and springs back,
+/// and each increment of [pulse] plays a short [Motion.bouncy] success
+/// bump. Under Reduce Motion nothing moves; the frame only fades.
+class ChoiceFrame extends StatefulWidget {
+  const ChoiceFrame({
+    required this.selected,
+    required this.child,
+    this.onTap,
+    this.onLongPress,
+    this.pulse = 0,
+    super.key,
+  });
+
+  final bool selected;
+  final Widget child;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final int pulse;
+
+  @override
+  State<ChoiceFrame> createState() => _ChoiceFrameState();
+}
+
+class _ChoiceFrameState extends State<ChoiceFrame>
+    with TickerProviderStateMixin {
+  late final AnimationController _selection = AnimationController.unbounded(
+    vsync: this,
+    value: widget.selected ? 1 : 0,
+  );
+
+  /// 0 = up, 1 = pressed in.
+  late final AnimationController _press = AnimationController.unbounded(
+    vsync: this,
+  );
+
+  /// Extra scale of the success bump (0 at rest).
+  late final AnimationController _pulse = AnimationController.unbounded(
+    vsync: this,
+  );
+
+  static const double _pressedScale = 0.96;
+
+  /// Initial speed that peaks the bump at about +4 % on Motion.bouncy.
+  static const double _pulseVelocity = 1.36;
+
+  late final Listenable _motion = Listenable.merge(<Listenable>[
+    _selection,
+    _press,
+    _pulse,
+  ]);
+
+  @override
+  void didUpdateWidget(ChoiceFrame old) {
+    super.didUpdateWidget(old);
+    if (widget.selected != old.selected) {
+      unawaited(
+        _selection.animateWith(
+          SpringSimulation(
+            Motion.snappy,
+            _selection.value,
+            widget.selected ? 1 : 0,
+            _selection.velocity,
+          ),
+        ),
+      );
+    }
+    if (widget.pulse > old.pulse && !Motion.reduced(context)) {
+      _pulse.value = 0;
+      unawaited(
+        _pulse.animateWith(
+          SpringSimulation(Motion.bouncy, 0, 0, _pulseVelocity),
+        ),
+      );
+    }
+  }
+
+  void _pressTo(double to) {
+    if (Motion.reduced(context)) return;
+    unawaited(
+      _press.animateWith(
+        SpringSimulation(Motion.snappy, _press.value, to, _press.velocity),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _selection.dispose();
+    _press.dispose();
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final LightTone tone = ToneScope.of(context);
+    final bool pressable = widget.onTap != null || widget.onLongPress != null;
+    return GestureDetector(
+      onTapDown: pressable ? (_) => _pressTo(1) : null,
+      onTapUp: pressable ? (_) => _pressTo(0) : null,
+      onTapCancel: pressable ? () => _pressTo(0) : null,
+      onTap: widget.onTap,
+      onLongPress: widget.onLongPress == null
+          ? null
+          : () {
+              _pressTo(0);
+              widget.onLongPress!();
+            },
+      child: AnimatedBuilder(
+        animation: _motion,
+        child: widget.child,
+        builder: (BuildContext context, Widget? child) => Transform.scale(
+          scale:
+              (1 - (1 - _pressedScale) * _press.value.clamp(0.0, 1.0)) *
+              (1 + _pulse.value),
+          child: DecoratedBox(
+            decoration: modeSelectionFrame(tone, _selection.value),
+            // Inside the 2 px border, as a decorated container lays it out.
+            child: Padding(padding: const EdgeInsets.all(2), child: child),
+          ),
         ),
       ),
-      shadows: selected
-          ? <BoxShadow>[
-              BoxShadow(
-                color: Color(tone.glow).withValues(alpha: 0.35),
-                blurRadius: 20,
-              ),
-            ]
-          : const <BoxShadow>[],
     );
+  }
+}
 
+/// A lighting-mode tile: animated glyph, name, lit when active.
 class ModeTile extends StatelessWidget {
   const ModeTile({
     required this.spec,
@@ -280,54 +419,51 @@ class ModeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final LightTone tone = ToneScope.of(context);
     final Haptics h = HapticsScope.of(context);
     final List<Color> palette = <Color>[
       for (final int c in spec.gradient) Color(c),
     ];
     final bool own = spec.colorUse == EbColorUse.never;
-    final Color fg = tone.dark ? Colors.white : const Color(0xFF15171C);
+    final Color fg = ToneScope.darkOf(context)
+        ? Colors.white
+        : const Color(0xFF15171C);
     return Semantics(
       button: true,
       selected: selected,
       label: spec.name,
       hint: spec.description,
-      child: GestureDetector(
+      child: ChoiceFrame(
+        selected: selected,
         onTap: () {
           h.play(HapticEvent.selection);
           onTap();
         },
-        child: AnimatedContainer(
-          duration: Motion.reduced(context) ? Duration.zero : Motion.medium,
-          curve: Motion.emphasized,
-          decoration: modeSelectionFrame(tone, selected: selected),
-          child: GlassSurface(
-            radius: Radii.medium,
-            padding: const EdgeInsets.all(Space.s),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Expanded(
-                  child: ModeGlyph(
-                    glyph: spec.glyph,
-                    color: own ? palette.first : color,
-                    palette: palette,
-                    animate: animate,
-                  ),
+        child: GlassSurface(
+          radius: Radii.medium,
+          padding: const EdgeInsets.all(Space.s),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: ModeGlyph(
+                  glyph: spec.glyph,
+                  color: own ? palette.first : color,
+                  palette: palette,
+                  animate: animate,
                 ),
-                const SizedBox(height: Space.xs),
-                Text(
-                  spec.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: fg,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
+              ),
+              const SizedBox(height: Space.xs),
+              Text(
+                spec.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: fg,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -335,7 +471,8 @@ class ModeTile extends StatelessWidget {
   }
 }
 
-/// The hero "light orb": what the light is doing right now.
+/// The hero "light orb": what the light is doing right now. A new effect
+/// crossfades in (its glyph growing into place); a new colour does not.
 class LightOrb extends StatelessWidget {
   const LightOrb({
     required this.spec,
@@ -365,15 +502,114 @@ class LightOrb extends StatelessWidget {
         child: AnimatedOpacity(
           opacity: on ? 1 : 0.18,
           duration: Motion.medium,
-          child: ModeGlyph(
+          child: GlyphSwitcher(
             glyph: spec.glyph,
-            color: spec.colorUse == EbColorUse.never ? palette.first : color,
-            palette: palette,
-            animate: on,
-            speed: speed,
+            child: ModeGlyph(
+              glyph: spec.glyph,
+              color: spec.colorUse == EbColorUse.never ? palette.first : color,
+              palette: palette,
+              animate: on,
+              speed: speed,
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Crossfades [child] when [glyph] changes, the new one growing from 0.92 on
+/// a [Motion.smooth] spring. Keyed by the glyph alone: a new [child] for the
+/// same glyph (another colour or speed) updates in place.
+class GlyphSwitcher extends StatefulWidget {
+  const GlyphSwitcher({required this.glyph, required this.child, super.key});
+
+  final Object glyph;
+  final Widget child;
+
+  @override
+  State<GlyphSwitcher> createState() => _GlyphSwitcherState();
+}
+
+class _GlyphSwitcherState extends State<GlyphSwitcher>
+    with TickerProviderStateMixin {
+  late final AnimationController _fade = AnimationController(
+    vsync: this,
+    duration: Motion.medium,
+    value: 1,
+  )..addStatusListener(_onFade);
+  late final Animation<double> _fadeIn = CurvedAnimation(
+    parent: _fade,
+    curve: Motion.emphasized,
+  );
+  late final Animation<double> _fadeOut = ReverseAnimation(_fadeIn);
+  late final AnimationController _scale = AnimationController.unbounded(
+    vsync: this,
+    value: 1,
+  );
+  static const Animation<double> _still = AlwaysStoppedAnimation<double>(1);
+
+  Object? _oldGlyph;
+  Widget? _oldChild;
+
+  void _onFade(AnimationStatus s) {
+    if (s == AnimationStatus.completed && _oldChild != null) {
+      setState(() => _oldChild = _oldGlyph = null);
+    }
+  }
+
+  @override
+  void didUpdateWidget(GlyphSwitcher old) {
+    super.didUpdateWidget(old);
+    if (widget.glyph == old.glyph) return;
+    if (Motion.reduced(context)) {
+      _oldChild = _oldGlyph = null;
+      _fade.value = 1;
+      _scale.value = 1;
+      return;
+    }
+    _oldGlyph = old.glyph;
+    _oldChild = old.child;
+    unawaited(_fade.forward(from: 0));
+    _scale.value = 0.92;
+    unawaited(_scale.animateWith(SpringSimulation(Motion.smooth, 0.92, 1, 0)));
+  }
+
+  @override
+  void dispose() {
+    _fade.dispose();
+    _scale.dispose();
+    super.dispose();
+  }
+
+  // Both layers have the same shape, so the outgoing glyph keeps its state.
+  Widget _layer(
+    Object glyph,
+    Animation<double> opacity,
+    Animation<double> scale,
+    Widget child,
+  ) => KeyedSubtree(
+    key: ValueKey<Object>(glyph),
+    child: FadeTransition(
+      opacity: opacity,
+      child: ScaleTransition(scale: scale, child: child),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget? old = _oldChild;
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        if (old != null) _layer(_oldGlyph!, _fadeOut, _still, old),
+        _layer(
+          widget.glyph,
+          old == null ? _still : _fadeIn,
+          _scale,
+          widget.child,
+        ),
+      ],
     );
   }
 }
