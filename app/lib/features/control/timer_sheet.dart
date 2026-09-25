@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart';
 
 import '../../app/providers.dart';
 import '../../bootstrap/service_registry.dart';
@@ -65,36 +66,116 @@ class TimerCountdown extends ConsumerStatefulWidget {
 }
 
 class _TimerCountdownState extends ConsumerState<TimerCountdown> {
+  ProviderSubscription<Duration?>? _deadline;
   Timer? _tick;
 
   @override
+  void initState() {
+    super.initState();
+    _listen();
+  }
+
+  @override
+  void didUpdateWidget(TimerCountdown old) {
+    super.didUpdateWidget(old);
+    if (old.fixtureId != widget.fixtureId) _listen();
+  }
+
+  @override
   void dispose() {
+    _deadline?.close();
     _tick?.cancel();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final Duration? deadline = ref.watch(
-      fixtureStatusProvider(widget.fixtureId)
-          .select((FixtureStatus s) => s.state?.timerDeadline),
+  void _listen() {
+    _deadline?.close();
+    _deadline = ref.listenManual(
+      _deadlineOf(widget.fixtureId),
+      (_, Duration? deadline) => _arm(deadline),
+      fireImmediately: true,
     );
-    final Duration now = ref.watch(servicesProvider).scheduler.now;
-    final Duration? left = deadline == null ? null : deadline - now;
-    if (left != null && left > Duration.zero) {
-      _tick ??= Timer.periodic(
-        const Duration(seconds: 1),
-        (_) => setState(() {}),
-      );
-    } else {
+  }
+
+  /// Ticks each second while the light's timer runs, stops once it is over.
+  void _arm(Duration? deadline) {
+    final Duration now = ref.read(servicesProvider).scheduler.now;
+    if (deadline == null || deadline <= now) {
       _tick?.cancel();
       _tick = null;
+      return;
     }
+    _tick ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {});
+      _arm(_deadline?.read());
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Duration? deadline = ref.watch(_deadlineOf(widget.fixtureId));
+    final Duration now = ref.watch(servicesProvider).scheduler.now;
+    final Duration? left = deadline == null ? null : deadline - now;
     return widget.builder(
       context,
       left == null || left <= Duration.zero ? null : left,
     );
   }
+
+  static ProviderListenable<Duration?> _deadlineOf(String fixtureId) =>
+      fixtureStatusProvider(fixtureId)
+          .select((FixtureStatus s) => s.state?.timerDeadline);
+}
+
+/// The duration a light's running timer was started with from this app.
+/// Kept beside its deadline, so a timer started or restarted elsewhere (whose
+/// deadline differs) is not measured against it.
+@immutable
+final class TimerSpan {
+  const TimerSpan({required this.total, required this.deadline});
+  final Duration total;
+  final Duration deadline;
+
+  /// Deadlines re-read from the light drift by the link latency and its
+  /// whole-second rounding.
+  static const Duration tolerance = Duration(seconds: 5);
+
+  bool matches(Duration deadline) =>
+      (deadline - this.deadline).abs() <= tolerance;
+}
+
+/// The [TimerSpan] of each light's timer (lives past the sheet).
+final NotifierProviderFamily<TimerSpanNotifier, TimerSpan?, String>
+timerSpanProvider =
+    NotifierProvider.family<TimerSpanNotifier, TimerSpan?, String>(
+      TimerSpanNotifier.new,
+    );
+
+final class TimerSpanNotifier extends Notifier<TimerSpan?> {
+  TimerSpanNotifier(this.fixtureId);
+  final String fixtureId;
+
+  @override
+  TimerSpan? build() => null;
+
+  void started(Duration total, Duration deadline) =>
+      state = TimerSpan(total: total, deadline: deadline);
+
+  void cancelled() => state = null;
+}
+
+/// The duration the running timer (deadline [deadline], [left] to go) is
+/// measured against: what this app started it with, else the smallest step
+/// that holds it (the steps are all any ElectroBright app offers).
+Duration timerTotal(TimerSpan? span, Duration deadline, Duration left) {
+  if (span != null && span.matches(deadline) && span.total >= left) {
+    return span.total;
+  }
+  return timerSteps.firstWhere(
+    (Duration s) => s >= left,
+    orElse: () => timerSteps.last,
+  );
 }
 
 /// Picks and starts (or cancels) the light's sleep timer.
@@ -112,23 +193,33 @@ Future<void> showTimerSheet(
   ),
 );
 
-class _TimerSheet extends StatefulWidget {
+class _TimerSheet extends ConsumerStatefulWidget {
   const _TimerSheet({required this.fixtureId, required this.session});
   final String fixtureId;
   final FixtureSession session;
 
   @override
-  State<_TimerSheet> createState() => _TimerSheetState();
+  ConsumerState<_TimerSheet> createState() => _TimerSheetState();
 }
 
-class _TimerSheetState extends State<_TimerSheet> {
+class _TimerSheetState extends ConsumerState<_TimerSheet> {
   int _index = 4; // 10 min
 
   Future<void> _set(int seconds) async {
     final AppLocalizations l = AppLocalizations.of(context);
+    final TimerSpanNotifier span = ref.read(
+      timerSpanProvider(widget.fixtureId).notifier,
+    );
+    final Duration deadline =
+        ref.read(servicesProvider).scheduler.now + Duration(seconds: seconds);
     final EbResult r = await widget.session.setTimer(seconds);
     if (!mounted) return;
     if (r.isSuccess) {
+      if (seconds == 0) {
+        span.cancelled();
+      } else {
+        span.started(Duration(seconds: seconds), deadline);
+      }
       Navigator.of(context).pop();
     } else {
       showGlassToast(
@@ -142,6 +233,11 @@ class _TimerSheetState extends State<_TimerSheet> {
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
+    final TimerSpan? span = ref.watch(timerSpanProvider(widget.fixtureId));
+    final Duration? deadline = ref.watch(
+      fixtureStatusProvider(widget.fixtureId)
+          .select((FixtureStatus s) => s.state?.timerDeadline),
+    );
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(
@@ -161,29 +257,38 @@ class _TimerSheetState extends State<_TimerSheet> {
               Center(
                 child: SizedBox.square(
                   dimension: 240,
+                  // Running: the light can only cancel its timer, not retime
+                  // it, so the dial is a read-only countdown.
                   child: TimerDial(
                     steps: timerSteps,
                     index: _index,
                     label: left == null
                         ? stepLabel
                         : (_) => l.timerOff(countdown(left)),
-                    progress: left == null
+                    progress: left == null || deadline == null
                         ? null
                         : (left.inMilliseconds /
-                                  timerSteps[_index].inMilliseconds)
+                                  timerTotal(
+                                    span,
+                                    deadline,
+                                    left,
+                                  ).inMilliseconds)
                               .clamp(0.0, 1.0),
                     onChanged: (int i) => setState(() => _index = i),
                   ),
                 ),
               ),
               const SizedBox(height: Space.m),
-              FilledButton(
-                key: const ValueKey<String>('timer-start'),
-                onPressed: () => unawaited(_set(timerSteps[_index].inSeconds)),
-                child: Text(l.timerStart),
-              ),
-              if (left != null)
-                TextButton(
+              if (left == null)
+                FilledButton(
+                  key: const ValueKey<String>('timer-start'),
+                  onPressed: () =>
+                      unawaited(_set(timerSteps[_index].inSeconds)),
+                  child: Text(l.timerStart),
+                )
+              else
+                FilledButton(
+                  key: const ValueKey<String>('timer-cancel'),
                   onPressed: () => unawaited(_set(0)),
                   child: Text(l.timerCancel),
                 ),

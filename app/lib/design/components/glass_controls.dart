@@ -417,12 +417,14 @@ class _TimerDialState extends State<TimerDial> {
     final LightTone tone = ToneScope.of(context);
     final Haptics h = HapticsScope.of(context);
     final Color fg = tone.dark ? Colors.white : const Color(0xFF15171C);
+    // Counting down: a read-only ring, no longer a picker.
+    final bool running = widget.progress != null;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
         final double s = math.min(c.maxWidth, 260);
         final Size size = Size.square(s);
         return Semantics(
-          slider: true,
+          slider: !running,
           label: 'Sleep timer',
           value: widget.label(widget.steps[widget.index]),
           increasedValue: widget.label(
@@ -431,19 +433,20 @@ class _TimerDialState extends State<TimerDial> {
           decreasedValue: widget.label(
             widget.steps[math.max(widget.index - 1, 0)],
           ),
-          onIncrease: widget.index < widget.steps.length - 1
+          readOnly: running,
+          onIncrease: !running && widget.index < widget.steps.length - 1
               ? () => widget.onChanged(widget.index + 1)
               : null,
-          onDecrease: widget.index > 0
+          onDecrease: !running && widget.index > 0
               ? () => widget.onChanged(widget.index - 1)
               : null,
           child: GestureDetector(
-            onPanDown: widget.progress == null
-                ? (DragDownDetails d) => _drag(d.localPosition, size, h)
-                : null,
-            onPanUpdate: widget.progress == null
-                ? (DragUpdateDetails d) => _drag(d.localPosition, size, h)
-                : null,
+            onPanDown: running
+                ? null
+                : (DragDownDetails d) => _drag(d.localPosition, size, h),
+            onPanUpdate: running
+                ? null
+                : (DragUpdateDetails d) => _drag(d.localPosition, size, h),
             child: SizedBox.fromSize(
               size: size,
               child: CustomPaint(
@@ -451,7 +454,7 @@ class _TimerDialState extends State<TimerDial> {
                   fraction:
                       widget.progress ??
                       (widget.index + 1) / widget.steps.length,
-                  steps: widget.steps.length,
+                  steps: running ? 0 : widget.steps.length,
                   accent: Color(tone.accent),
                   dark: tone.dark,
                 ),
@@ -485,7 +488,7 @@ class _DialPainter extends CustomPainter {
     required this.dark,
   });
   final double fraction;
-  final int steps;
+  final int steps; // detent dots (0 = none)
   final Color accent;
   final bool dark;
 
@@ -521,7 +524,10 @@ class _DialPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_DialPainter old) =>
-      old.fraction != fraction || old.accent != accent || old.dark != dark;
+      old.fraction != fraction ||
+      old.steps != steps ||
+      old.accent != accent ||
+      old.dark != dark;
 }
 
 /// A short glass toast shown at the top of the screen.

@@ -1,6 +1,7 @@
 import 'package:electrobright/core/protocol/eb/eb_constants.dart';
 import 'package:electrobright/design/components/glass_controls.dart';
 import 'package:electrobright/features/control/control_screen.dart';
+import 'package:electrobright/features/control/timer_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -103,6 +104,59 @@ void main() {
     expect(d.model('Desk strip').timerRemainingSec, inInclusiveRange(590, 600));
     expect(find.byKey(const ValueKey<String>('timer-left')), findsOneWidget);
     expect(Eb.timerMaxSeconds, 86400);
+    // Running: one action, cancel.
+    await t.tap(find.byKey(const ValueKey<String>('timer-button')));
+    await settle(t, 1);
+    expect(find.byKey(const ValueKey<String>('timer-start')), findsNothing);
+    expect(find.byKey(const ValueKey<String>('timer-cancel')), findsOneWidget);
+    await t.tap(find.byKey(const ValueKey<String>('timer-cancel')));
+    await settle(t);
+    expect(d.model('Desk strip').timerActive, isFalse);
+    expect(find.byKey(const ValueKey<String>('timer-left')), findsNothing);
+    // Idle again: start only.
+    await t.tap(find.byKey(const ValueKey<String>('timer-button')));
+    await settle(t, 1);
+    expect(find.byKey(const ValueKey<String>('timer-start')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('timer-cancel')), findsNothing);
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('sleep timer ring counts down the duration it was started with', (
+    WidgetTester t,
+  ) async {
+    final DemoApp d = await open(t, 'Desk strip');
+    TimerDial dial() => t.widget<TimerDial>(find.byType(TimerDial));
+
+    // Start a 1 min timer (not the 10 min default).
+    await t.tap(find.byKey(const ValueKey<String>('timer-button')));
+    await settle(t, 1);
+    expect(dial().progress, isNull);
+    dial().onChanged(timerSteps.indexOf(const Duration(minutes: 1)));
+    await t.pump();
+    await t.tap(find.byKey(const ValueKey<String>('timer-start')));
+    await settle(t);
+    expect(d.model('Desk strip').timerRemainingSec, inInclusiveRange(58, 60));
+
+    // Half-way: the reopened sheet shows half a ring and the countdown.
+    await settle(t, 28);
+    await t.tap(find.byKey(const ValueKey<String>('timer-button')));
+    await settle(t, 1);
+    expect(dial().progress, closeTo(0.5, 0.05));
+    expect(find.textContaining('Off in 0:'), findsWidgets);
+
+    // The dial is read-only while running and turning it moves nothing.
+    final double before = dial().progress!;
+    final Rect box = t.getRect(find.byType(TimerDial));
+    await t.dragFrom(
+      box.topCenter + const Offset(40, 20),
+      const Offset(80, 80),
+    );
+    await t.pump();
+    dial().onChanged(timerSteps.length - 1);
+    await t.pump();
+    // Only the countdown itself (the gesture's own second) moves the ring.
+    expect(dial().progress, closeTo(before, 0.05));
+    expect(d.model('Desk strip').timerRemainingSec, inInclusiveRange(28, 31));
     await DemoApp.shutDown(t);
   });
 }
