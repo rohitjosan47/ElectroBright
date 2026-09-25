@@ -2,22 +2,19 @@ import 'package:electrobright/design/controls/glass_slider.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// The light theme's slider fill sits inside its track like liquid in a
-/// tube: inset from the rim on every side, concentric, never cut or flat.
+/// A pill slider's fill sits inside its track like liquid in a tube (both
+/// themes): inset from the rim on every side, concentric, never cut or flat.
 void main() {
   const Size pill = Size(353, 56);
-  const double inset = GlassSlider.lightFillInset;
+  const double inset = GlassSlider.fillInset;
 
   test('empty: nothing to draw', () {
-    expect(GlassSlider.lightFillShapes(pill, 0), isNull);
+    expect(GlassSlider.fillShapes(pill, 0), isNull);
   });
 
   for (final double f in <double>[0.01, 0.02, 0.5, 1]) {
     test('${(f * 100).round()} %: inside the rim, concentric, rounded', () {
-      final ({RRect tube, RRect body}) s = GlassSlider.lightFillShapes(
-        pill,
-        f,
-      )!;
+      final ({RRect tube, RRect body}) s = GlassSlider.fillShapes(pill, f)!;
       final Rect track = Offset.zero & pill;
       // The tube is the track inset by the rim width, with the concentric
       // radius (track radius − inset).

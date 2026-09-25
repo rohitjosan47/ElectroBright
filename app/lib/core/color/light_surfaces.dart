@@ -1,7 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:meta/meta.dart';
-
 import 'color_science.dart';
 import 'light_tone.dart';
 
@@ -118,34 +116,8 @@ abstract final class LightInk {
   }
 }
 
-/// A slider fill that looks like light inside glass: the light's own colour,
-/// deeper where it starts and brighter at its leading end, the ink that reads
-/// on all of it, and the colour it casts onto the surface below. It differs
-/// from the empty track by colour and brightness; its edge is a soft
-/// liquid-glass highlight, not an outline.
-@immutable
-final class LuminousFill {
-  const LuminousFill({
-    required this.deep,
-    required this.base,
-    required this.bright,
-    required this.ink,
-    required this.under,
-  });
-
-  final int deep;
-  final int base;
-  final int bright;
-
-  /// Text and icons on the fill (>= 4.5:1 on every part of it).
-  final int ink;
-
-  /// Coloured under-light (drawn translucent, blurred, below the fill).
-  final int under;
-}
-
 /// The light theme's surfaces for one [LightTone]: what each element really
-/// sits on (glass composited over the canvas), and the fills, edges and inks
+/// sits on (glass composited over the canvas), and the tints, edges and inks
 /// that read on it. Widgets paint with these; the contrast test checks them.
 final class LightSurfaces {
   LightSurfaces(this.tone) : assert(!tone.dark, 'light theme only');
@@ -189,59 +161,9 @@ final class LightSurfaces {
   int get pillTrack => trackOn(chrome);
   int get panelTrack => trackOn(panel);
 
-  /// The fill for a slider in [colour] (the light's colour, or the accent).
-  LuminousFill luminous(int colour) =>
-      luminousOf(ColorScience.fromArgb(colour));
-
-  /// [luminous] for an unrounded colour (linear light). Continuous in the
-  /// colour: a colour that moves smoothly gives a fill that does too.
-  LuminousFill luminousOf(LinearRgb lin) {
-    final Oklch o = ColorScience.toOklch(lin);
-    final bool white = LightInk.isWhite(lin);
-    final bool warm = white && LightInk.isWarm(lin);
-    // Whites: a luminous ivory or a clean cool white, faintly tinted.
-    final double l0 = white
-        ? (warm ? 0.93 : 0.955)
-        : LightInk.cuspLightness(o.h).clamp(0.5, 0.92);
-    Oklch at(double lightness) => white
-        ? Oklch(lightness, warm ? 0.042 : 0.02, warm ? 85 : 235)
-        : ColorScience.toGamut(Oklch(lightness, 0.37, o.h));
-    int deepAt(double l) => LightInk.argb(at(l - 0.05));
-    int brightAt(double l) => LightInk.argb(at(math.min(0.985, l + 0.04)));
-    bool reads(int ink, double l) =>
-        LightInk.contrast(ink, deepAt(l)) >= 4.5 &&
-        LightInk.contrast(ink, brightAt(l)) >= 4.5;
-    LuminousFill fill(double l, int ink) => LuminousFill(
-      deep: deepAt(l),
-      base: LightInk.argb(at(l)),
-      bright: brightAt(l),
-      ink: ink,
-      under: underLightOf(lin),
-    );
-    for (final int ink in <int>[LightInk.text, LightInk.white]) {
-      if (reads(ink, l0)) return fill(l0, ink);
-    }
-    // Neither ink reads yet (a mid-tone): brighter, not darker, just as far
-    // as dark text needs (found exactly, not in steps).
-    const double top = 0.96;
-    if (!reads(LightInk.text, top)) return fill(top, LightInk.text);
-    double lo = l0, hi = top;
-    for (int i = 0; i < 24; i++) {
-      final double mid = (lo + hi) / 2;
-      if (reads(LightInk.text, mid)) {
-        hi = mid;
-      } else {
-        lo = mid;
-      }
-    }
-    return fill(hi, LightInk.text);
-  }
-
   /// Coloured light cast onto the surface below an element in [colour].
-  int underLight(int colour) => underLightOf(ColorScience.fromArgb(colour));
-
-  /// [underLight] for an unrounded colour (linear light).
-  int underLightOf(LinearRgb lin) {
+  int underLight(int colour) {
+    final LinearRgb lin = ColorScience.fromArgb(colour);
     if (LightInk.isWhite(lin)) {
       return LightInk.argb(
         LightInk.isWarm(lin)

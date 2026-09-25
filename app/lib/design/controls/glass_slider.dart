@@ -7,12 +7,10 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/semantics.dart';
 
 import '../../core/color/light_surfaces.dart';
-import '../../core/color/light_tone.dart';
 import '../glass/glass_surface.dart';
 import '../haptics/haptics.dart';
 import '../haptics/haptics_scope.dart';
 import '../tokens/tokens.dart';
-import '../tone/screen_colour.dart';
 import '../tone/tone_scope.dart';
 
 /// A horizontal glass slider. The value lives in local state while the finger
@@ -33,7 +31,6 @@ class GlassSlider extends StatefulWidget {
     this.onChangeStart,
     this.onChangeEnd,
     this.track,
-    this.fill,
     this.height = 44,
     this.leading,
     this.leadingBuilder,
@@ -58,8 +55,6 @@ class GlassSlider extends StatefulWidget {
   /// Colours painted along the whole track (gradient sliders).
   final List<Color>? track;
 
-  /// Colour of the filled part (pill sliders); defaults to the tone accent.
-  final Color? fill;
   final double height;
   final Widget? leading;
   final Widget? trailing;
@@ -104,19 +99,16 @@ class GlassSlider extends StatefulWidget {
     );
   }
 
-  /// Light theme: how far the fill sits inside the track (the glass rim's
+  /// Pill sliders: how far the fill sits inside the track (the glass rim's
   /// width plus a hair), on every side.
-  static const double lightFillInset = 2;
+  static const double fillInset = 2;
 
-  /// Light theme fill geometry for a track of [size] at [fraction]: the
+  /// Pill slider fill geometry for a track of [size] at [fraction]: the
   /// inner tube (the track inset on every side, concentric radius) and the
   /// fill body inside it (leading end rounded min(h/2, w/2)); null when
   /// empty.
-  static ({RRect tube, RRect body})? lightFillShapes(
-    Size size,
-    double fraction,
-  ) {
-    const double inset = lightFillInset;
+  static ({RRect tube, RRect body})? fillShapes(Size size, double fraction) {
+    const double inset = fillInset;
     final double h = size.height - 2 * inset;
     final double w = fraction.clamp(0.0, 1.0) * (size.width - 2 * inset);
     if (w <= 0 || h <= 0) return null;
@@ -274,14 +266,9 @@ class _GlassSliderState extends State<GlassSlider>
 
   @override
   Widget build(BuildContext context) {
-    final LightTone tone = ToneScope.of(context);
+    // Light or dark only: the slider never follows the light's colour.
+    final bool dark = ToneScope.darkOf(context);
     final Haptics h = HapticsScope.of(context);
-    final Color fill = widget.fill ?? Color(tone.accent);
-    // Light: the fill as light inside glass (its colour, gradient, specular,
-    // inner glow, same-hue edge and coloured under-light).
-    final LuminousFill? luminous = tone.dark
-        ? null
-        : LightSurfaces(tone).luminousOf(linearOf(fill));
     // Only the words follow the value here; the track repaints from [_v].
     return ValueListenableBuilder<String>(
       valueListenable: _shown,
@@ -299,17 +286,11 @@ class _GlassSliderState extends State<GlassSlider>
           child: child,
         );
       },
-      child: _body(context, tone, fill, luminous, h),
+      child: _body(context, dark, h),
     );
   }
 
-  Widget _body(
-    BuildContext context,
-    LightTone tone,
-    Color fill,
-    LuminousFill? luminous,
-    Haptics h,
-  ) {
+  Widget _body(BuildContext context, bool dark, Haptics h) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
         final double width = c.maxWidth;
@@ -364,56 +345,41 @@ class _GlassSliderState extends State<GlassSlider>
             opacity: widget.enabled ? 1 : 0.45,
             child: SizedBox(
               height: widget.height,
-              child: CustomPaint(
-                // Light: the fill's colour cast onto the surface below.
-                painter: luminous == null || widget.track != null
-                    ? null
-                    : _UnderLight(
-                        value: _v,
-                        min: widget.min,
-                        max: widget.max,
-                        colour: Color(luminous.under),
-                      ),
-                child: GlassSurface(
-                  tier: widget.glassTier,
-                  radius: Radii.capsule,
-                  elevated: widget.elevated,
-                  child: RepaintBoundary(
-                    child: CustomPaint(
-                      painter: _TrackPainter(
-                        value: _v,
-                        min: widget.min,
-                        max: widget.max,
-                        fill: fill,
-                        luminous: luminous,
-                        track: widget.track,
-                        dark: tone.dark,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: Space.m,
-                        ),
-                        child: Row(
-                          children: <Widget>[
-                            // At large text sizes the label shrinks to fit the
-                            // pill instead of overflowing it.
-                            Expanded(
-                              child: Align(
-                                alignment: AlignmentDirectional.centerStart,
-                                child: leading == null
-                                    ? null
-                                    : FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        child: leading,
-                                      ),
-                              ),
+              child: GlassSurface(
+                tier: widget.glassTier,
+                radius: Radii.capsule,
+                elevated: widget.elevated,
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    painter: _TrackPainter(
+                      value: _v,
+                      min: widget.min,
+                      max: widget.max,
+                      track: widget.track,
+                      dark: dark,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: Space.m),
+                      child: Row(
+                        children: <Widget>[
+                          // At large text sizes the label shrinks to fit the
+                          // pill instead of overflowing it.
+                          Expanded(
+                            child: Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: leading == null
+                                  ? null
+                                  : FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: leading,
+                                    ),
                             ),
-                            if (trailing != null) ...<Widget>[
-                              const SizedBox(width: Space.s),
-                              FittedBox(fit: BoxFit.scaleDown, child: trailing),
-                            ],
+                          ),
+                          if (trailing != null) ...<Widget>[
+                            const SizedBox(width: Space.s),
+                            FittedBox(fit: BoxFit.scaleDown, child: trailing),
                           ],
-                        ),
+                        ],
                       ),
                     ),
                   ),
@@ -432,21 +398,15 @@ class _TrackPainter extends CustomPainter {
     required this.value,
     required this.min,
     required this.max,
-    required this.fill,
     required this.track,
     required this.dark,
-    this.luminous,
   }) : super(repaint: value);
 
   final ValueListenable<double> value;
   final double min;
   final double max;
-  final Color fill;
   final List<Color>? track;
   final bool dark;
-
-  /// Light theme: how the pill's fill is painted.
-  final LuminousFill? luminous;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -507,50 +467,74 @@ class _TrackPainter extends CustomPainter {
         r - 3,
         Paint()..color = Color.lerp(t.first, t.last, fraction)!,
       );
-    } else if (luminous != null) {
-      // Light pill: a faint glass track, then the fill like liquid in a tube:
-      // inset from the track by the rim on every side and clipped to the
-      // concentric inner capsule, so the rim never overlaps it and nothing
-      // is cut. It brightens toward the leading end, with a white specular
-      // across its top half, a soft inner glow at the leading end and a
-      // liquid-glass edge (a bright inner highlight on top, a barely deeper
-      // tone below) instead of an outline.
-      final LuminousFill l = luminous!;
-      canvas.drawRRect(
-        shape,
-        Paint()
-          ..color = Colors.black.withValues(alpha: LightSurfaces.trackAlpha),
-      );
-      final ({RRect tube, RRect body})? shapes = GlassSlider.lightFillShapes(
+    } else {
+      // Pill slider: frosted brand glass (PillFill), one fixed look per
+      // theme, never the light's colour; it depends only on the value. Like
+      // coloured glass in a glass tube: inset from the track by the rim on
+      // every side, clipped to the concentric inner capsule (nothing is cut),
+      // shrinking smoothly to nothing; translucent, so the glass beneath
+      // shows through. A crisp specular band across its top (above where the
+      // icon and label sit, so their ink keeps its contrast), a soft inner
+      // glow in its own brighter tint at the leading end and a bright glass
+      // rim, no outline.
+      final PillGlass glass = PillFill.of(dark: dark);
+      Color tint(Color c, [double k = 1]) =>
+          c.withValues(alpha: glass.opacity * k);
+      if (!dark) {
+        // A faint neutral tint so the empty track reads as glass.
+        canvas.drawRRect(
+          shape,
+          Paint()
+            ..color = Colors.black.withValues(alpha: LightSurfaces.trackAlpha),
+        );
+      }
+      final ({RRect tube, RRect body})? shapes = GlassSlider.fillShapes(
         size,
         fraction,
       );
       if (shapes != null) {
-        const double inset = GlassSlider.lightFillInset;
+        const double inset = GlassSlider.fillInset;
         final RRect tube = shapes.tube;
         final RRect body = shapes.body;
         final Rect rect = body.outerRect;
         final double h = rect.height;
         final double w = rect.width;
+        // Around the fill, inside the track: dark a very soft periwinkle
+        // glow, light a soft bluish shadow (never grey).
+        canvas.drawRRect(
+          dark ? body : body.shift(const Offset(0, 1)),
+          Paint()
+            ..color = glass.halo.withValues(alpha: dark ? 0.35 : 0.28)
+            ..maskFilter = MaskFilter.blur(BlurStyle.normal, dark ? 5 : 2),
+        );
         canvas.save();
         canvas.clipRRect(tube);
         canvas.drawRRect(
           body,
           Paint()
             ..shader = LinearGradient(
-              colors: <Color>[Color(l.deep), Color(l.base), Color(l.bright)],
+              colors: <Color>[
+                tint(glass.deep),
+                tint(glass.base),
+                tint(glass.bright),
+              ],
               stops: const <double>[0, 0.6, 1],
             ).createShader(rect),
         );
         canvas.clipRRect(body);
-        final Rect top = Rect.fromLTWH(inset, inset, w, h / 2);
+        // The specular band: bright at the top edge, gone by 28 % of the
+        // height (the icon and label start at about 30 %).
+        final Rect top = Rect.fromLTWH(inset, inset, w, h * 0.28);
         canvas.drawRect(
           top,
           Paint()
-            ..shader = const LinearGradient(
+            ..shader = LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: <Color>[Color(0x73FFFFFF), Color(0x00FFFFFF)],
+              colors: <Color>[
+                Colors.white.withValues(alpha: dark ? 0.55 : 0.42),
+                Colors.white.withValues(alpha: 0),
+              ],
             ).createShader(top),
         );
         final Offset glowAt = Offset(
@@ -562,13 +546,11 @@ class _TrackPainter extends CustomPainter {
           h * 0.9,
           Paint()
             ..shader = RadialGradient(
-              colors: <Color>[
-                Colors.white.withValues(alpha: 0.38),
-                Colors.white.withValues(alpha: 0),
-              ],
+              colors: <Color>[tint(glass.bright, 0.6), tint(glass.bright, 0)],
             ).createShader(Rect.fromCircle(center: glowAt, radius: h * 0.9)),
         );
-        // The liquid-glass edge: soft and low-contrast, no visible outline.
+        // The glass rim: bright white along the top, the tint's own brighter
+        // tone along the bottom; no dark outline.
         canvas.drawRRect(
           body.deflate(0.5),
           Paint()
@@ -578,48 +560,16 @@ class _TrackPainter extends CustomPainter {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: <Color>[
-                Colors.white.withValues(alpha: 0.7),
+                Colors.white.withValues(alpha: 0.9),
                 Colors.white.withValues(alpha: 0),
-                Color(l.deep).withValues(alpha: 0),
-                Color(l.deep).withValues(alpha: 0.25),
+                glass.bright.withValues(alpha: 0),
+                glass.bright.withValues(alpha: dark ? 0.7 : 0.55),
               ],
               stops: const <double>[0, 0.4, 0.6, 1],
             ).createShader(rect),
         );
         canvas.restore();
       }
-    } else if (fraction > 0) {
-      // Pill slider: the filled part in its colour, fraction × width all the
-      // way down to 0. Drawn inside the track's clip, so its left end is the
-      // track's own round end; its right end rounds only as far as it is
-      // wide (never pinched), and a soft bloom glows at the leading edge.
-      final double h = size.height;
-      final double w = fraction * size.width;
-      final Rect rect = Rect.fromLTWH(0, 0, w, h);
-      final Radius end = Radius.circular(math.min(h / 2, w / 2));
-      canvas.drawRRect(
-        RRect.fromRectAndCorners(rect, topRight: end, bottomRight: end),
-        Paint()
-          ..shader = LinearGradient(
-            colors: <Color>[
-              fill.withValues(alpha: dark ? 0.55 : 0.65),
-              fill,
-            ],
-          ).createShader(rect),
-      );
-      final Offset edge = Offset(w, h / 2);
-      final double bloom = h * 0.9;
-      canvas.drawCircle(
-        edge,
-        bloom,
-        Paint()
-          ..shader = RadialGradient(
-            colors: <Color>[
-              fill.withValues(alpha: dark ? 0.35 : 0.28),
-              fill.withValues(alpha: 0),
-            ],
-          ).createShader(Rect.fromCircle(center: edge, radius: bloom)),
-      );
     }
     canvas.restore();
   }
@@ -629,50 +579,8 @@ class _TrackPainter extends CustomPainter {
       old.value != value ||
       old.min != min ||
       old.max != max ||
-      old.fill != fill ||
-      old.luminous != luminous ||
       old.track != track ||
       old.dark != dark;
-}
-
-/// Light theme: the slider fill's colour shining onto the surface below it
-/// (translucent, blurred, slightly lower), following the value.
-class _UnderLight extends CustomPainter {
-  _UnderLight({
-    required this.value,
-    required this.min,
-    required this.max,
-    required this.colour,
-  }) : super(repaint: value);
-
-  final ValueListenable<double> value;
-  final double min;
-  final double max;
-  final Color colour;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double f = ((value.value - min) / (max - min)).clamp(0.0, 1.0);
-    if (f <= 0) return;
-    final double h = size.height;
-    final double w = math.max(h * 0.6, f * size.width);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(h * 0.1, h * 0.3, w - h * 0.2, h * 0.85),
-        Radius.circular(h / 2),
-      ),
-      Paint()
-        ..color = colour.withValues(alpha: 0.26)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_UnderLight old) =>
-      old.value != value ||
-      old.min != min ||
-      old.max != max ||
-      old.colour != colour;
 }
 
 /// Semantics helper for 1..10 level sliders ("Speed 5 of 10").

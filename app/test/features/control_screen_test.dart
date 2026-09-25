@@ -254,11 +254,11 @@ void main() {
     );
     final Size size = t.getSize(track);
     final double h = size.height;
-    // Light theme (as tested): the fill sits inside the track like liquid in
-    // a tube — inset on every side, clipped to the concentric inner capsule
-    // — about 2 % of the inner width (no minimum), its end rounded only as
-    // far as it is wide; a soft glass edge, no dark outline, no grip.
-    const double inset = GlassSlider.lightFillInset;
+    // The fill (one fixed colour per theme) sits inside the track like
+    // liquid in a tube — inset on every side, clipped to the concentric inner
+    // capsule — about 2 % of the inner width (no minimum), its end rounded
+    // only as far as it is wide; a soft glass edge, no dark outline, no grip.
+    const double inset = GlassSlider.fillInset;
     final double ih = h - 2 * inset;
     final double w = 5 / 255 * (size.width - 2 * inset);
     expect(w / (size.width - 2 * inset), closeTo(0.02, 0.001));
@@ -298,10 +298,12 @@ void main() {
         return paint.style != PaintingStyle.stroke || paint.shader != null;
       }),
     );
+    // Track tint, contact shadow, fill and edge; nothing more (no grip).
     expect(
       track,
       isNot(
         paints
+          ..rrect()
           ..rrect()
           ..rrect()
           ..rrect()

@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import '../../../core/color/colour_engine.dart';
 import '../../../core/color/steady_colour.dart';
 import '../../../core/color/led_white_points.dart';
-import '../../../core/color/light_tone.dart';
 import '../../../core/color/light_surfaces.dart';
 import '../../../core/model/channel_color.dart';
 import '../../../core/model/channel_layout.dart';
@@ -292,56 +291,34 @@ class _ModeSettings extends StatelessWidget {
     final AppLocalizations l = AppLocalizations.of(context);
     final FixtureSession? s = session;
     final EbColorModeKind? kind = mode.colorModeKind;
-    // Light: the label and value switch to whatever reads on the fill once
-    // it reaches them (the fill is a solid colour there).
-    final LightTone tone = ToneScope.of(context);
-    final Color? onFill = tone.dark
-        ? null
-        : Color(LightSurfaces(tone).luminous(tone.accent).ink);
-    Color ink(bool overFill) => overFill && onFill != null ? onFill : fg;
+    // The label and value take the pill fill's fixed ink once the fill
+    // reaches them.
+    final Color onFill = PillFill.inkOf(dark: ToneScope.darkOf(context));
+    Color ink(bool overFill) => overFill ? onFill : fg;
     const TextStyle figures = TextStyle(
       fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
     );
     Widget slider(String label, int value, void Function(int v) send) =>
-        onFill == null
-        ? GlassSlider(
-            value: value.toDouble(),
-            min: 1,
-            max: 10,
-            divisions: 9,
-            semanticLabel: label,
-            enabled: s != null,
-            valueText: (double v) => l.levelOfTen(v.round()),
-            leading: Text(label, style: TextStyle(color: fg)),
-            trailing: Text(
-              '$value',
-              style: TextStyle(
-                color: fg,
-                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-              ),
+        GlassSlider(
+          value: value.toDouble(),
+          min: 1,
+          max: 10,
+          divisions: 9,
+          semanticLabel: label,
+          enabled: s != null,
+          valueText: (double v) => l.levelOfTen(v.round()),
+          leadingBuilder: (double v, double width) => Text(
+            label,
+            style: TextStyle(color: ink((v - 1) / 9 * width >= Space.m + 24)),
+          ),
+          trailingBuilder: (double v, double width) => Text(
+            '${v.round()}',
+            style: figures.copyWith(
+              color: ink((v - 1) / 9 * width >= width - Space.m - 12),
             ),
-            onChanged: (double v) => send(v.round()),
-          )
-        : GlassSlider(
-            value: value.toDouble(),
-            min: 1,
-            max: 10,
-            divisions: 9,
-            semanticLabel: label,
-            enabled: s != null,
-            valueText: (double v) => l.levelOfTen(v.round()),
-            leadingBuilder: (double v, double width) => Text(
-              label,
-              style: TextStyle(color: ink((v - 1) / 9 * width >= Space.m + 24)),
-            ),
-            trailingBuilder: (double v, double width) => Text(
-              '${v.round()}',
-              style: figures.copyWith(
-                color: ink((v - 1) / 9 * width >= width - Space.m - 12),
-              ),
-            ),
-            onChanged: (double v) => send(v.round()),
-          );
+          ),
+          onChanged: (double v) => send(v.round()),
+        );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[

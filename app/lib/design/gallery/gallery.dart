@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../core/color/color_science.dart';
-import '../../core/color/light_surfaces.dart';
 import '../../core/color/light_tone.dart';
 import '../../core/protocol/eb/mode_catalog.dart';
 import '../canvas/ambient_canvas.dart';
@@ -72,10 +71,9 @@ class _ComponentGalleryState extends State<ComponentGallery> {
       dark: dark,
     );
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
-    final LightTone galleryTone = ToneScope.of(context);
-    final Color? onFill = galleryTone.dark
-        ? null
-        : Color(LightSurfaces(galleryTone).luminous(galleryTone.accent).ink);
+    // Pill sliders: over the fill, its fixed ink.
+    final Color onFill = PillFill.inkOf(dark: dark);
+    Color ink(bool overFill) => overFill ? onFill : fg;
     return ToneScope(
       tone: tone,
       child: Scaffold(
@@ -120,18 +118,15 @@ class _ComponentGalleryState extends State<ComponentGallery> {
               GlassSlider(
                 value: _brightness,
                 semanticLabel: 'Brightness',
-                // Light: over the (deep) fill the icon takes what reads on it.
                 leadingBuilder: (double x, double width) => Icon(
                   Icons.wb_sunny_outlined,
                   size: 20,
-                  color: onFill != null && x * width >= Space.m + 24
-                      ? onFill
-                      : fg,
+                  color: ink(x * width >= Space.m + 24),
                 ),
-                trailing: Text(
-                  '${(_brightness * 100).round()}%',
+                trailingBuilder: (double x, double width) => Text(
+                  '${(x * 100).round()}%',
                   style: TextStyle(
-                    color: fg,
+                    color: ink(x * width >= width - Space.m - 20),
                     fontFeatures: const <FontFeature>[
                       FontFeature.tabularFigures(),
                     ],
@@ -188,13 +183,19 @@ class _ComponentGalleryState extends State<ComponentGallery> {
                       divisions: 9,
                       semanticLabel: 'Stroke Tempo',
                       valueText: levelText,
-                      leading: Text(
+                      leadingBuilder: (double v, double width) => Text(
                         'Stroke Tempo',
-                        style: TextStyle(color: fg),
+                        style: TextStyle(
+                          color: ink((v - 1) / 9 * width >= Space.m + 24),
+                        ),
                       ),
-                      trailing: Text(
-                        '${_speed.round()}',
-                        style: TextStyle(color: fg),
+                      trailingBuilder: (double v, double width) => Text(
+                        '${v.round()}',
+                        style: TextStyle(
+                          color: ink(
+                            (v - 1) / 9 * width >= width - Space.m - 12,
+                          ),
+                        ),
                       ),
                       onChanged: (double v) => setState(() => _speed = v),
                     ),

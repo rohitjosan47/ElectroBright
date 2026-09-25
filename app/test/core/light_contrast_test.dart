@@ -2,12 +2,15 @@ import 'package:electrobright/core/color/color_science.dart';
 import 'package:electrobright/core/color/hsv.dart';
 import 'package:electrobright/core/color/light_surfaces.dart';
 import 'package:electrobright/core/color/light_tone.dart';
+import 'package:electrobright/design/tokens/tokens.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Light theme contrast (policy V1), measured on what each element really
 /// sits on (glass composited over the canvas), for lights of every hue,
 /// three whites and a light that is off:
-/// * text and functional icons: >= 4.5:1;
+/// * text and functional icons: >= 4.5:1 (on a pill slider's fill, its
+///   fixed ink, the same for every light);
 /// * component boundaries (the selected tile): >= 3:1 at the edge (a slider
 ///   fill differs from its track by colour and brightness, and its label
 ///   carries the value; a tab thumb is brighter glass inside its track and
@@ -61,17 +64,6 @@ void main() {
       }
       atLeast(4.5, s.activeIcon, s.activeGlass, 'icon on a lit button');
 
-      // Slider fills: ink on every part of the fill.
-      for (final (String what, int c) in <(String, int)>[
-        ('brightness fill', swatch),
-        ('accent fill', tone.accent),
-      ]) {
-        final LuminousFill f = s.luminous(c);
-        for (final int part in <int>[f.deep, f.base, f.bright]) {
-          atLeast(4.5, f.ink, part, 'ink on the $what');
-        }
-      }
-
       // The boundary of the selected tile.
       atLeast(3, s.accentBorder, s.panel, 'selected edge vs tile');
 
@@ -85,6 +77,26 @@ void main() {
     });
   }
 
+  test("the pill glass's fixed ink reads on every part of it", () {
+    // The fill is translucent: over any canvas it lies between the tint over
+    // black and the tint over white (compositing is monotone per channel).
+    for (final bool dark in <bool>[false, true]) {
+      final PillGlass g = PillFill.of(dark: dark);
+      for (final Color part in <Color>[g.deep, g.base, g.bright]) {
+        for (final int under in <int>[0xFF000000, 0xFFFFFFFF]) {
+          expect(
+            LightInk.contrast(
+              g.ink.toARGB32(),
+              LightInk.over(part.toARGB32(), g.opacity, under),
+            ),
+            greaterThanOrEqualTo(4.5),
+            reason: '${dark ? 'dark' : 'light'} $part over $under',
+          );
+        }
+      }
+    }
+  });
+
   test('no fully saturated colour of the wheel is a white', () {
     // A vivid amber sits near the 2500 K blackbody colour but is more
     // saturated than it: a colour (it used to flash as an ivory fill).
@@ -96,37 +108,6 @@ void main() {
         ColorScience.levelToLinear(rgb[2]),
       );
       expect(LightInk.isWhite(c), isFalse, reason: 'hue $h $rgb');
-    }
-  });
-
-  test('a luminous fill moves smoothly with its colour', () {
-    // Around the wheel at full value in small steps: the fill's lightness
-    // never jumps (no stepped search, no flash) and every step keeps the
-    // ink readable.
-    final LightSurfaces s = LightSurfaces(
-      LightTone.derive(
-        const DisplayColor(LinearRgb(1, 1, 1), 1, off: true),
-        dark: false,
-      ),
-    );
-    double? last;
-    int? lastInk;
-    for (double h = 0; h < 360; h += 0.25) {
-      final LinearRgb c = ColorScience.fromOklch(
-        ColorScience.toGamut(Oklch(0.75, 0.3, h)),
-      ).clamp01();
-      final LuminousFill f = s.luminousOf(c);
-      final double l = ColorScience.toOklch(ColorScience.fromArgb(f.base)).l;
-      for (final int part in <int>[f.deep, f.base, f.bright]) {
-        expect(LightInk.contrast(f.ink, part), greaterThanOrEqualTo(4.5));
-      }
-      // Where the ink changes (white on a deep colour, dark on a light one)
-      // the fill may step once; anywhere else it follows the colour.
-      if (last != null && lastInk == f.ink) {
-        expect((l - last).abs(), lessThan(0.02), reason: 'hue $h');
-      }
-      last = l;
-      lastInk = f.ink;
     }
   });
 

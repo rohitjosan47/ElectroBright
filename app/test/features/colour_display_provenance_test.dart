@@ -5,7 +5,6 @@ import 'package:electrobright/app/providers.dart';
 import 'package:electrobright/core/color/color_science.dart';
 import 'package:electrobright/core/color/colour_engine.dart';
 import 'package:electrobright/core/color/led_white_points.dart';
-import 'package:electrobright/core/color/light_surfaces.dart';
 import 'package:electrobright/core/model/channel_color.dart';
 import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/protocol/eb/eb_frame.dart';
@@ -13,7 +12,6 @@ import 'package:electrobright/design/components/glass_controls.dart';
 import 'package:electrobright/design/controls/glass_slider.dart';
 import 'package:electrobright/design/controls/hue_wheel.dart';
 import 'package:electrobright/design/tone/screen_colour.dart';
-import 'package:electrobright/design/tone/tone_scope.dart';
 import 'package:electrobright/drivers/electrobright/eb_session.dart';
 import 'package:electrobright/drivers/electrobright/eb_types.dart';
 import 'package:electrobright/features/control/colour/colour_editor.dart';
@@ -62,10 +60,9 @@ void main() {
     ),
   );
 
-  /// The pill's fill as shown (gliding).
-  Color fill(WidgetTester t) => t
-      .widget<GlassSlider>(find.byKey(const ValueKey<String>('brightness')))
-      .fill!;
+  /// The orb's colour as shown (gliding, or following the finger).
+  LinearRgb orb(WidgetTester t) =>
+      linearOf(t.widget<LightOrb>(find.byType(LightOrb)).color);
 
   Future<DemoApp> open(WidgetTester t, {required bool dark}) async {
     t.view.physicalSize = const Size(393 * 3, 1600 * 3);
@@ -80,53 +77,34 @@ void main() {
     return d;
   }
 
-  /// The pill and the orb show [want] exactly (the dark pill lifts its
-  /// fill's lightness, keeping the hue).
-  void shows(
-    WidgetTester t,
-    LinearRgb want, {
-    required bool dark,
-    required String at,
-  }) {
-    final LinearRgb orb = linearOf(
-      t.widget<LightOrb>(find.byType(LightOrb)).color,
-    );
-    final LinearRgb pill = linearOf(fill(t));
+  /// The orb shows [want] exactly.
+  void shows(WidgetTester t, LinearRgb want, {required String at}) {
+    final LinearRgb shown = orb(t);
     final LinearRgb aim = target(t);
-    // The pill's fill for exactly the finger's colour (the dark pill lifts
-    // it to read as a glow).
-    final LinearRgb fillFor = dark
-        ? linearOf(pillFill(screenColour(aim), dark: true))
-        : aim;
     for (final (double a, double b) in <(double, double)>[
-      (orb.r, aim.r),
-      (orb.g, aim.g),
-      (orb.b, aim.b),
-      (pill.r, fillFor.r),
-      (pill.g, fillFor.g),
-      (pill.b, fillFor.b),
+      (shown.r, aim.r),
+      (shown.g, aim.g),
+      (shown.b, aim.b),
     ]) {
       expect(a, closeTo(b, 1e-6), reason: '$at: shown as the finger');
     }
-    expect(delta(hue(want), hue(orb)).abs(), lessThan(1e-6), reason: at);
+    expect(delta(hue(want), hue(shown)).abs(), lessThan(1e-6), reason: at);
   }
 
   /// A drag: [steps] finger positions, one per 16 ms frame (the light's
   /// echoes lag: frames are paced at 25 ms and the light ticks every 50 ms),
   /// then 40 frames after release. Checks every frame: the display's target
-  /// is the finger's exact colour and, while the finger is down, the pill
-  /// and the orb show exactly that colour (no glide, no lag); after release
-  /// they stay on it; and (light theme) the painted fill never flashes.
+  /// is the finger's exact colour and, while the finger is down, the orb
+  /// shows exactly that colour (no glide, no lag); after release it stays on
+  /// it.
   Future<void> drag(
     WidgetTester t,
     DemoApp d, {
     required List<Offset> path,
     required List<LinearRgb> finger,
-    required bool dark,
   }) async {
     final TestGesture g = await t.startGesture(path.first);
     await t.pump(const Duration(milliseconds: 16));
-    final List<double> painted = <double>[];
     bool lagged = false;
     for (int i = 1; i < path.length; i++) {
       await g.moveTo(path[i]);
@@ -137,19 +115,7 @@ void main() {
         lessThan(1e-6),
         reason: 'frame $i: the target is the finger',
       );
-      shows(t, finger[i], dark: dark, at: 'frame $i');
-      if (!dark) {
-        final LightSurfaces s = LightSurfaces(
-          ToneScope.of(
-            t.element(find.byKey(const ValueKey<String>('brightness'))),
-          ),
-        );
-        painted.add(
-          ColorScience.toOklch(
-            ColorScience.fromArgb(s.luminousOf(linearOf(fill(t))).base),
-          ).l,
-        );
-      }
+      shows(t, finger[i], at: 'frame $i');
       lagged |= d.twin(room).color != status(t).state!.scene.color;
     }
     final LinearRgb last = finger.last;
@@ -158,17 +124,10 @@ void main() {
       await t.pump(const Duration(milliseconds: 16));
       // Released and confirmed: still exactly the pick, shown as it is.
       expect(delta(hue(last), hue(target(t))).abs(), lessThan(1e-6));
-      shows(t, last, dark: dark, at: 'released, frame $i');
+      shows(t, last, at: 'released, frame $i');
     }
     expect(lagged, isTrue, reason: 'the light lagged the finger');
     expect(d.twin(room).color, status(t).state!.scene.color);
-    for (int i = 1; i < painted.length; i++) {
-      expect(
-        (painted[i] - painted[i - 1]).abs(),
-        lessThan(0.015),
-        reason: 'painted fill flashes at $i',
-      );
-    }
   }
 
   for (final bool dark in <bool>[false, true]) {
@@ -188,7 +147,6 @@ void main() {
       await drag(
         t,
         d,
-        dark: dark,
         path: <Offset>[for (int i = 0; i <= 90; i++) at(i.toDouble())],
         finger: <LinearRgb>[
           for (int i = 0; i <= 90; i++) ofHsv(Hsv(i.toDouble(), 1, 1)),
@@ -212,7 +170,6 @@ void main() {
       await drag(
         t,
         d,
-        dark: dark,
         path: <Offset>[for (int i = 0; i <= 70; i++) at(1 - i * 0.01)],
         finger: <LinearRgb>[
           for (int i = 0; i <= 70; i++) ofHsv(Hsv(start.h, 1 - i * 0.01, 0.9)),
@@ -238,7 +195,6 @@ void main() {
       await drag(
         t,
         d,
-        dark: dark,
         path: <Offset>[
           at(150) - const Offset(30, 0),
           for (int v = 150; v <= 255; v++) at(v),
@@ -363,6 +319,39 @@ void main() {
     expect(older, isTrue, reason: 'the light reported older colours');
     await g.up();
     await DemoApp.settle(t, 1);
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('a colour change not from a finger glides on the orb', (
+    WidgetTester t,
+  ) async {
+    final DemoApp d = await open(t, dark: false);
+    Future<void> rest() async {
+      for (int i = 0; i < 12; i++) {
+        await t.pump(const Duration(milliseconds: 100));
+      }
+    }
+
+    d.session(room).setColor(ChannelColor.rgbw(255, 0, 0, 0));
+    await rest();
+    final LinearRgb red = orb(t);
+    d.session(room).setColor(ChannelColor.rgbw(0, 0, 255, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 16));
+    final LinearRgb between = orb(t);
+    await rest();
+    final LinearRgb blue = orb(t);
+    expect(hue(between), isNot(anyOf(hue(red), hue(blue))));
+    expect(delta(hue(blue), hue(target(t))).abs(), lessThan(1e-6));
+
+    // Under Reduce Motion it changes at once.
+    t.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    await t.pump();
+    d.session(room).setColor(ChannelColor.rgbw(255, 0, 0, 0));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 16));
+    expect(delta(hue(red), hue(orb(t))).abs(), lessThan(1e-6));
     await DemoApp.shutDown(t);
   });
 }
