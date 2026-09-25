@@ -1,6 +1,7 @@
 import 'package:electrobright/core/model/channel_color.dart';
 import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/design/components/glass_controls.dart';
+import 'package:electrobright/design/components/mode_glyph.dart';
 import 'package:electrobright/design/controls/glass_slider.dart';
 import 'package:electrobright/design/controls/hue_wheel.dart';
 import 'package:electrobright/design/tokens/tokens.dart';
@@ -366,16 +367,26 @@ void main() {
     await t.tap(solid);
     await settle(t);
     expect(d.twin('Desk strip').mode, 1);
-    // Only the running effect's glyph animates.
+    // Every tile's glyph animates, the selected one or not.
     await t.tap(find.byKey(const ValueKey<String>('mode-6')));
     await settle(t);
-    final Iterable<ModeTile> tiles = t.widgetList<ModeTile>(
-      find.descendant(of: grid, matching: find.byType(ModeTile)),
+    final Iterable<ModeGlyph> glyphs = t.widgetList<ModeGlyph>(
+      find.descendant(of: grid, matching: find.byType(ModeGlyph)),
     );
+    expect(glyphs, hasLength(12));
+    expect(glyphs.every((ModeGlyph g) => g.animate), isTrue);
     expect(
-      tiles.where((ModeTile m) => m.animate).map((ModeTile m) => m.spec.id),
-      <int>[6],
+      t
+          .widget<ModeGlyph>(
+            find.descendant(of: solid, matching: find.byType(ModeGlyph)),
+          )
+          .animate,
+      isTrue,
     );
+    // Another tab: the tiles are gone (nothing left running but the orb).
+    await t.tap(tab('Colour'));
+    await settle(t, 1);
+    expect(find.byType(ModeGlyph), findsOneWidget);
     await DemoApp.shutDown(t);
   });
 

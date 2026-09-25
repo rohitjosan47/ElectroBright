@@ -156,7 +156,7 @@
   },
   "channels": "Channels",
   "whites": "Whites",
-  "offlineNote": "Not connected — changes are sent when the light is back.",
+  "offlineNote": "Not connected — changes are sent if the light is back within a minute.",
   "offlineChangeNotApplied": "The light couldn't be reached, so the change wasn't applied.",
   "modeIgnoresColour": "This effect makes its own colours.",
   "switchToSolid": "Switch to Solid",

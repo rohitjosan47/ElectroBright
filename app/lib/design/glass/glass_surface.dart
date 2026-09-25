@@ -6,9 +6,9 @@ import '../tone/tone_scope.dart';
 
 /// How much glass a surface gets (plan §11).
 enum GlassTier {
-  /// Real refraction (liquid_glass_widgets): floating chrome only, at most
-  /// four on screen — header capsule, tab bar, segmented thumb, floating
-  /// buttons.
+  /// Real refraction (liquid_glass_widgets): floating chrome only — header
+  /// and toolbar buttons, segmented thumbs. Up to seven on the control screen
+  /// (measured on an iPhone: raster 2.4 ms average, 4.3 ms max).
   chrome,
 
   /// Cheap "fake glass" for content panels: translucent tint, specular rim,
@@ -51,6 +51,7 @@ class GlassSurface extends StatelessWidget {
     this.radius = Radii.large,
     this.padding = EdgeInsets.zero,
     this.tinted = true,
+    this.tint,
     super.key,
   });
 
@@ -62,20 +63,24 @@ class GlassSurface extends StatelessWidget {
   /// Tint with the light's colour (off for neutral chrome).
   final bool tinted;
 
+  /// A stronger tint in this colour (e.g. a lit button in the light's
+  /// accent), instead of the light's glass tint.
+  final Color? tint;
+
   @override
   Widget build(BuildContext context) {
     final GlassPolicy? policy = GlassPolicy.maybeOf(context);
     // Untinted glass depends on light/dark only, not on every step of a
     // tone glide (it is not rebuilt during colour drags).
     final bool dark = ToneScope.darkOf(context);
-    final Color tint = tinted
-        ? Color(ToneScope.of(context).tint)
-        : Colors.white;
+    final Color? strong = this.tint;
+    final Color tint =
+        strong ?? (tinted ? Color(ToneScope.of(context).tint) : Colors.white);
 
     if (policy?.solid ?? false) {
       return DecoratedBox(
         decoration: ShapeDecoration(
-          color: dark ? const Color(0xFF1C1E24) : Colors.white,
+          color: strong ?? (dark ? const Color(0xFF1C1E24) : Colors.white),
           shape: RoundedSuperellipseBorder(
             borderRadius: BorderRadius.circular(radius),
             side: BorderSide(
@@ -93,7 +98,9 @@ class GlassSurface extends StatelessWidget {
         padding: padding,
         useOwnLayer: true,
         settings: LiquidGlassSettings(
-          glassColor: tint.withValues(alpha: dark ? 0.14 : 0.22),
+          glassColor: tint.withValues(
+            alpha: strong != null ? (dark ? 0.42 : 0.5) : (dark ? 0.14 : 0.22),
+          ),
           thickness: 18,
           blur: 6,
         ),
@@ -107,7 +114,12 @@ class GlassSurface extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: dark
+          colors: strong != null
+              ? <Color>[
+                  strong.withValues(alpha: dark ? 0.5 : 0.6),
+                  strong.withValues(alpha: dark ? 0.35 : 0.45),
+                ]
+              : dark
               ? <Color>[
                   Color.lerp(tint, Colors.white, 0.10)!.withValues(alpha: 0.16),
                   tint.withValues(alpha: 0.08),

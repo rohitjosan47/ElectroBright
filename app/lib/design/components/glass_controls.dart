@@ -51,9 +51,7 @@ class _GlassIconButtonState extends State<GlassIconButton> {
     final bool dark = ToneScope.darkOf(context);
     final Haptics h = HapticsScope.of(context);
     final bool enabled = widget.onPressed != null;
-    final Color fg = tone != null
-        ? Color(tone.onAccent)
-        : (dark ? Colors.white : const Color(0xFF15171C));
+    final Color fg = dark ? Colors.white : const Color(0xFF15171C);
     return Semantics(
       button: true,
       enabled: enabled,
@@ -81,22 +79,30 @@ class _GlassIconButtonState extends State<GlassIconButton> {
             opacity: enabled ? 1 : 0.4,
             child: SizedBox.square(
               dimension: widget.size,
+              // Lit: glass tinted in the light's accent, with its glow;
+              // the icon keeps the theme's colour so it reads on both.
               child: tone != null
                   ? DecoratedBox(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Color(tone.accent),
                         boxShadow: <BoxShadow>[
                           BoxShadow(
-                            color: Color(tone.glow).withValues(alpha: 0.55),
-                            blurRadius: 18,
+                            color: Color(tone.glow).withValues(alpha: 0.45),
+                            blurRadius: 16,
                           ),
                         ],
                       ),
-                      child: Icon(
-                        widget.icon,
-                        color: fg,
-                        size: widget.size * 0.48,
+                      child: GlassSurface(
+                        tier: widget.tier,
+                        radius: widget.size / 2,
+                        tint: Color(tone.accent),
+                        child: Center(
+                          child: Icon(
+                            widget.icon,
+                            color: fg,
+                            size: widget.size * 0.48,
+                          ),
+                        ),
                       ),
                     )
                   : GlassSurface(
@@ -133,8 +139,8 @@ class GlassSegmented<T> extends StatefulWidget {
   final T selected;
   final ValueChanged<T> onChanged;
 
-  /// Real refraction for the screen's main tabs; panel tier for a segmented
-  /// control inside a panel (the chrome budget is four per screen).
+  /// Real refraction by default; the control screen can afford up to seven
+  /// chrome surfaces (measured on device), panel tier is for denser screens.
   final GlassTier thumbTier;
 
   @override

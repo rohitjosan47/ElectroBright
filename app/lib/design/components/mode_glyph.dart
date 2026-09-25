@@ -28,6 +28,16 @@ class ModeGlyph extends StatefulWidget {
   /// Animation rate multiplier (follows the mode's speed slider).
   final double speed;
 
+  /// The frame shown when the glyph is still (Reduce Motion): each glyph's
+  /// characteristic moment, not the start of its loop.
+  static double stillTime(EbModeGlyph glyph) => switch (glyph) {
+    EbModeGlyph.blink => 0.1, // lit
+    EbModeGlyph.breath => 1.78, // near a full breath
+    EbModeGlyph.thunder => 0.04, // a stroke
+    EbModeGlyph.fireworks => 0.64, // bursts half open
+    _ => 1.30,
+  };
+
   @override
   State<ModeGlyph> createState() => _ModeGlyphState();
 }
@@ -35,9 +45,10 @@ class ModeGlyph extends StatefulWidget {
 class _ModeGlyphState extends State<ModeGlyph>
     with SingleTickerProviderStateMixin {
   late final Ticker _ticker = createTicker(_onTick);
-  // The still frame (Reduce Motion, off-screen): chosen so every glyph shows a
-  // lit moment (blink on, police beacon lit, storm at rest).
-  final ValueNotifier<double> _t = ValueNotifier<double>(1.30);
+  // Starts on the still frame; runs on from there when animated.
+  late final ValueNotifier<double> _t = ValueNotifier<double>(
+    ModeGlyph.stillTime(widget.glyph),
+  );
   Duration _last = Duration.zero;
   Duration _acc = Duration.zero;
 
@@ -60,8 +71,9 @@ class _ModeGlyphState extends State<ModeGlyph>
     if (run && !_ticker.isActive) {
       _last = Duration.zero;
       _ticker.start();
-    } else if (!run && _ticker.isActive) {
-      _ticker.stop();
+    } else if (!run) {
+      if (_ticker.isActive) _ticker.stop();
+      _t.value = ModeGlyph.stillTime(widget.glyph);
     }
   }
 

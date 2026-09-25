@@ -91,8 +91,6 @@ class EffectsPanel extends StatelessWidget {
                   key: ValueKey<String>('mode-${m.id}'),
                   spec: m,
                   selected: m.id == scene.mode,
-                  // Only the running effect moves (the orb shows it too).
-                  animate: m.id == scene.mode,
                   color: colour,
                   onTap: () => select(m.id),
                 ),
@@ -224,7 +222,9 @@ class _SolidRow extends StatelessWidget {
                   glyph: spec.glyph,
                   color: color,
                   palette: <Color>[for (final int c in spec.gradient) Color(c)],
-                  animate: selected,
+                  // Every effect moves, as the tiles do (paused off-screen,
+                  // in the background and under Reduce Motion).
+                  animate: true,
                 ),
               ),
               const SizedBox(width: Space.s),
