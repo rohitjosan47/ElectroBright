@@ -2,10 +2,11 @@ import 'dart:typed_data';
 
 import '../core/model/channel_color.dart';
 import '../core/model/channel_layout.dart';
+import '../core/protocol/eb/eb_constants.dart';
 import '../core/protocol/eb/eb_fixture_catalog.dart';
 import '../core/protocol/eb/eb_scene.dart';
 
-/// Dart twin of the ElectroBright firmware (v3.5.0, every fixture of the
+/// Dart twin of the ElectroBright firmware (v3.6.0, every fixture of the
 /// family via [EbFixtureSpec]): the command parser,
 /// controller, persistence policy, reply buffer and the BLE/control-task glue,
 /// ported line for line from firmware/core/ElectroBrightCore/src and
@@ -30,13 +31,13 @@ final class EbDeviceModel {
   /// Makes flash writes fail (like fwsim `KVFAIL`), for fault tests.
   set flashWritesFail(bool fail) => _flash.failWrites = fail;
 
-  static const String firmwareVersion = '3.5.0';
+  static const String firmwareVersion = '3.6.0';
   String get modelId => fixture.modelId;
   String get capsReply => fixture.capsReply;
 
   // cfg (Config.h)
   static const int _numModes = 13;
-  static const int _numPresets = 25;
+  static const int _numPresets = Eb.numPresets;
   static const int _minLevel = 1;
   static const int _maxLevel = 10;
   static const int _timerMaxSeconds = 86400;
@@ -486,6 +487,9 @@ final class _Flash {
   EbScene? scene;
   bool? soundEnabled;
   final Map<int, EbScene> presets = <int, EbScene>{};
+
+  /// The preset format marker ("pv"); null on flash of older firmware.
+  int? presetFormat;
   bool failWrites = false;
 }
 
@@ -519,11 +523,29 @@ final class _StateStore {
       _shadow = null;
     }
     final bool sound = kv.soundEnabled ?? true;
+    _ensurePresetFormat();
     presetSlots
       ..clear()
       ..addAll(kv.presets.keys);
     _dirty = false;
     return (scene, sound);
+  }
+
+  // StateStore::kPresetFormat / kLegacyPresetSlots
+  static const int _presetFormat = 2;
+  static const int _legacyPresetSlots = 25;
+
+  /// StateStore::ensurePresetFormat: without the current marker, every slot
+  /// older firmware could have used is erased (scene and settings kept), then
+  /// the marker is written; a failed erase leaves it for the next boot.
+  void _ensurePresetFormat() {
+    if (kv.presetFormat == _presetFormat) return;
+    if (kv.failWrites) {
+      stats.nvsFailures += _legacyPresetSlots;
+      return;
+    }
+    kv.presets.clear();
+    if (_noteWrite(!kv.failWrites)) kv.presetFormat = _presetFormat;
   }
 
   void noteSceneChanged(int now) {
@@ -594,6 +616,7 @@ final class _StateStore {
       kv
         ..scene = null
         ..soundEnabled = null
+        ..presetFormat = null
         ..presets.clear();
     }
     presetSlots.clear();

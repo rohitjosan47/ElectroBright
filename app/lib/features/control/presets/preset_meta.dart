@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
 
 import '../../../app/app_session.dart';
+import '../../../app/providers.dart';
+import '../../../core/model/light_capabilities.dart';
+import '../../../core/protocol/eb/eb_constants.dart';
 import '../../../core/protocol/eb/eb_scene.dart';
 import '../../../core/store/json_store.dart';
 
@@ -10,27 +13,19 @@ import '../../../core/store/json_store.dart';
 /// gave it and the scene it holds (the light itself only stores the scene).
 @immutable
 final class PresetEntry {
-  const PresetEntry({this.name, this.scene, this.assumed = false});
+  const PresetEntry({this.name, this.scene});
 
   final String? name;
 
   /// The slot's scene as last saved or loaded (for previews and "active").
   final EbScene? scene;
 
-  /// Imported from the old app (RGBW assumed); replaced on the next load.
-  final bool assumed;
-
-  PresetEntry copyWith({String? name, EbScene? scene, bool? assumed}) =>
-      PresetEntry(
-        name: name ?? this.name,
-        scene: scene ?? this.scene,
-        assumed: assumed ?? this.assumed,
-      );
+  PresetEntry copyWith({String? name, EbScene? scene}) =>
+      PresetEntry(name: name ?? this.name, scene: scene ?? this.scene);
 
   Map<String, Object?> toJson() => <String, Object?>{
     if (name != null) 'name': name,
     if (scene != null) 'scene': scene!.toJson(),
-    if (assumed) 'assumedLayout': true,
   };
 
   static PresetEntry? fromJson(Object? json) {
@@ -39,19 +34,15 @@ final class PresetEntry {
     return PresetEntry(
       name: name is String && name.trim().isNotEmpty ? name.trim() : null,
       scene: EbScene.fromJson(json['scene']),
-      assumed: json['assumedLayout'] == true,
     );
   }
 
   @override
   bool operator ==(Object other) =>
-      other is PresetEntry &&
-      other.name == name &&
-      other.scene == scene &&
-      other.assumed == assumed;
+      other is PresetEntry && other.name == name && other.scene == scene;
 
   @override
-  int get hashCode => Object.hash(name, scene, assumed);
+  int get hashCode => Object.hash(name, scene);
 }
 
 /// Preset names and snapshots of one light, plus which slot was loaded last
@@ -94,8 +85,19 @@ final class PresetMetaNotifier extends Notifier<PresetMeta> {
 
   JsonStore? get _store => ref.read(appSessionProvider)?.store;
 
+  /// The light's slot count: entries beyond it are ignored, never written.
+  late int _slots;
+
+  bool _inRange(int slot) => slot >= 0 && slot < _slots;
+
   @override
   PresetMeta build() {
+    _slots =
+        ref.watch(
+          capabilitiesProvider(fixtureId)
+              .select((LightCapabilities? c) => c?.presetSlots),
+        ) ??
+        Eb.numPresets;
     final JsonStore? store = ref.watch(appSessionProvider)?.store;
     final Object? all = store?.read(collection);
     final Object? mine = all is Map<String, Object?> ? all[fixtureId] : null;
@@ -104,7 +106,7 @@ final class PresetMetaNotifier extends Notifier<PresetMeta> {
     for (final MapEntry<String, Object?> e in mine.entries) {
       final int? slot = int.tryParse(e.key);
       final PresetEntry? entry = PresetEntry.fromJson(e.value);
-      if (slot != null && entry != null) slots[slot] = entry;
+      if (slot != null && _inRange(slot) && entry != null) slots[slot] = entry;
     }
     return PresetMeta(slots);
   }
@@ -152,6 +154,7 @@ final class PresetMetaNotifier extends Notifier<PresetMeta> {
   }
 
   void _put(int slot, PresetEntry e, {int? lastLoaded}) {
+    if (!_inRange(slot)) return;
     state = PresetMeta(<int, PresetEntry>{
       ...state.slots,
       slot: e,

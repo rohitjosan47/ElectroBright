@@ -13,6 +13,7 @@ import 'package:electrobright/sessions/connection_manager.dart';
 import 'package:electrobright/sessions/discovery.dart';
 import 'package:electrobright/sessions/fixture_registry.dart';
 import 'package:electrobright/sessions/fixture_session.dart';
+import 'package:electrobright/sim/eb_device_model.dart';
 import 'package:electrobright/sim/sim_central.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -92,7 +93,7 @@ void main() {
     expect(f.layout, ChannelLayout.cct);
     expect(f.identity!.assumed, isFalse);
     expect(f.identity!.model, 'EB-C3-CCT-V1');
-    expect(f.identity!.firmwareVersion, '3.5.0');
+    expect(f.identity!.firmwareVersion, EbDeviceModel.firmwareVersion);
     expect(f.identity!.caps, contains('LAYOUT=CCT'));
     expect(changes, isEmpty); // an assumed type being corrected is not news
 

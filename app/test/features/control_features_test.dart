@@ -34,7 +34,9 @@ void main() {
     final DemoApp d = await open(t, 'Hallway');
     await t.tap(tab('Presets'));
     await settle(t, 1);
-    expect(find.byKey(const ValueKey<String>('preset-24')), findsOneWidget);
+    // 15 slots, 0..14.
+    expect(find.byKey(const ValueKey<String>('preset-14')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('preset-15')), findsNothing);
     // Save the current look in slot 1, named.
     await t.tap(find.byKey(const ValueKey<String>('preset-0')));
     await settle(t, 1);

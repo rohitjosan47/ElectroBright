@@ -1,5 +1,6 @@
 import 'package:meta/meta.dart';
 
+import '../protocol/eb/eb_constants.dart';
 import 'channel_layout.dart';
 
 /// Which colour controls a light gets (derived from its layout's LEDs).
@@ -28,7 +29,7 @@ final class LightCapabilities {
     required this.layout,
     this.modeMask = allModes,
     this.modeCount = 13,
-    this.presetSlots = 25,
+    this.presetSlots = Eb.numPresets,
     this.hasTimer = true,
     this.hasSound = true,
   });
@@ -93,7 +94,8 @@ final class LightCapabilities {
       layout: layout,
       modeMask: mask,
       modeCount: count,
-      presetSlots: slots,
+      // Saved from earlier firmware (25): the app offers no more than now.
+      presetSlots: slots.clamp(1, Eb.numPresets),
       hasTimer: json['hasTimer'] != false,
       hasSound: json['hasSound'] != false,
     );

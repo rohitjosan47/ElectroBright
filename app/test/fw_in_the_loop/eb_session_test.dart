@@ -8,6 +8,7 @@ import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/drivers/electrobright/eb_session.dart';
 import 'package:electrobright/drivers/electrobright/eb_types.dart';
+import 'package:electrobright/sim/eb_device_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/fwsim/eb_harness.dart';
@@ -22,7 +23,7 @@ void main() {
       h = await EbHarness.start();
       final EbFirmware fw = h.session.firmware!;
       expect(fw.model, 'EB-C3-RGBW-V1');
-      expect(fw.version.version, '3.5.0');
+      expect(fw.version.version, EbDeviceModel.firmwareVersion);
       expect(fw.modeCount, 13);
       expect(h.session.phase, EbPhase.ready);
       expect(h.view.scene, EbScene.defaults(ChannelLayout.rgbw));
@@ -233,10 +234,10 @@ void main() {
     test('delete', () async {
       h = await EbHarness.start();
       await h.run(h.session.presetSave(0));
-      await h.run(h.session.presetSave(24));
+      await h.run(h.session.presetSave(14)); // the last of 15
       expect((await h.run(h.session.presetDelete(0))).outcome, EbOutcome.ok);
       await h.settle();
-      expect(h.view.presets, <int>{24});
+      expect(h.view.presets, <int>{14});
       await h.expectConverged();
     });
   });

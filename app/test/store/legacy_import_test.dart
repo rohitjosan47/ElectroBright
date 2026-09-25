@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/model/fixture.dart';
-import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/core/store/json_store.dart';
 import 'package:electrobright/core/store/legacy_import.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -75,7 +74,7 @@ void main() {
   setUp(() => dir = Directory.systemTemp.createTempSync('eb-import'));
   tearDown(() => dir.deleteSync(recursive: true));
 
-  test('imports lights, preset names and snapshots once', () async {
+  test('imports the lights once, never their presets', () async {
     final JsonStore store = await JsonStore.open(dir);
     final List<Fixture> added = <Fixture>[];
     int n = 0;
@@ -86,23 +85,15 @@ void main() {
       addFixture: added.add,
       newId: () => 'f${n++}',
     );
-    expect(r, (lights: 1, presetNames: 2, presetScenes: 1));
+    expect(r, (lights: 1));
     expect(added.single.name, 'Living Room');
     expect(added.single.deviceId, 'AA:BB:CC:DD:EE:01');
     expect(added.single.layout, ChannelLayout.rgbw);
     expect(added.single.identity!.assumed, isTrue);
 
-    final Map<String, Object?> meta =
-        store.read('presetMeta')! as Map<String, Object?>;
-    final Map<String, Object?> slots = meta['f0']! as Map<String, Object?>;
-    expect((slots['0']! as Map<String, Object?>)['name'], 'Cozy Warmth');
-    expect((slots['7']! as Map<String, Object?>)['name'], 'Cinema Night');
-    final EbScene scene = EbScene.fromJson(
-      (slots['0']! as Map<String, Object?>)['scene'],
-    )!;
-    expect(scene.color.values, <int>[255, 120, 20, 40]);
-    expect(scene.mode, 11);
-    expect(slots.containsKey('3'), isFalse); // corrupt snapshot skipped
+    // The old app's preset names and snapshots are left behind: firmware
+    // 3.6.0 clears the presets on the lights.
+    expect(store.read('presetMeta'), isNull);
 
     // Idempotent.
     expect(

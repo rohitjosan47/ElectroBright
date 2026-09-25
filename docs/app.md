@@ -9,7 +9,7 @@ The Flutter app in `app/` (iOS and Android) controls every ElectroBright fixture
   - Long-press a tile for Rename, Identify, Light settings or Forget.
 - **Nearby — not added** shows lights that are advertising, with their type read from the Bluetooth name. A light on the original firmware shows "Update needed".
 - **Add a light** has these steps:
-  1. The app connects and reads the light's identity ("Found a Tunable white light · firmware 3.5.0").
+  1. The app connects and reads the light's identity ("Found a Tunable white light · firmware 3.6.0").
   2. **Flash it** blinks the light so you can find it.
   3. You name it.
   4. Save. Nothing is saved until Save, and Cancel always disconnects.
@@ -20,7 +20,7 @@ The Flutter app in `app/` (iOS and Android) controls every ElectroBright fixture
   - In the background every light is released after 20 s.
 - **Demo lights** (onboarding, or Settings on Home): one simulated light of every type plus one on the original firmware. They run a copy of the firmware logic.
 - **Reflashed as another type:** a light reflashed as a different fixture type is detected on the next connect ("Kitchen is now a CCT light"). Its saved presets and last state are reset.
-- **Old app data:** saved lights, preset names and preset looks from the previous app are imported once, on the first launch.
+- **Old app data:** saved lights from the previous app are imported once, on the first launch. Presets are not: firmware 3.6.0 clears the presets on every light once, and the app drops its old preset names and looks once to match.
 
 ## 2. Control screen
 It has a header (back, name, type badge, power), the orb (the running effect in the light's own colours), and a toolbar: **Timer**, **Sound** and **Light settings**.
@@ -47,7 +47,7 @@ On every type except W, **Channels** shows each LED's exact 0–255 value in its
 - Police beacons are picked with the light's own colour controls.
 
 **Presets.**
-- The 25 slots on the light, with a preview in its colours; W shows the output %.
+- The 15 slots on the light, with a preview in its colours; W shows the output %.
 - Tap to load, tap an empty slot to save and name it, long-press to Load / Rename / Overwrite / Clear.
 - "Current look: …" or "Modified from …" is shown above the slots.
 

@@ -1,4 +1,4 @@
-# ElectroBright BLE protocol (firmware family 3.5)
+# ElectroBright BLE protocol (firmware family 3.6)
 
 This is the contract between the ElectroBright fixtures (`firmware/`) and the app (`app/`). Every fixture speaks the same protocol. Only the **channel layout** changes one thing: how many values a colour has on the wire.
 
@@ -34,13 +34,14 @@ After connecting, send `INFO`, `VERSION` and `CAPS`:
 
 ```
 INFO:EB-C3-<LAYOUT>-V<rev>                         e.g. INFO:EB-C3-RGB-V1
-VERSION:<major>.<minor>.<patch>                    e.g. VERSION:3.5.0
-CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,LAYOUT=<LAYOUT>
+VERSION:<major>.<minor>.<patch>                    e.g. VERSION:3.6.0
+CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,LAYOUT=<LAYOUT>
 ```
 
 - **Where the layout comes from:** the `LAYOUT` key in CAPS. It always equals the middle part of the model id.
 - **RGBW 3.4.0:** it predates the `LAYOUT` key. Its model id `EB-C3-RGBW-V1` implies `RGBW`.
 - **CAPS is `KEY=VALUE` pairs:** parse it as a map and ignore unknown keys. Keys may be added in later versions.
+- **Preset slots:** `PRESETS=<n>` is the number of preset slots (15 on 3.6.0); absent on firmware before 3.6.0, where clients assume 15.
 - **Supported modes:** `MODES=<hex mask>` (bit m−1 = mode m) is present only when a light doesn't support all 13 modes. If it is absent, all 13 are supported.
   - The single-white light sends `MODES=1DFF`: every mode except Rainbow (10), which only changes colour at constant intensity.
   - An unsupported mode behaves like an out-of-range one: `MODE:10` → `ERROR:MODE_INVALID`, `MODE_SPEED:10,s` → `ERROR:MODE_SPEED_INVALID`, `MODE_FREQUENCY:10,f` → `ERROR:MODE_FREQUENCY_INVALID`, `MODE_CAPABILITIES:10` → `ERROR:MODE_INVALID`.
@@ -89,8 +90,8 @@ Colour arguments are `v1,…,vn`, each 0–255. The wrong number of values gives
 | `MODE:1-13` · `MODE_SPEED:m,1-10` · `MODE_FREQUENCY:m,1-10` (m must be a supported mode, §2) | `OK` |
 | `FIREWORK_COLOR_MODE:0\|1` · `CLUB_COLOR_MODE:0\|1` · `POLICE_COLOR_MODE:0\|1` | `OK` |
 | `POLICE_COLOR_A:v1,…,vn` · `POLICE_COLOR_B:v1,…,vn` | `OK` |
-| `PRESET_SAVE:0-24` · `PRESET_DELETE:0-24` | `OK`, or `ERROR:STORAGE` |
-| `PRESET_LOAD:0-24` | `STATUS:…` (wakes the light), or `ERROR:PRESET_EMPTY:<id>` |
+| `PRESET_SAVE:0-14` · `PRESET_DELETE:0-14` | `OK`, or `ERROR:STORAGE` |
+| `PRESET_LOAD:0-14` | `STATUS:…` (wakes the light), or `ERROR:PRESET_EMPTY:<id>` |
 | `PRESET_LIST` | `PRESETS:0,3,` (trailing comma; `PRESETS:` when empty) |
 | `STATUS` | `STATUS:…` (§5) |
 | `MODE_SETTINGS` | `MODE_SETTINGS:s1,f1;…;s13,f13` |
@@ -144,6 +145,7 @@ W     STATUS:255,255,1,5,5,0,0,1,0,0,0,1,255,255
   - The live scene is saved 3 s after the last change, and at most 15 s after the first change.
   - Presets and the sound setting are saved immediately.
   - Presets keep the mute setting unchanged.
+- **Presets:** 15 slots, 0–14 (CAPS `PRESETS=15`). Firmware 3.6.0 clears all stored presets once on first boot after updating; the live scene and settings are kept. Firmware before 3.6.0 had 25 slots and may still list slots 15–24; clients ignore them. A light on firmware before 3.6.0 may still hold presets from the old format; they show as 'Preset N' without a preview until the light is updated to 3.6.0, which clears them.
 - **White from effects:** the Club white strobe and the Fireworks flash add white-channel light, which each fixture shows on its white LEDs:
   - RGBW: the W LED.
   - RGBCCT: both CW and WW together, a neutral white.

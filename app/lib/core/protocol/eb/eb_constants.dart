@@ -20,7 +20,10 @@ abstract final class Eb {
   static final RegExp modelPattern = RegExp(r'^EB-[A-Z0-9]+-([A-Z]+)-V\d+$');
 
   static const int numModes = 13;
-  static const int numPresets = 25;
+
+  /// Preset slots of firmware 3.6.0 (CAPS `PRESETS=`); also what clients
+  /// assume for earlier 3.x firmware, which announced no count.
+  static const int numPresets = 15;
   static const int minLevel = 1;
   static const int maxLevel = 10;
   static const int timerMaxSeconds = 86400;

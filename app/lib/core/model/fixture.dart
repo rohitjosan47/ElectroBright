@@ -36,7 +36,7 @@ final class FixtureIdentity {
   /// INFO model id, e.g. EB-C3-RGBCCT-V1.
   final String? model;
 
-  /// VERSION, e.g. 3.5.0.
+  /// VERSION, e.g. 3.6.0.
   final String? firmwareVersion;
 
   /// The raw CAPS reply (shown in "What this light can do").

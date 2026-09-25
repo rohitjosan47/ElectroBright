@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../bootstrap/service_registry.dart';
 import '../core/store/json_store.dart';
 import '../core/store/legacy_import.dart';
+import '../core/store/preset_reset.dart';
 import '../sessions/fixture_registry.dart';
 
 /// Everything that exists once the user chose real or demo lights.
@@ -118,6 +119,8 @@ final class AppController extends Notifier<AppSession?> {
       await old.registry.dispose();
     }
     final JsonStore store = demo ? await ref.read(demoStoreProvider)() : main;
+    // One-time startup work, before anything reads the store's presets.
+    PresetReset.run(store);
     final BleStack ble = await services.startBle(demo: demo);
     final FixtureRegistry registry = FixtureRegistry(
       store: store,

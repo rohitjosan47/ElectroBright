@@ -259,7 +259,7 @@ final class EbSession {
       scene: status.applyTo(_withLevels(EbScene.defaults(_layout), levels)),
       sleeping: status.sleeping,
       soundOn: status.soundOn,
-      presets: presets.slots,
+      presets: presets.within(capabilities.presetSlots).slots,
       timerDeadline: _deadlineFrom(status),
     );
     _desired = _shadow;
@@ -760,7 +760,11 @@ final class EbSession {
           _loadingSlot = null;
         }
       case PresetListQuery():
-        _shadow = _shadow.copyWith(presets: (r.reply! as EbPresets).slots);
+        _shadow = _shadow.copyWith(
+          presets: (r.reply! as EbPresets)
+              .within(capabilities.presetSlots)
+              .slots,
+        );
         _desired = _desired.copyWith(presets: _shadow.presets);
       default:
         break;

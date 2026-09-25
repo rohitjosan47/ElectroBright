@@ -1,6 +1,7 @@
 import 'package:electrobright/core/model/channel_color.dart';
 import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/model/light_capabilities.dart';
+import 'package:electrobright/core/protocol/eb/eb_constants.dart';
 import 'package:electrobright/core/protocol/eb/eb_fixture_catalog.dart';
 import 'package:electrobright/core/protocol/eb/eb_frame.dart';
 import 'package:electrobright/core/protocol/eb/eb_identity.dart';
@@ -250,6 +251,44 @@ void main() {
       );
       expect(w.supportsMode(10), isFalse);
       expect(w.modes, hasLength(12));
+    });
+
+    test('CAPS PRESETS= is the slot count; earlier firmware gets 15', () {
+      LightCapabilities of(String body, [EbVersion v = v35]) =>
+          EbIdentity.capabilities(
+            fromModel: ChannelLayout.rgb,
+            version: v,
+            caps: caps(body),
+            modeSettingsPairs: 13,
+          );
+      const String base = 'PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL';
+      // Every 3.6.0 fixture announces 15.
+      for (final EbFixtureSpec f in EbFixtureCatalog.all) {
+        final LightCapabilities c = EbIdentity.capabilities(
+          fromModel: f.layout,
+          version: const EbVersion('3.6.0', 3, 6, 0),
+          caps: parseEbReply(f.capsReply) as EbCaps,
+          modeSettingsPairs: 13,
+        );
+        expect(c.presetSlots, 15, reason: f.modelId);
+      }
+      // 3.5.0 has no PRESETS key: the current count.
+      expect(of('$base,LAYOUT=RGB').presetSlots, Eb.numPresets);
+      expect(Eb.numPresets, 15);
+      // Fewer is taken as is; more, zero or garbage is kept in range.
+      expect(of('$base,PRESETS=10,LAYOUT=RGB').presetSlots, 10);
+      expect(of('$base,PRESETS=25,LAYOUT=RGB').presetSlots, 15);
+      expect(of('$base,PRESETS=0,LAYOUT=RGB').presetSlots, 1);
+      expect(of('$base,PRESETS=x,LAYOUT=RGB').presetSlots, 15);
+    });
+
+    test('capabilities saved with 25 slots come back with 15', () {
+      final Map<String, Object> saved = const LightCapabilities(
+        layout: ChannelLayout.cct,
+        presetSlots: 25,
+      ).toJson();
+      expect(LightCapabilities.fromJson(saved)!.presetSlots, 15);
+      expect(LightCapabilities.assumed(ChannelLayout.cct).presetSlots, 15);
     });
 
     test('RGBW 3.4.0 (no LAYOUT key) is RGBW with every mode', () {

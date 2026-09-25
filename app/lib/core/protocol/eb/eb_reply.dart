@@ -74,6 +74,14 @@ final class EbCaps extends EbReply {
   }
 
   bool get hasModes => fields.containsKey('MODES');
+
+  /// `PRESETS=<n>` (3.6.0+); null when absent or not a plain number.
+  int? get presetSlots {
+    final String? v = fields['PRESETS'];
+    if (v == null || !RegExp(r'^\d{1,3}$').hasMatch(v)) return null;
+    return int.parse(v);
+  }
+
   @override
   String toString() => 'CAPS:$fields';
 }
@@ -109,6 +117,14 @@ final class EbModeSettings extends EbReply {
 final class EbPresets extends EbReply {
   const EbPresets(this.slots);
   final Set<int> slots;
+
+  /// Only the slots a light with [count] slots has (earlier firmware may
+  /// still report slots it no longer offers).
+  EbPresets within(int count) => EbPresets(<int>{
+    for (final int s in slots)
+      if (s < count) s,
+  });
+
   @override
   String toString() => 'PRESETS:$slots';
 }

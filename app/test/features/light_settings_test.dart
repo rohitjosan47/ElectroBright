@@ -1,4 +1,5 @@
 import 'package:electrobright/features/fixture_settings/light_settings_screen.dart';
+import 'package:electrobright/sim/eb_device_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -32,7 +33,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('EB-C3-W-V1'), findsOneWidget);
-    expect(find.text('3.5.0'), findsOneWidget);
+    expect(find.text(EbDeviceModel.firmwareVersion), findsOneWidget);
     await DemoApp.shutDown(t);
   });
 

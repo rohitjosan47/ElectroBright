@@ -92,7 +92,10 @@ void main() {
     for (final (String name, String type, String _) in lights) {
       await scrollTo(t, find.text(type));
       await t.tap(find.text(type));
-      await waitFor(t, find.textContaining('firmware 3.5.0'));
+      await waitFor(
+        t,
+        find.textContaining('firmware ${EbDeviceModel.firmwareVersion}'),
+      );
       expect(find.byType(AddLightScreen), findsOneWidget);
       await t.enterText(find.byType(TextField), name);
       // "Done" on the keyboard saves.

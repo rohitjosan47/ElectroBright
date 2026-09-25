@@ -87,6 +87,11 @@ void main() {
         3,
         24,
       });
+      // A 3.5.0 light may list slots a 15-slot light does not have.
+      expect(
+        (parseEbReply('PRESETS:0,3,14,15,24,') as EbPresets).within(15).slots,
+        <int>{0, 3, 14},
+      );
       expect(parseEbReply('PRESETS:0,3'), isA<EbMalformed>());
       expect(parseEbReply('PRESETS:3,3,'), isA<EbMalformed>());
       final EbCapabilities c = parseEbReply(

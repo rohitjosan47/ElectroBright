@@ -6,6 +6,7 @@ import 'package:electrobright/core/util/scheduler.dart';
 import 'package:electrobright/sessions/connection_manager.dart';
 import 'package:electrobright/sessions/discovery.dart';
 import 'package:electrobright/sessions/fixture_session.dart';
+import 'package:electrobright/sim/eb_device_model.dart';
 import 'package:electrobright/sim/sim_central.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -82,7 +83,10 @@ void main() {
       final Want want = w.manager.want('f0', WantReason.screen);
       await w.run(const Duration(seconds: 1));
       expect(w.s(0).status.phase, LinkPhase.ready);
-      expect(w.s(0).status.view!.firmware!.version.version, '3.5.0');
+      expect(
+        w.s(0).status.view!.firmware!.version.version,
+        EbDeviceModel.firmwareVersion,
+      );
       want.release();
       await w.run(const Duration(seconds: 30));
       expect(

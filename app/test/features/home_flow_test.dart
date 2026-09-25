@@ -5,6 +5,7 @@ import 'package:electrobright/core/store/json_store.dart';
 import 'package:electrobright/design/gallery/gallery.dart';
 import 'package:electrobright/features/add_fixture/add_light_screen.dart';
 import 'package:electrobright/features/home/home_screen.dart';
+import 'package:electrobright/sim/eb_device_model.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -75,7 +76,10 @@ void main() {
     await settle(t);
     expect(find.byType(AddLightScreen), findsOneWidget);
     expect(
-      find.text('Found a Tunable white (warm to cool) light · firmware 3.5.0'),
+      find.text(
+        'Found a Tunable white (warm to cool) light · '
+        'firmware ${EbDeviceModel.firmwareVersion}',
+      ),
       findsOneWidget,
     );
     await t.enterText(find.byType(TextField), 'Kitchen');
