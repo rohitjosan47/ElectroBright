@@ -9,6 +9,7 @@ import 'package:electrobright/bootstrap/service_registry.dart';
 import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/core/store/json_store.dart';
 import 'package:electrobright/design/components/glass_controls.dart';
+import 'package:electrobright/design/controls/glass_slider.dart';
 import 'package:electrobright/features/add_fixture/add_light_screen.dart';
 import 'package:electrobright/features/control/control_screen.dart';
 import 'package:electrobright/features/firmware_update/firmware_update_screen.dart';
@@ -47,6 +48,16 @@ void main() {
     of: find.byType(GlassSegmented<ControlTab>),
     matching: find.text(name),
   );
+
+  /// Drags the colour temperature to its warm or cool end (the LEDs' own).
+  Future<void> slideTemperature(WidgetTester t, {required bool warm}) async {
+    final Finder slider = find.byWidgetPredicate(
+      (Widget w) => w is GlassSlider && w.semanticLabel == 'Colour temperature',
+    );
+    await t.ensureVisible(slider);
+    await wait(t, 300);
+    await t.drag(slider, Offset(warm ? -2000 : 2000, 0));
+  }
 
   testWidgets('demo lights of every type, end to end', (WidgetTester t) async {
     final AppServices services = AppServices();
@@ -117,7 +128,7 @@ void main() {
 
     // Tunable white: 2700 K at full level is the warm LED alone.
     await openLight('Kitchen');
-    await t.tap(find.text('Warm 2700 K'));
+    await slideTemperature(t, warm: true);
     await wait(t);
     expect(twin('demo-cct').scene.color.values, <int>[0, 255]);
     // Preset: save, change, load back.
@@ -131,7 +142,7 @@ void main() {
     expect(twin('demo-cct').presetSlots, contains(0));
     await t.tap(tab('White'));
     await wait(t, 800);
-    await t.tap(find.text('Daylight 6500 K'));
+    await slideTemperature(t, warm: false);
     await wait(t);
     expect(twin('demo-cct').scene.color.values, <int>[255, 0]);
     await t.tap(tab('Presets'));
@@ -155,7 +166,7 @@ void main() {
 
     // RGB + CCT: the white side lights only the white LEDs.
     await openLight('Bedroom');
-    await t.tap(find.text('Warm 2700 K'));
+    await slideTemperature(t, warm: true);
     await wait(t);
     final EbScene bedroom = twin('demo-rgbcct').scene;
     expect(bedroom.color.values, <int>[0, 0, 0, 0, 255]);

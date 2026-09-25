@@ -49,40 +49,89 @@ class ColourEditor extends StatefulWidget {
 
 enum _Sub { colour, white, custom }
 
-class _ColourEditorState extends State<ColourEditor> {
-  late ColourEngine _engine = ColourEngine(widget.whitePoints);
-  late ChannelColor _encoded = widget.value;
-  late ColourIntent _intent = _engine.decode(widget.value);
+/// The last intent and what it encodes to.
+typedef _Model = ({ColourIntent intent, ChannelColor encoded});
 
+class _ColourEditorState extends State<ColourEditor> {
+  late ColourEngine _engine;
+
+  /// Live changes go here only: the controls that show the colour listen to
+  /// it, the rest of the editor is rebuilt when a gesture ends.
+  late final ValueNotifier<_Model> _model;
+
+  /// The editor's tree as last built. A parent rebuilding with the colour
+  /// the editor itself just sent (every live frame) gets it back unchanged.
+  Widget? _tree;
+
+  ColourIntent get _intent => _model.value.intent;
+  ChannelColor get _encoded => _model.value.encoded;
   ChannelLayout get _layout => widget.value.layout;
+
+  @override
+  void initState() {
+    super.initState();
+    _engine = ColourEngine(widget.whitePoints);
+    _model = ValueNotifier<_Model>((
+      intent: _engine.decode(widget.value),
+      encoded: widget.value,
+    ));
+  }
 
   @override
   void didUpdateWidget(ColourEditor old) {
     super.didUpdateWidget(old);
     if (widget.whitePoints != old.whitePoints) {
       _engine = ColourEngine(widget.whitePoints);
+      _tree = null;
+    }
+    if (widget.enabled != old.enabled ||
+        widget.showChannels != old.showChannels) {
+      _tree = null;
     }
     if (widget.value != _encoded) {
-      _encoded = widget.value;
-      _intent = _engine.decode(widget.value, hint: _intent);
+      _model.value = (
+        intent: _engine.decode(widget.value, hint: _intent),
+        encoded: widget.value,
+      );
+      _tree = null;
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _tree = null;
+  }
+
+  @override
+  void dispose() {
+    _model.dispose();
+    super.dispose();
   }
 
   void _apply(ColourIntent i, {required bool live}) {
     final ChannelColor c = _engine.encode(i, _layout);
-    setState(() {
-      _intent = i;
-      _encoded = c;
-    });
+    _model.value = (intent: i, encoded: c);
+    if (!live) _rebuild();
     widget.onChanged(c, live: live);
   }
+
+  void _rebuild() => setState(() => _tree = null);
 
   void _start() => widget.onGestureStart?.call();
 
   void _end() {
     widget.onChanged(_encoded, live: false);
     widget.onGestureEnd?.call();
+    _rebuild();
   }
+
+  /// [builder] with the current intent and colour, rebuilt on live changes.
+  Widget _live(Widget Function(ColourIntent intent, ChannelColor encoded) b) =>
+      ValueListenableBuilder<_Model>(
+        valueListenable: _model,
+        builder: (BuildContext context, _Model m, _) => b(m.intent, m.encoded),
+      );
 
   _Sub get _sub => switch (_intent) {
     WhiteIntent() => _Sub.white,
@@ -91,19 +140,20 @@ class _ColourEditorState extends State<ColourEditor> {
   };
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => _tree ??= _build(context);
+
+  Widget _build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
     final ColourSurface surface = LightCapabilities.assumed(_layout)
         .colourSurface;
     final List<Widget> children = switch (surface) {
       ColourSurface.intensity => <Widget>[_levelSlider(l)],
       ColourSurface.tunableWhite => <Widget>[_kelvinPanel(l)],
-      ColourSurface.colour => <Widget>[_wheel(), _chips(l)],
+      ColourSurface.colour => <Widget>[_wheel()],
       ColourSurface.colourPlusWhite => <Widget>[
         _wheel(),
         const SizedBox(height: Space.m),
         _whiteLedSlider(l),
-        _chips(l),
       ],
       ColourSurface.colourPlusTunableWhite => <Widget>[
         GlassSegmented<_Sub>(
@@ -130,62 +180,68 @@ class _ColourEditorState extends State<ColourEditor> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         ...children,
-        if (widget.showChannels && surface != ColourSurface.intensity)
-          _Channels(
-            value: _encoded,
-            whitePoints: widget.whitePoints,
-            enabled: widget.enabled,
-            onStart: _start,
-            onEnd: _end,
-            onChanged: (ChannelColor c, {required bool live}) =>
-                _apply(RawIntent(c), live: live),
+        if (widget.showChannels &&
+            surface != ColourSurface.intensity) ...<Widget>[
+          const SizedBox(height: Space.m),
+          _live(
+            (_, ChannelColor encoded) => _Channels(
+              value: encoded,
+              whitePoints: widget.whitePoints,
+              enabled: widget.enabled,
+              onStart: _start,
+              onEnd: _end,
+              onChanged: (ChannelColor c, {required bool live}) =>
+                  _apply(RawIntent(c), live: live),
+            ),
           ),
+        ],
       ],
     );
   }
 
-  Widget _wheel() {
-    final Hsv hsv = switch (_intent) {
-      HsvIntent(:final Hsv hsv) => hsv,
-      _ => Hsv.fromRgb8(_encoded[0], _encoded[1], _encoded[2]),
-    };
-    final double white = switch (_intent) {
+  static Hsv _hsvOf(ColourIntent intent, ChannelColor encoded) =>
+      switch (intent) {
+        HsvIntent(:final Hsv hsv) => hsv,
+        _ => Hsv.fromRgb8(encoded[0], encoded[1], encoded[2]),
+      };
+
+  Widget _wheel() => _live((ColourIntent intent, ChannelColor encoded) {
+    final double white = switch (intent) {
       HsvIntent(:final double white) => white,
       _ => 0,
     };
     return HueWheel(
-      value: hsv,
+      value: _hsvOf(intent, encoded),
       enabled: widget.enabled,
       onChangeStart: _start,
       onChanged: (Hsv v) => _apply(HsvIntent(v, white: white), live: true),
       onChangeEnd: (_) => _end(),
     );
-  }
+  });
 
-  Widget _whiteLedSlider(AppLocalizations l) {
-    final Hsv hsv = switch (_intent) {
-      HsvIntent(:final Hsv hsv) => hsv,
-      _ => Hsv.fromRgb8(_encoded[0], _encoded[1], _encoded[2]),
-    };
-    final double white = _encoded.role(ChannelRole.w) / 255;
-    final Color led = ledColor(ChannelRole.w, widget.whitePoints);
-    return _Labelled(
-      label: l.whiteLed,
-      value: '${(white * 100).round()} %',
-      child: GlassSlider(
-        value: white,
-        semanticLabel: l.whiteLed,
-        enabled: widget.enabled,
-        track: <Color>[const Color(0xFF3A3A3A), led],
-        onChangeStart: (_) => _start(),
-        onChanged: (double v) => _apply(HsvIntent(hsv, white: v), live: true),
-        onChangeEnd: (_) => _end(),
-      ),
-    );
-  }
+  Widget _whiteLedSlider(AppLocalizations l) =>
+      _live((ColourIntent intent, ChannelColor encoded) {
+        final Hsv hsv = _hsvOf(intent, encoded);
+        final double white = encoded.role(ChannelRole.w) / 255;
+        final Color led = ledColor(ChannelRole.w, widget.whitePoints);
+        return _Labelled(
+          label: l.whiteLed,
+          value: '${(white * 100).round()} %',
+          child: GlassSlider(
+            value: white,
+            semanticLabel: l.whiteLed,
+            enabled: widget.enabled,
+            track: <Color>[const Color(0xFF3A3A3A), led],
+            onChangeStart: (_) => _start(),
+            onChanged: (double v) =>
+                _apply(HsvIntent(hsv, white: v), live: true),
+            onChangeEnd: (_) => _end(),
+          ),
+        );
+      });
 
-  Widget _levelSlider(AppLocalizations l) {
-    final double level = _encoded.maxChannel / 255;
+  Widget _levelSlider(AppLocalizations l) => _live((_, ChannelColor encoded) {
+    final double level = encoded.maxChannel / 255;
     return _Labelled(
       label: l.level,
       value: '${(level * 100).round()} %',
@@ -202,105 +258,61 @@ class _ColourEditorState extends State<ColourEditor> {
         onChangeEnd: (_) => _end(),
       ),
     );
-  }
+  });
 
-  Widget _kelvinPanel(AppLocalizations l) {
-    final ({double min, double max}) range = _engine.whiteRange(_layout);
-    final WhiteIntent w = switch (_intent) {
-      final WhiteIntent w => w,
-      _ =>
-        _engine.decode(_encoded) is WhiteIntent
-            ? _engine.decode(_encoded) as WhiteIntent
-            : const WhiteIntent(4000, 1),
-    };
-    final double k = w.kelvin.clamp(range.min, range.max);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        _Labelled(
-          label: l.temperature,
-          value: l.kelvinValue((k / 10).round() * 10),
-          child: GlassSlider(
-            value: k,
-            min: range.min,
-            max: range.max,
-            semanticLabel: l.temperature,
-            enabled: widget.enabled,
-            valueText: (double v) => l.kelvinValue(v.round()),
-            // Warm on the left, cool on the right, in the LEDs' own colours.
-            track: <Color>[
-              ledColor(ChannelRole.ww, widget.whitePoints),
-              ledColor(ChannelRole.cw, widget.whitePoints),
-            ],
-            onChangeStart: (_) => _start(),
-            onChanged: (double v) =>
-                _apply(WhiteIntent(v, w.level), live: true),
-            onChangeEnd: (_) => _end(),
-          ),
-        ),
-        const SizedBox(height: Space.s),
-        _whiteChips(l, range, w.level),
-        const SizedBox(height: Space.s),
-        _Labelled(
-          label: l.level,
-          value: '${(w.level * 100).round()} %',
-          child: GlassSlider(
-            value: w.level,
-            semanticLabel: l.level,
-            enabled: widget.enabled,
-            divisions: 20,
-            onChangeStart: (_) => _start(),
-            onChanged: (double v) => _apply(WhiteIntent(k, v), live: true),
-            onChangeEnd: (_) => _end(),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _whiteChips(
-    AppLocalizations l,
-    ({double min, double max}) range,
-    double level,
-  ) {
-    String name(String id) => switch (id) {
-      'candle' => l.chipCandle,
-      'warm' => l.chipWarm,
-      'neutral' => l.chipNeutral,
-      _ => l.chipDaylight,
-    };
-    return Wrap(
-      spacing: Space.xs,
-      runSpacing: Space.xs,
-      children: <Widget>[
-        for (final WhitePreset p in ColourEngine.whitePresets)
-          ActionChip(
-            label: Text(
-              p.kelvin < range.min || p.kelvin > range.max
-                  // Beyond the LEDs: the nearest end ("≈ 2700 K").
-                  ? '${name(p.id)} ${l.kelvinApprox(p.kelvin.clamp(range.min, range.max).round())}'
-                  : '${name(p.id)} ${l.kelvinValue(p.kelvin)}',
+  Widget _kelvinPanel(AppLocalizations l) =>
+      _live((ColourIntent intent, ChannelColor encoded) {
+        final ({double min, double max}) range = _engine.whiteRange(_layout);
+        final WhiteIntent w = switch (intent) {
+          final WhiteIntent w => w,
+          _ => switch (_engine.decode(encoded)) {
+            final WhiteIntent w => w,
+            _ => const WhiteIntent(4000, 1),
+          },
+        };
+        final double k = w.kelvin.clamp(range.min, range.max);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            _Labelled(
+              label: l.temperature,
+              value: l.kelvinValue((k / 10).round() * 10),
+              child: GlassSlider(
+                value: k,
+                min: range.min,
+                max: range.max,
+                semanticLabel: l.temperature,
+                enabled: widget.enabled,
+                valueText: (double v) => l.kelvinValue(v.round()),
+                // Warm on the left, cool on the right, in the LEDs' own
+                // colours.
+                track: <Color>[
+                  ledColor(ChannelRole.ww, widget.whitePoints),
+                  ledColor(ChannelRole.cw, widget.whitePoints),
+                ],
+                onChangeStart: (_) => _start(),
+                onChanged: (double v) =>
+                    _apply(WhiteIntent(v, w.level), live: true),
+                onChangeEnd: (_) => _end(),
+              ),
             ),
-            onPressed: widget.enabled
-                ? () {
-                    _start();
-                    _apply(
-                      WhiteIntent(p.kelvin.toDouble(), level <= 0 ? 1 : level),
-                      live: false,
-                    );
-                    widget.onGestureEnd?.call();
-                  }
-                : null,
-          ),
-      ],
-    );
-  }
-
-  /// White chips on lights that make white from RGB (RGB, RGBW).
-  Widget _chips(AppLocalizations l) => Padding(
-    padding: const EdgeInsets.only(top: Space.s),
-    child: _whiteChips(l, (min: 1900, max: 10000), 1),
-  );
+            const SizedBox(height: Space.m),
+            _Labelled(
+              label: l.level,
+              value: '${(w.level * 100).round()} %',
+              child: GlassSlider(
+                value: w.level,
+                semanticLabel: l.level,
+                enabled: widget.enabled,
+                divisions: 20,
+                onChangeStart: (_) => _start(),
+                onChanged: (double v) => _apply(WhiteIntent(k, v), live: true),
+                onChangeEnd: (_) => _end(),
+              ),
+            ),
+          ],
+        );
+      });
 }
 
 /// One slider per LED with its exact 0..255 value.

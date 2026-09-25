@@ -36,6 +36,18 @@ void main() {
           .opacity ==
       1;
 
+  /// Drags the slider labelled [label] (the [nth] of them) to its warm or
+  /// cool end.
+  Future<void> slideToEnd(
+    WidgetTester t,
+    String label, {
+    required bool warm,
+    int nth = 0,
+  }) async {
+    await t.drag(slider(label).at(nth), Offset(warm ? -2000 : 2000, 0));
+    await settle(t);
+  }
+
   /// What the brightness pill says to accessibility ("70 %").
   String? pillValue(WidgetTester t) =>
       t.getSemantics(find.byKey(const ValueKey<String>('brightness'))).value;
@@ -89,22 +101,17 @@ void main() {
     await DemoApp.shutDown(t);
   });
 
-  testWidgets('tunable white: temperature, level and white chips', (
-    WidgetTester t,
-  ) async {
+  testWidgets('tunable white: temperature and level', (WidgetTester t) async {
     final DemoApp d = await open(t, 'Kitchen');
     expect(tab('White'), findsOneWidget);
     expect(tab('Colour'), findsNothing);
     expect(find.byType(HueWheel), findsNothing);
     expect(slider('Colour temperature'), findsOneWidget);
     expect(slider('Level'), findsOneWidget);
-    // Candle is warmer than the LEDs can go: shown at the warm end.
-    expect(find.text('Candle ≈ 2700 K'), findsOneWidget);
-    await t.tap(find.text('Warm 2700 K'));
-    await settle(t);
+    // The temperature spans the LEDs' own range: warm end, warm LED only.
+    await slideToEnd(t, 'Colour temperature', warm: true);
     expect(d.twin('Kitchen').color.values, <int>[0, 255]); // CW, WW
-    await t.tap(find.text('Daylight 6500 K'));
-    await settle(t);
+    await slideToEnd(t, 'Colour temperature', warm: false);
     expect(d.twin('Kitchen').color.values, <int>[255, 0]);
     // Effects in its own words.
     await t.tap(tab('Effects'));
@@ -127,8 +134,11 @@ void main() {
       expect(slider(c), findsOneWidget, reason: c);
     }
     expect(slider('White'), findsNothing);
-    // A white chip is made from RGB.
-    await t.tap(find.text('Neutral 4000 K'));
+    // White is made from RGB: the square's top-left corner.
+    final Rect box = t.getRect(find.byType(HueWheel));
+    final double size = box.width < 300 ? box.width : 300;
+    final double half = (size / 2 - 8 - size * 0.095 - 10) / 1.41421356;
+    await t.tapAt(box.center - Offset(half + 4, half + 4));
     await settle(t);
     final ChannelColor c = d.twin('Desk strip').color;
     expect(c.values.reduce((int a, int b) => a < b ? a : b), greaterThan(150));
@@ -157,8 +167,7 @@ void main() {
     // The factory look (both whites) is a white: the White side is shown.
     expect(slider('Colour temperature'), findsOneWidget);
     expect(find.byType(HueWheel), findsNothing);
-    await t.tap(find.text('Warm 2700 K'));
-    await settle(t);
+    await slideToEnd(t, 'Colour temperature', warm: true);
     expect(d.twin('Bedroom').color.values, <int>[0, 0, 0, 0, 255]);
     // Colour: the whites go to zero.
     await t.tap(
@@ -253,6 +262,60 @@ void main() {
       paints
         ..clipRRect()
         ..rrect(rrect: fill),
+    );
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('dragging in the colour square colours the light, no scroll', (
+    WidgetTester t,
+  ) async {
+    // A phone-sized screen: the page can scroll.
+    t.view.physicalSize = const Size(1179, 2556);
+    t.view.devicePixelRatio = 3;
+    addTearDown(t.view.reset);
+    final DemoApp d = await DemoApp.start(t);
+    await d.open(t, 'Desk strip');
+    final ScrollPosition page = t
+        .state<ScrollableState>(find.byType(Scrollable).first)
+        .position;
+    await t.ensureVisible(find.byType(HueWheel));
+    await settle(t, 1);
+    final double scrolled = page.pixels;
+    final ChannelColor before = d.twin('Desk strip').color;
+    final Rect wheel = t.getRect(find.byType(HueWheel));
+    // Rebuilt widgets are new instances: these must survive the drag.
+    final Finder screen = find.descendant(
+      of: find.byType(ControlScreen),
+      matching: find.byType(ListView),
+    );
+    final Finder editorTree = find.descendant(
+      of: find.byType(ColourEditor),
+      matching: find.byType(Column),
+    );
+    final Widget screenBefore = t.widget(screen.first);
+    final Widget editorBefore = t.widget(editorTree.first);
+    // Down the square's left half: less saturated, darker.
+    final TestGesture g = await t.startGesture(
+      wheel.center - const Offset(30, 30),
+    );
+    for (int i = 0; i < 10; i++) {
+      await g.moveBy(const Offset(0, 6));
+      await t.pump(const Duration(milliseconds: 50));
+    }
+    // Live frames reached the light before the finger lifted, without
+    // rebuilding the screen or the editor (only the colour's listeners).
+    expect(d.twin('Desk strip').color, isNot(before));
+    expect(identical(t.widget(screen.first), screenBefore), isTrue);
+    expect(identical(t.widget(editorTree.first), editorBefore), isTrue);
+    await g.up();
+    await settle(t);
+    expect(page.pixels, scrolled);
+    final ChannelColor after = d.twin('Desk strip').color;
+    expect(after.maxChannel, lessThan(before.maxChannel));
+    // The editor shows what the light has (the wheel kept the finger's value).
+    expect(
+      t.widget<ColourEditor>(find.byType(ColourEditor)).value,
+      d.session('Desk strip').status.state!.scene.color,
     );
     await DemoApp.shutDown(t);
   });

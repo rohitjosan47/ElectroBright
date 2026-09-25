@@ -153,18 +153,6 @@
       }
     }
   },
-  "kelvinApprox": "≈ {kelvin} K",
-  "@kelvinApprox": {
-    "placeholders": {
-      "kelvin": {
-        "type": "int"
-      }
-    }
-  },
-  "chipCandle": "Candle",
-  "chipWarm": "Warm",
-  "chipNeutral": "Neutral",
-  "chipDaylight": "Daylight",
   "channels": "Channels",
   "whites": "Whites",
   "offlineNote": "Not connected — changes are sent when the light is back.",

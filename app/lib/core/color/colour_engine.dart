@@ -55,9 +55,6 @@ final class RawIntent extends ColourIntent {
   String toString() => 'RawIntent($color)';
 }
 
-/// A named white-temperature shortcut.
-typedef WhitePreset = ({String id, int kelvin});
-
 /// Turns what the user asks for into the channel values of a light's layout
 /// and back. Pure: everything a colour screen needs, testable without Flutter.
 ///
@@ -68,14 +65,6 @@ final class ColourEngine {
   const ColourEngine([this.whitePoints = const LedWhitePoints()]);
 
   final LedWhitePoints whitePoints;
-
-  /// Quick white chips (Kelvin).
-  static const List<WhitePreset> whitePresets = <WhitePreset>[
-    (id: 'candle', kelvin: 1900),
-    (id: 'warm', kelvin: 2700),
-    (id: 'neutral', kelvin: 4000),
-    (id: 'daylight', kelvin: 6500),
-  ];
 
   /// Temperatures the light can make as white: between its two white LEDs
   /// (CCT, RGBCCT), anything from RGB (RGB, RGBW), its own LED (W).

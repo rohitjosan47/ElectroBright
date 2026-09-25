@@ -1,5 +1,6 @@
 import 'package:electrobright/core/protocol/eb/eb_constants.dart';
 import 'package:electrobright/design/components/glass_controls.dart';
+import 'package:electrobright/design/controls/glass_slider.dart';
 import 'package:electrobright/features/control/control_screen.dart';
 import 'package:electrobright/features/control/timer_sheet.dart';
 import 'package:flutter/material.dart';
@@ -80,7 +81,16 @@ void main() {
     }
     await t.tap(find.text('Beacon A'));
     await settle(t, 1);
-    await t.tap(find.text('Warm 2700 K').last);
+    // Its editor's temperature to the warm end.
+    await t.drag(
+      find
+          .byWidgetPredicate(
+            (Widget w) =>
+                w is GlassSlider && w.semanticLabel == 'Colour temperature',
+          )
+          .last,
+      const Offset(-2000, 0),
+    );
     await settle(t);
     // Two values: cool and warm white.
     expect(d.twin('Kitchen').policeA.values, <int>[0, 255]);

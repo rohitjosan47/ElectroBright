@@ -32,9 +32,9 @@ It has a header (back, name, type badge, power), the orb (the running effect in 
 | Type | Tabs | Colour controls |
 |---|---|---|
 | W (single white) | Effects · Presets | None. The brightness slider is the light's **intensity**. If the channel is below full, a caption shows the real output ("Output 50 %"). **Use full range** moves it all onto the slider in one step, with no visible change. |
-| CCT (tunable white) | White · Effects · Presets | **Colour temperature** across the LEDs' own range, **Level**, and the chips Candle / Warm / Neutral / Daylight. A chip outside the LED range is shown at the nearest end ("≈ 2700 K"). |
-| RGB | Colour · Effects · Presets | Colour wheel, and white chips mixed from RGB. |
-| RGBW | Colour · Effects · Presets | Colour wheel, a **White LED** slider, and white chips. |
+| CCT (tunable white) | White · Effects · Presets | **Colour temperature** across the LEDs' own range, and **Level**. |
+| RGB | Colour · Effects · Presets | Colour wheel. |
+| RGBW | Colour · Effects · Presets | Colour wheel and a **White LED** slider. |
 | RGBCCT | Colour · Effects · Presets | **Colour \| White**. Colour is the wheel with the white LEDs off; White is temperature plus level with RGB off. A look that is neither shows as **Custom**. |
 
 On every type except W, **Channels** shows each LED's exact 0–255 value in its own colour. The picker keeps what you chose (e.g. the hue at low saturation), so the light's rounded echo never moves the controls. When the running effect makes its own colours, a note offers **Switch to Solid**.
