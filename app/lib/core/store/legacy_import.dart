@@ -4,6 +4,7 @@ import '../model/channel_color.dart';
 import '../model/channel_layout.dart';
 import '../model/fixture.dart';
 import '../protocol/eb/eb_constants.dart';
+import '../protocol/eb/eb_fixture_catalog.dart';
 import '../protocol/eb/eb_scene.dart';
 import 'json_store.dart';
 
@@ -68,6 +69,9 @@ abstract final class LegacyImport {
         layout: ChannelLayout.rgbw,
         driver: DriverKind.electroBright,
         addedAt: DateTime.tryParse('${d?['addedAt']}') ?? DateTime.now(),
+        whitePoints: EbFixtureCatalog.whitePointsFor(
+          layout: ChannelLayout.rgbw,
+        ),
         identity: FixtureIdentity.assumed(ChannelLayout.rgbw),
         lastConnectedAt: DateTime.tryParse('${d?['lastConnectedAt']}'),
       );

@@ -1,12 +1,11 @@
-import 'package:electrobright/core/color/led_white_points.dart';
 import 'package:electrobright/features/fixture_settings/light_settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/demo_app.dart';
 
-/// Light settings of each type: what it can do, LED calibration, channel
-/// test, factory reset and forget — checked against the demo twins.
+/// Light settings of each type: what it can do, channel test, factory reset
+/// and forget — checked against the demo twins.
 void main() {
   Future<void> settle(WidgetTester t, [int seconds = 2]) =>
       DemoApp.settle(t, seconds);
@@ -23,16 +22,8 @@ void main() {
     return d;
   }
 
-  testWidgets('single white: what it can do and its one LED', (
-    WidgetTester t,
-  ) async {
-    final DemoApp d = await open(t, 'Hallway');
-    // Only the white LED is calibrated.
-    expect(find.byKey(const ValueKey<String>('led-w')), findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('led-cw')), findsNothing);
-    await t.tap(find.byTooltip('+100 K'));
-    await settle(t, 1);
-    expect(d.app.registry.byId(DemoApp.idOf('Hallway'))!.whitePoints.wK, 4100);
+  testWidgets('single white: what it can do', (WidgetTester t) async {
+    await open(t, 'Hallway');
     await t.tap(find.byKey(const ValueKey<String>('settings-caps')));
     await settle(t, 1);
     expect(find.text('12 of 13'), findsOneWidget);
@@ -45,30 +36,23 @@ void main() {
     await DemoApp.shutDown(t);
   });
 
-  testWidgets('tunable white: both LEDs, kept at least 500 K apart', (
+  testWidgets('no LED calibration to set: white points are the product\'s', (
     WidgetTester t,
   ) async {
-    final DemoApp d = await open(t, 'Kitchen');
-    expect(find.byKey(const ValueKey<String>('led-w')), findsNothing);
-    expect(find.byKey(const ValueKey<String>('led-cw')), findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('led-ww')), findsOneWidget);
-    // Warm LED up to 500 K below the cool one: then it stops.
-    final Finder warmUp = find.descendant(
-      of: find.byKey(const ValueKey<String>('led-ww')),
-      matching: find.byTooltip('+100 K'),
-    );
-    for (int i = 0; i < 40; i++) {
-      final IconButton b = t.widget<IconButton>(
-        find.ancestor(of: warmUp, matching: find.byType(IconButton)),
-      );
-      if (b.onPressed == null) break;
-      await t.tap(warmUp);
-      await t.pump();
+    await open(t, 'Kitchen');
+    expect(find.text('LED CALIBRATION'), findsNothing);
+    expect(find.text('LED calibration'), findsNothing);
+    expect(find.text('Reset to defaults'), findsNothing);
+    expect(find.byTooltip('+100 K'), findsNothing);
+    for (final String k in <String>['led-w', 'led-cw', 'led-ww']) {
+      expect(find.byKey(ValueKey<String>(k)), findsNothing);
     }
-    final LedWhitePoints wp = d.app.registry
-        .byId(DemoApp.idOf('Kitchen'))!
-        .whitePoints;
-    expect(wp.cwK - wp.wwK, 500);
+    // The rest of the screen is still there.
+    expect(find.byKey(const ValueKey<String>('settings-caps')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('settings-identify')),
+      findsOneWidget,
+    );
     await DemoApp.shutDown(t);
   });
 

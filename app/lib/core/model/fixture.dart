@@ -125,7 +125,8 @@ final class Fixture {
   /// What the firmware reported (null until the first connection).
   final FixtureIdentity? identity;
 
-  /// Colour temperatures of the light's white LEDs (LED calibration).
+  /// Colour temperatures of the light's white LEDs, from the fixture catalog
+  /// (set when the light is added, corrected on every connect).
   final LedWhitePoints whitePoints;
   final String? profileId;
   final String icon;

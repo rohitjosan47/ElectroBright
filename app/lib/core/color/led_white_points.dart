@@ -1,8 +1,9 @@
 import 'package:meta/meta.dart';
 
-/// Colour temperatures of a light's white LEDs, in Kelvin (editable per
-/// light under LED calibration). Used to preview the light's output and to
-/// mix cool/warm white for a requested colour temperature.
+/// Colour temperatures of a light's white LEDs, in Kelvin. Product data from
+/// the fixture catalog (EbFixtureSpec.whitePoints), not a user setting. Used
+/// to preview the light's output and to mix cool/warm white for a requested
+/// colour temperature.
 @immutable
 final class LedWhitePoints {
   const LedWhitePoints({this.wK = 4000, this.cwK = 6500, this.wwK = 2700});

@@ -1,11 +1,12 @@
 import 'package:meta/meta.dart';
 
+import '../../color/led_white_points.dart';
 import '../../model/channel_color.dart';
 import '../../model/channel_layout.dart';
 
 /// One ElectroBright firmware fixture, as its sketch defines it
 /// (`firmware/fixtures/<folder>/Fixture.h`). The cross-repo tests keep every
-/// entry equal to the firmware.
+/// entry equal to the firmware, except [whitePoints] (app-only product data).
 @immutable
 final class EbFixtureSpec {
   const EbFixtureSpec({
@@ -21,6 +22,7 @@ final class EbFixtureSpec {
     required this.policeAValues,
     required this.policeBValues,
     required this.legacyFrames,
+    this.whitePoints = const LedWhitePoints(),
   });
 
   /// Sketch folder under firmware/fixtures/.
@@ -42,6 +44,11 @@ final class EbFixtureSpec {
 
   /// Also accepts the pre-3.x 7- and 6-byte RGBW frames.
   final bool legacyFrames;
+
+  /// The product's white LED temperatures (app-only: the firmware drives raw
+  /// levels). Every saved light of this model uses them for Kelvin ranges,
+  /// warm/cool mixing and previews.
+  final LedWhitePoints whitePoints;
 
   /// Power-up / factory-reset colours.
   ChannelColor get color => ChannelColor(layout, colorValues);
@@ -67,6 +74,7 @@ abstract final class EbFixtureCatalog {
     policeAValues: <int>[255, 165, 0, 0],
     policeBValues: <int>[0, 0, 0, 255],
     legacyFrames: true,
+    whitePoints: LedWhitePoints(wK: 4000),
   );
 
   static const EbFixtureSpec rgb = EbFixtureSpec(
@@ -82,6 +90,8 @@ abstract final class EbFixtureCatalog {
     policeAValues: <int>[255, 165, 0],
     policeBValues: <int>[255, 255, 255],
     legacyFrames: false,
+    // No white LED.
+    whitePoints: LedWhitePoints(),
   );
 
   static const EbFixtureSpec rgbcct = EbFixtureSpec(
@@ -98,6 +108,7 @@ abstract final class EbFixtureCatalog {
     policeAValues: <int>[255, 165, 0, 0, 0],
     policeBValues: <int>[0, 0, 0, 255, 255],
     legacyFrames: false,
+    whitePoints: LedWhitePoints(cwK: 6500, wwK: 2700),
   );
 
   static const EbFixtureSpec cct = EbFixtureSpec(
@@ -113,6 +124,7 @@ abstract final class EbFixtureCatalog {
     policeAValues: <int>[0, 255],
     policeBValues: <int>[255, 0],
     legacyFrames: false,
+    whitePoints: LedWhitePoints(cwK: 6500, wwK: 2700),
   );
 
   static const EbFixtureSpec w = EbFixtureSpec(
@@ -128,6 +140,7 @@ abstract final class EbFixtureCatalog {
     policeAValues: <int>[255],
     policeBValues: <int>[255],
     legacyFrames: false,
+    whitePoints: LedWhitePoints(wK: 4000),
   );
 
   static const List<EbFixtureSpec> all = <EbFixtureSpec>[
@@ -140,6 +153,21 @@ abstract final class EbFixtureCatalog {
 
   static EbFixtureSpec forLayout(ChannelLayout layout) =>
       all.firstWhere((EbFixtureSpec f) => f.layout == layout);
+
+  /// The fixture with INFO model id [modelId] (null: unknown or none).
+  static EbFixtureSpec? forModel(String? modelId) {
+    for (final EbFixtureSpec f in all) {
+      if (f.modelId == modelId) return f;
+    }
+    return null;
+  }
+
+  /// White LED temperatures of a light: its model's, else (model not known
+  /// yet, or not in the catalog) its layout's.
+  static LedWhitePoints whitePointsFor({
+    String? modelId,
+    required ChannelLayout layout,
+  }) => forModel(modelId)?.whitePoints ?? forLayout(layout).whitePoints;
 
   static final RegExp _bleName = RegExp(
     r'^ElectroBright_C3_(?:([A-Z]+)_)?V\d+$',

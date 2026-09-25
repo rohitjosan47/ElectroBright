@@ -62,7 +62,6 @@ On every type except W, **Channels** shows each LED's exact 0–255 value in its
   - effects "12 of 13", and why any are missing;
   - its presets, timer and sound;
   - the firmware model, version and raw capabilities (long-press to copy).
-- **LED calibration** sets the colour temperature of each white LED (100 K steps). The cool white stays at least 500 K above the warm white. Kelvin values and previews use these temperatures.
 - **Identify** blinks the light three times.
 - **Channel test** lights each LED on its own for 1.2 s, then restores the look. If the link drops during the test, the look is restored when the light returns within 60 s.
 - **Sound**, **Factory reset** (the confirmation shows the type's factory look; it also clears the preset names) and **Forget**.

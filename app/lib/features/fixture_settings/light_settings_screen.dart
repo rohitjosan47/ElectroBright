@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/app_session.dart';
 import '../../app/providers.dart';
-import '../../core/color/led_white_points.dart';
 import '../../core/color/light_tone.dart';
 import '../../core/model/channel_layout.dart';
 import '../../core/model/fixture.dart';
@@ -30,8 +29,8 @@ import '../../sessions/rituals.dart';
 import '../control/effects/mode_presentation.dart';
 import '../control/presets/preset_meta.dart';
 
-/// One light's settings: name, type and what it can do, LED calibration,
-/// identify / channel test, sound, factory reset and forget.
+/// One light's settings: name, type and what it can do, identify / channel
+/// test, sound, factory reset and forget.
 class LightSettingsScreen extends ConsumerStatefulWidget {
   const LightSettingsScreen({required this.fixtureId, super.key});
   final String fixtureId;
@@ -237,67 +236,6 @@ class _LightSettingsScreenState extends ConsumerState<LightSettingsScreen> {
                   ),
                 ),
               ]),
-              section(l.ledCalibration, <Widget>[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    Space.m,
-                    Space.s,
-                    Space.m,
-                    Space.xs,
-                  ),
-                  child: Text(l.ledCalibrationNote, style: sub),
-                ),
-                for (final ChannelRole role in <ChannelRole>[
-                  ChannelRole.w,
-                  ChannelRole.cw,
-                  ChannelRole.ww,
-                ])
-                  if (f.layout.roles.contains(role))
-                    _KelvinStepper(
-                      key: ValueKey<String>('led-${role.name}'),
-                      label: switch (role) {
-                        ChannelRole.cw => l.ledCoolTemp,
-                        ChannelRole.ww => l.ledWarmTemp,
-                        _ => l.ledWhiteTemp,
-                      },
-                      role: role,
-                      whitePoints: f.whitePoints,
-                      style: title,
-                      onChanged: (LedWhitePoints wp) =>
-                          _update(f.copyWith(whitePoints: wp)),
-                    ),
-                if (f.layout.white == WhiteKind.tunable)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      Space.m,
-                      0,
-                      Space.m,
-                      Space.xs,
-                    ),
-                    child: Text(l.ledSpanNote, style: sub),
-                  ),
-                if (f.layout.white == WhiteKind.none)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      Space.m,
-                      0,
-                      Space.m,
-                      Space.s,
-                    ),
-                    child: ChannelDots(
-                      layout: f.layout,
-                      whitePoints: f.whitePoints,
-                      size: 14,
-                    ),
-                  ),
-                if (f.whitePoints != const LedWhitePoints())
-                  row(
-                    l.resetDefaults,
-                    onTap: () => _update(
-                      f.copyWith(whitePoints: const LedWhitePoints()),
-                    ),
-                  ),
-              ]),
               section(l.tools, <Widget>[
                 row(
                   l.identify,
@@ -459,78 +397,6 @@ class _LightSettingsScreenState extends ConsumerState<LightSettingsScreen> {
     // Back to Home before the light disappears from under the screens.
     Navigator.of(context).popUntil((Route<dynamic> r) => r.isFirst);
     await _app.registry.forget(f.id);
-  }
-}
-
-/// A white LED's colour temperature, in 100 K steps.
-class _KelvinStepper extends StatelessWidget {
-  const _KelvinStepper({
-    required this.label,
-    required this.role,
-    required this.whitePoints,
-    required this.style,
-    required this.onChanged,
-    super.key,
-  });
-  final String label;
-  final ChannelRole role;
-  final LedWhitePoints whitePoints;
-  final TextStyle style;
-  final ValueChanged<LedWhitePoints> onChanged;
-
-  int get _k => switch (role) {
-    ChannelRole.cw => whitePoints.cwK,
-    ChannelRole.ww => whitePoints.wwK,
-    _ => whitePoints.wK,
-  };
-
-  LedWhitePoints _with(int k) => switch (role) {
-    ChannelRole.cw => whitePoints.copyWith(cwK: k),
-    ChannelRole.ww => whitePoints.copyWith(wwK: k),
-    _ => whitePoints.copyWith(wK: k),
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final AppLocalizations l = AppLocalizations.of(context);
-    final LedWhitePoints down = _with(_k - 100);
-    final LedWhitePoints up = _with(_k + 100);
-    return ListTile(
-      leading: Container(
-        width: 18,
-        height: 18,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: ledColor(role, whitePoints),
-        ),
-      ),
-      title: Text(label, style: style),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          IconButton(
-            tooltip: '−100 K',
-            icon: const Icon(Icons.remove_rounded),
-            onPressed: down.isValid ? () => onChanged(down) : null,
-          ),
-          SizedBox(
-            width: 64,
-            child: Text(
-              l.kelvinValue(_k),
-              textAlign: TextAlign.center,
-              style: style.copyWith(
-                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: '+100 K',
-            icon: const Icon(Icons.add_rounded),
-            onPressed: up.isValid ? () => onChanged(up) : null,
-          ),
-        ],
-      ),
-    );
   }
 }
 

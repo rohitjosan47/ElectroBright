@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import '../core/color/led_white_points.dart';
 import '../core/model/fixture.dart';
+import '../core/protocol/eb/eb_fixture_catalog.dart';
 import '../core/store/json_store.dart';
 import '../drivers/electrobright/eb_types.dart';
 import 'connection_manager.dart';
@@ -81,7 +83,7 @@ final class FixtureRegistry {
     _persist();
   }
 
-  /// Rename, icon, favourite, LED calibration...
+  /// Rename, icon, favourite...
   void update(Fixture f) {
     if (!_fixtures.containsKey(f.id)) return;
     _fixtures[f.id] = f;
@@ -147,10 +149,17 @@ final class FixtureRegistry {
           .join(','),
       learnedAt: f.identity?.learnedAt ?? _clock(),
     );
+    // White points are product data: whatever was saved (an older app's
+    // calibration, a guess from the layout) gives way to the catalog's.
+    final LedWhitePoints wp = EbFixtureCatalog.whitePointsFor(
+      modelId: fw.model,
+      layout: fw.layout,
+    );
     final bool typeChanged =
         fw.layout != f.layout && f.identity != null && !f.identity!.assumed;
     final bool same =
         f.layout == fw.layout &&
+        f.whitePoints == wp &&
         f.identity != null &&
         !f.identity!.assumed &&
         f.identity!.capabilities == identity.capabilities &&
@@ -161,6 +170,7 @@ final class FixtureRegistry {
     final Fixture next = f.copyWith(
       layout: fw.layout,
       identity: identity,
+      whitePoints: wp,
       lastConnectedAt: _clock(),
     );
     _fixtures[id] = next;

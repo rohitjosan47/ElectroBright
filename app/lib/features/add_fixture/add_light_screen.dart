@@ -8,6 +8,7 @@ import '../../app/providers.dart';
 import '../../core/model/channel_layout.dart';
 import '../../core/model/fixture.dart';
 import '../../core/model/light_capabilities.dart';
+import '../../core/protocol/eb/eb_fixture_catalog.dart';
 import '../../design/canvas/ambient_canvas.dart';
 import '../../design/components/fixture_type.dart';
 import '../../design/components/glass_controls.dart';
@@ -100,6 +101,9 @@ class _AddLightScreenState extends ConsumerState<AddLightScreen> {
       layout: n.layoutHint ?? ChannelLayout.rgbw,
       driver: DriverKind.electroBright,
       addedAt: DateTime.now(),
+      whitePoints: EbFixtureCatalog.whitePointsFor(
+        layout: n.layoutHint ?? ChannelLayout.rgbw,
+      ),
     );
     final ConnectionManager cm = _app.ble.connections;
     cm.register(candidate);
@@ -176,6 +180,11 @@ class _AddLightScreenState extends ConsumerState<AddLightScreen> {
         layout: fw.layout,
         driver: DriverKind.electroBright,
         addedAt: DateTime.now(),
+        // The handshake already named the model.
+        whitePoints: EbFixtureCatalog.whitePointsFor(
+          modelId: fw.model,
+          layout: fw.layout,
+        ),
         identity: FixtureIdentity(
           capabilities: fw.capabilities,
           model: fw.model,

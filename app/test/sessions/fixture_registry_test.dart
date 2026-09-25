@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:electrobright/core/color/colour_engine.dart';
+import 'package:electrobright/core/color/led_white_points.dart';
 import 'package:electrobright/core/model/channel_color.dart';
 import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/model/fixture.dart';
@@ -156,5 +158,58 @@ void main() {
       isFalse,
     );
     await again.dispose();
+  });
+
+  test('white points come from the catalog, replacing saved ones', () async {
+    const LedWhitePoints stale = LedWhitePoints(cwK: 5000, wwK: 3000);
+    final LedWhitePoints product = EbFixtureCatalog.cct.whitePoints;
+    expect(product, isNot(stale));
+    final JsonStore store = await JsonStore.open(dir);
+    final FixtureRegistry reg = FixtureRegistry(
+      store: store,
+      connections: manager,
+    );
+    final List<List<Fixture>> emitted = <List<Fixture>>[];
+    final StreamSubscription<List<Fixture>> sub = reg.changes.listen(
+      emitted.add,
+    );
+    reg.add(guess().copyWith(whitePoints: stale));
+    Want w = manager.want('f1', WantReason.screen);
+    await run(const Duration(seconds: 5));
+
+    Fixture f = reg.byId('f1')!;
+    expect(f.layout, ChannelLayout.cct);
+    expect(f.whitePoints, product);
+    // The Kelvin range the colour screen offers is the product's.
+    final ({double min, double max}) range = ColourEngine(f.whitePoints)
+        .whiteRange(ChannelLayout.cct);
+    expect(range.min, product.wwK.toDouble());
+    expect(range.max, product.cwK.toDouble());
+    // The live session and the fixtures stream (the UI) have it too.
+    expect(manager.session('f1')!.fixture.whitePoints, product);
+    expect(emitted.last.single.whitePoints, product);
+
+    // Values edited by hand (or saved by an older app) on an otherwise
+    // unchanged light: corrected on the next connect.
+    w.release();
+    await run(const Duration(seconds: 70));
+    reg.update(f.copyWith(whitePoints: stale));
+    expect(reg.byId('f1')!.whitePoints, stale);
+    w = manager.want('f1', WantReason.screen);
+    await run(const Duration(seconds: 5));
+    f = reg.byId('f1')!;
+    expect(f.whitePoints, product);
+    expect(manager.session('f1')!.fixture.whitePoints, product);
+    // It persisted: a new registry over the same store reads it back.
+    w.release();
+    await sub.cancel();
+    await store.flush();
+    final FixtureRegistry again = FixtureRegistry(
+      store: await JsonStore.open(dir),
+      connections: newManager(),
+    );
+    expect(again.byId('f1')!.whitePoints, product);
+    await again.dispose();
+    await reg.dispose();
   });
 }

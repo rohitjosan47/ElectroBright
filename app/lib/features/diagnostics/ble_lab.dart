@@ -94,14 +94,17 @@ class _BleLabScreenState extends ConsumerState<BleLabScreen> {
     final BleStack ble = _ble!;
     _want?.release();
     await _statusSub?.cancel();
+    // A hint from the advertised name; the handshake confirms it.
+    final ChannelLayout hint =
+        EbFixtureCatalog.layoutFromBleName(d.name) ?? ChannelLayout.rgbw;
     final Fixture f = Fixture(
       id: 'lab-${d.id}',
       deviceId: d.id,
       name: d.name,
-      // A hint from the advertised name; the handshake confirms it.
-      layout: EbFixtureCatalog.layoutFromBleName(d.name) ?? ChannelLayout.rgbw,
+      layout: hint,
       driver: DriverKind.electroBright,
       addedAt: DateTime.now(),
+      whitePoints: EbFixtureCatalog.whitePointsFor(layout: hint),
     );
     ble.connections.register(f);
     final FixtureSession s = ble.connections.session(f.id)!;

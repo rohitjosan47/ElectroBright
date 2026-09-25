@@ -259,11 +259,6 @@
   "capProtocol": "Protocol",
   "capRaw": "Firmware capabilities",
   "capNotLearned": "Not read from the light yet — connect it once.",
-  "ledCalibration": "LED calibration",
-  "ledWhiteTemp": "White LED",
-  "ledCoolTemp": "Cool white LED",
-  "ledWarmTemp": "Warm white LED",
-  "ledCalibrationNote": "Set these to your strip's LED temperatures so colour temperatures come out right.",
   "channelTest": "Channel test",
   "channelTestRunning": "Lighting {channel}",
   "@channelTestRunning": {
@@ -291,8 +286,6 @@
     }
   },
   "forget": "Forget",
-  "resetDefaults": "Reset to defaults",
-  "ledSpanNote": "The cool white LED must be at least 500 K cooler than the warm white LED.",
   "copied": "Copied",
   "capYes": "Yes",
   "capMissing": "Not on this light: {modes}",
