@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
+import '../../core/color/light_surfaces.dart';
+
 import '../tokens/tokens.dart';
 import '../tone/tone_scope.dart';
 
@@ -93,6 +95,7 @@ class GlassSurface extends StatelessWidget {
     }
 
     if (tier == GlassTier.chrome && (policy?.refraction ?? true)) {
+      if (!dark) return _lightChrome(tint, strong != null);
       return GlassContainer(
         shape: LiquidRoundedSuperellipse(borderRadius: radius),
         padding: padding,
@@ -107,6 +110,8 @@ class GlassSurface extends StatelessWidget {
         child: child,
       );
     }
+
+    if (!dark) return _lightPanel(tint, strong);
 
     // Panel tier: translucent tint + specular rim + hairline, no backdrop.
     return DecoratedBox(
@@ -147,4 +152,136 @@ class GlassSurface extends StatelessWidget {
       child: Padding(padding: padding, child: child),
     );
   }
+
+  ShapeBorder _shape({BorderSide side = BorderSide.none}) =>
+      RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(radius),
+        side: side,
+      );
+
+  static const BorderSide _hairline = BorderSide(
+    color: Color(LightSurfaces.hairline),
+    width: 0.8,
+  );
+
+  /// Light theme chrome: liquid glass as in iOS light appearance —
+  /// translucent over the refracted canvas, a bright specular rim on top and
+  /// a faint darker one below, and a soft, wide neutral shadow. A lit button
+  /// is tinted in the light's colour (its caller adds the under-light).
+  Widget _lightChrome(Color tint, bool lit) => DecoratedBox(
+    decoration: ShapeDecoration(
+      shape: _shape(),
+      shadows: const <BoxShadow>[
+        BoxShadow(
+          color: Color(0x1A000000),
+          blurRadius: 18,
+          offset: Offset(0, 6),
+        ),
+        BoxShadow(
+          color: Color(0x0D000000),
+          blurRadius: 3,
+          offset: Offset(0, 1),
+        ),
+      ],
+    ),
+    child: CustomPaint(
+      foregroundPainter: _GlassRim(radius),
+      child: GlassContainer(
+        shape: LiquidRoundedSuperellipse(borderRadius: radius),
+        padding: padding,
+        useOwnLayer: true,
+        settings: LiquidGlassSettings(
+          glassColor: tint.withValues(
+            alpha: lit
+                ? LightSurfaces.activeTintAlpha
+                : LightSurfaces.chromeAlpha,
+          ),
+          thickness: 18,
+          blur: 6,
+          // The light appearance's veil: bright glass, not grey (less on a
+          // lit button, so its colour shows).
+          whitenStrength: lit ? 0.12 : 0.3,
+        ),
+        child: child,
+      ),
+    ),
+  );
+
+  /// Light theme panel: the same glass family in its cheaper form — light,
+  /// translucent, the tint lifted towards white, the specular rim, a very
+  /// light hairline and a soft, wide shadow.
+  Widget _lightPanel(Color tint, Color? strong) {
+    final int t = tint.toARGB32();
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: strong != null
+              ? <Color>[
+                  strong.withValues(alpha: 0.62),
+                  strong.withValues(alpha: 0.5),
+                ]
+              : <Color>[
+                  Color(
+                    LightSurfaces.panelColour(t, LightSurfaces.panelTopWhite),
+                  ).withValues(alpha: LightSurfaces.panelTopAlpha),
+                  Color(
+                    LightSurfaces.panelColour(
+                      t,
+                      LightSurfaces.panelBottomWhite,
+                    ),
+                  ).withValues(alpha: LightSurfaces.panelBottomAlpha),
+                ],
+        ),
+        shape: _shape(side: _hairline),
+        shadows: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 22,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: CustomPaint(
+        foregroundPainter: _GlassRim(radius),
+        child: Padding(padding: padding, child: child),
+      ),
+    );
+  }
+}
+
+/// The light theme's glass edge: a bright specular rim along the top that
+/// fades out by the middle, and a faint darker rim along the bottom.
+class _GlassRim extends CustomPainter {
+  const _GlassRim(this.radius);
+  final double radius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Rect r = (Offset.zero & size).deflate(0.6);
+    final Path edge = RoundedSuperellipseBorder(
+      borderRadius: BorderRadius.circular(radius),
+    ).getOuterPath(r);
+    canvas.drawPath(
+      edge,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: <Color>[
+            Color(0xE6FFFFFF),
+            Color(0x00FFFFFF),
+            Color(0x00000000),
+            Color(0x1A000000),
+          ],
+          stops: <double>[0, 0.45, 0.6, 1],
+        ).createShader(r),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_GlassRim old) => old.radius != radius;
 }

@@ -8,6 +8,7 @@ import '../protocol/eb/eb_scene.dart';
 import '../protocol/eb/mode_catalog.dart';
 import 'color_science.dart';
 import 'led_white_points.dart';
+import 'light_surfaces.dart';
 
 /// What a light looks like to the eye: the sum of its emitters (R, G, B and
 /// every white LED at its own colour temperature), at full intensity;
@@ -171,9 +172,11 @@ final class LightTone {
     Oklch stop(double l, double maxC) =>
         ColorScience.toGamut(Oklch(l, math.min(o.c, maxC), o.h));
     final double lift = d.off ? 0 : d.brightness;
+    // Light: a bright field (OKLCH L 0.94–0.97) with a gentle wash of the
+    // light's colour — enough variation for the glass to refract.
     final int canvasDim = dark
         ? _argb(stop(0.19, 0.11 * 0.4))
-        : _argb(stop(0.93, 0.06 * 0.4));
+        : _argb(stop(0.95, 0.05 * 0.5));
     final List<int> canvas = dark
         ? <int>[
             _argb(stop(0.19 + 0.07 * lift, 0.11 * (0.4 + 0.6 * lift))),
@@ -181,15 +184,33 @@ final class LightTone {
             _argb(stop(0.135, 0.02)),
           ]
         : <int>[
-            _argb(stop(0.93 - 0.02 * lift, 0.06 * (0.4 + 0.6 * lift))),
-            _argb(stop(0.955, 0.025)),
-            _argb(stop(0.968, 0.01)),
+            _argb(stop(0.95 - 0.01 * lift, 0.05 * (0.5 + 0.5 * lift))),
+            _argb(stop(0.965, 0.025)),
+            _argb(stop(0.975, 0.012)),
           ];
-    final Oklch accent = _readableAccent(
-      ColorScience.toGamut(Oklch(dark ? 0.78 : 0.55, math.min(o.c, 0.16), o.h)),
-      dark: dark,
+    final int tint = _argb(
+      ColorScience.toGamut(Oklch(dark ? 0.5 : 0.8, math.min(o.c, 0.1), o.h)),
     );
-    final int accentArgb = _argb(accent);
+    final int accentArgb = dark
+        ? _argb(
+            _readableAccent(
+              ColorScience.toGamut(Oklch(0.78, math.min(o.c, 0.16), o.h)),
+              dark: true,
+            ),
+          )
+        // Light: readable as text (>= 4.5:1) on what it really sits on, the
+        // glass panels and the top of the canvas.
+        : LightInk.deepen(
+            LightInk.deepen(
+              _argb(
+                ColorScience.toGamut(Oklch(0.55, math.min(o.c, 0.16), o.h)),
+              ),
+              LightSurfaces.panelOver(tint, canvas[1]),
+              4.5,
+            ),
+            canvas[0],
+            4.5,
+          );
     final LinearRgb accentLin = ColorScience.fromArgb(accentArgb);
     final int onAccent =
         ColorScience.contrast(accentLin, const LinearRgb(0, 0, 0)) >=
@@ -201,14 +222,22 @@ final class LightTone {
       canvas: canvas,
       canvasDim: canvasDim,
       glow: _argb(
-        ColorScience.toGamut(Oklch(0.75, math.min(o.c * 1.2, 0.2), o.h)),
+        ColorScience.toGamut(
+          dark
+              ? Oklch(0.75, math.min(o.c * 1.2, 0.2), o.h)
+              // Light: a gentle wash of the light's colour, not grey, as
+              // light as the hue is vivid (yellow near white, not olive).
+              : Oklch(
+                  (LightInk.cuspLightness(o.h) - 0.04).clamp(0.8, 0.93),
+                  math.min(o.c * 1.25, 0.2),
+                  o.h,
+                ),
+        ),
       ),
       glowStrength: d.off ? 0 : (0.25 + 0.75 * d.brightness).clamp(0.0, 1.0),
       accent: accentArgb,
       onAccent: onAccent,
-      tint: _argb(
-        ColorScience.toGamut(Oklch(dark ? 0.5 : 0.8, math.min(o.c, 0.1), o.h)),
-      ),
+      tint: tint,
       hue: o.h,
     );
   }

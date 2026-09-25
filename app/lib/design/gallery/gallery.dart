@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/color/color_science.dart';
+import '../../core/color/light_surfaces.dart';
 import '../../core/color/light_tone.dart';
 import '../../core/protocol/eb/mode_catalog.dart';
 import '../canvas/ambient_canvas.dart';
@@ -71,6 +72,10 @@ class _ComponentGalleryState extends State<ComponentGallery> {
       dark: dark,
     );
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
+    final LightTone galleryTone = ToneScope.of(context);
+    final Color? onFill = galleryTone.dark
+        ? null
+        : Color(LightSurfaces(galleryTone).luminous(galleryTone.accent).ink);
     return ToneScope(
       tone: tone,
       child: Scaffold(
@@ -115,7 +120,14 @@ class _ComponentGalleryState extends State<ComponentGallery> {
               GlassSlider(
                 value: _brightness,
                 semanticLabel: 'Brightness',
-                leading: Icon(Icons.wb_sunny_outlined, color: fg, size: 20),
+                // Light: over the (deep) fill the icon takes what reads on it.
+                leadingBuilder: (double x, double width) => Icon(
+                  Icons.wb_sunny_outlined,
+                  size: 20,
+                  color: onFill != null && x * width >= Space.m + 24
+                      ? onFill
+                      : fg,
+                ),
                 trailing: Text(
                   '${(_brightness * 100).round()}%',
                   style: TextStyle(

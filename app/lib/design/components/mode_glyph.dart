@@ -1,9 +1,12 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../../core/color/light_surfaces.dart';
 import '../../core/protocol/eb/mode_catalog.dart';
+import '../tone/tone_scope.dart';
 
 /// A tiny animated illustration of a lighting mode, drawn in [color] (the
 /// light's colour) or the mode's own palette. Animates only while [animate]
@@ -99,23 +102,56 @@ class _ModeGlyphState extends State<ModeGlyph>
   @override
   // Fills whatever slot it is given (a childless CustomPaint would size to
   // zero under loose constraints).
-  Widget build(BuildContext context) => RepaintBoundary(
-    child: SizedBox.expand(
-      child: CustomPaint(
-        painter: GlyphPainter(widget.glyph, widget.color, widget.palette, _t),
+  Widget build(BuildContext context) {
+    // Light: the full rendering in the light's own colours, plus a coloured
+    // under-light and, for colours too light to show on a tile, a fine
+    // outline in a deeper shade (never a darker body).
+    final bool dark = ToneScope.darkOf(context);
+    final LightSurfaces? light = dark
+        ? null
+        : LightSurfaces(ToneScope.of(context));
+    final int? outline = light?.glyphOutline(widget.color.toARGB32());
+    return RepaintBoundary(
+      child: SizedBox.expand(
+        child: CustomPaint(
+          painter: GlyphPainter(
+            widget.glyph,
+            widget.color,
+            widget.palette,
+            _t,
+            under: light == null
+                ? null
+                : Color(light.underLight(widget.color.toARGB32())),
+            outline: outline == null ? null : Color(outline),
+          ),
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// Paints one glyph at time [t] (seconds). Public so the light orb can reuse it.
 class GlyphPainter extends CustomPainter {
-  GlyphPainter(this.glyph, this.color, this.palette, this.t)
-    : super(repaint: t);
+  GlyphPainter(
+    this.glyph,
+    this.color,
+    this.palette,
+    this.t, {
+    this.under,
+    this.outline,
+  }) : super(repaint: t);
   final EbModeGlyph glyph;
   final Color color;
   final List<Color> palette;
   final ValueNotifier<double> t;
+
+  /// Light theme: the glyph's colour shining onto the tile below it.
+  final Color? under;
+
+  /// Light theme: a fine outline for a glyph too light to show on its tile.
+  final Color? outline;
+
+  bool get _light => under != null;
 
   static double _noise(double x) {
     // Cheap smooth value noise.
@@ -138,8 +174,40 @@ class GlyphPainter extends CustomPainter {
     final Offset c = size.center(Offset.zero);
     final double r = size.shortestSide / 2;
 
+    // Light: the colour cast onto the tile, below everything else.
+    final Color? cast = under;
+    if (cast != null) {
+      final Offset below = c + Offset(0, r * 0.2);
+      canvas.drawCircle(
+        below,
+        r,
+        Paint()
+          ..shader = RadialGradient(
+            colors: <Color>[
+              cast.withValues(alpha: 0.3),
+              cast.withValues(alpha: 0),
+            ],
+          ).createShader(Rect.fromCircle(center: below, radius: r)),
+      );
+    }
+
     void glow(Offset p, double radius, Color col, double level) {
       if (level <= 0.01) return;
+      if (_light) {
+        // A soft neutral contact shadow under the glow's core.
+        final Offset low = p + Offset(0, radius * 0.1);
+        canvas.drawCircle(
+          low,
+          radius * 0.5,
+          Paint()
+            ..shader = RadialGradient(
+              colors: <Color>[
+                Colors.black.withValues(alpha: 0.08 * level),
+                Colors.black.withValues(alpha: 0),
+              ],
+            ).createShader(Rect.fromCircle(center: low, radius: radius * 0.5)),
+        );
+      }
       canvas.drawCircle(
         p,
         radius,
@@ -153,6 +221,18 @@ class GlyphPainter extends CustomPainter {
             stops: const <double>[0, 0.45, 1],
           ).createShader(Rect.fromCircle(center: p, radius: radius)),
       );
+      final Color? ring = outline;
+      if (ring != null) {
+        // A glow too light for its tile: a fine outline around its core.
+        canvas.drawCircle(
+          p,
+          radius * 0.42,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.2
+            ..color = ring.withValues(alpha: level.clamp(0.0, 1.0)),
+        );
+      }
     }
 
     switch (glyph) {
@@ -205,7 +285,10 @@ class GlyphPainter extends CustomPainter {
           Paint()
             ..style = PaintingStyle.stroke
             ..strokeWidth = r * 0.06
-            ..color = Colors.white.withValues(alpha: 0.35),
+            // Light: a white edge vanishes on a light tile.
+            ..color = _light
+                ? (outline ?? Colors.black.withValues(alpha: 0.18))
+                : Colors.white.withValues(alpha: 0.35),
         );
       case EbModeGlyph.thunder:
         final double cyc = time % 3.2;
@@ -379,5 +462,10 @@ class GlyphPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(GlyphPainter old) =>
-      old.glyph != glyph || old.color != color || old.t != t;
+      old.glyph != glyph ||
+      old.color != color ||
+      old.under != under ||
+      old.outline != outline ||
+      !listEquals(old.palette, palette) ||
+      old.t != t;
 }

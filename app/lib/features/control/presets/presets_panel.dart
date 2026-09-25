@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/color/colour_engine.dart';
 import '../../../core/color/led_white_points.dart';
+import '../../../core/color/light_surfaces.dart';
 import '../../../core/model/channel_layout.dart';
 import '../../../core/model/light_capabilities.dart';
 import '../../../core/protocol/eb/eb_scene.dart';
@@ -330,7 +331,9 @@ class _SlotTileState extends State<_SlotTile> {
           radius: Radii.medium,
           padding: const EdgeInsets.all(Space.s),
           child: Opacity(
-            opacity: filled ? 1 : 0.55,
+            opacity: filled
+                ? 1
+                : LightSurfaces.dim(0.55, dark: fg == Colors.white),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
@@ -353,7 +356,12 @@ class _SlotTileState extends State<_SlotTile> {
                     Text(
                       '${slot + 1}',
                       style: TextStyle(
-                        color: fg.withValues(alpha: 0.5),
+                        color: fg.withValues(
+                          alpha: LightSurfaces.dim(
+                            0.5,
+                            dark: fg == Colors.white,
+                          ),
+                        ),
                         fontSize: 12,
                         fontFeatures: const <FontFeature>[
                           FontFeature.tabularFigures(),
@@ -379,7 +387,9 @@ class _SlotTileState extends State<_SlotTile> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: fg.withValues(alpha: 0.6),
+                      color: fg.withValues(
+                        alpha: LightSurfaces.dim(0.6, dark: fg == Colors.white),
+                      ),
                       fontSize: 11,
                     ),
                   ),

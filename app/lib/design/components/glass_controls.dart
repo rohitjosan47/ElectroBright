@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
+import '../../core/color/light_surfaces.dart';
 import '../../core/color/light_tone.dart';
 import '../../core/protocol/eb/mode_catalog.dart';
 import '../glass/glass_surface.dart';
@@ -81,7 +82,36 @@ class _GlassIconButtonState extends State<GlassIconButton> {
               dimension: widget.size,
               // Lit: glass tinted in the light's accent, with its glow;
               // the icon keeps the theme's colour so it reads on both.
-              child: tone != null
+              child: tone != null && !dark
+                  // Light: glass tinted in the light's luminous colour,
+                  // shining onto the surface below; the icon in whichever
+                  // ink reads on it (>= 4.5:1).
+                  ? DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: <BoxShadow>[
+                          BoxShadow(
+                            color: Color(LightSurfaces(tone).glow)
+                                .withValues(alpha: 0.55),
+                            blurRadius: 16,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
+                      ),
+                      child: GlassSurface(
+                        tier: widget.tier,
+                        radius: widget.size / 2,
+                        tint: Color(LightSurfaces(tone).activeTint),
+                        child: Center(
+                          child: Icon(
+                            widget.icon,
+                            color: Color(LightSurfaces(tone).activeIcon),
+                            size: widget.size * 0.48,
+                          ),
+                        ),
+                      ),
+                    )
+                  : tone != null
                   ? DecoratedBox(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
@@ -180,6 +210,7 @@ class _GlassSegmentedState<T> extends State<GlassSegmented<T>>
   @override
   Widget build(BuildContext context) {
     final bool dark = ToneScope.darkOf(context);
+    final Color? edge = dark ? null : Color(ToneScope.of(context).accent);
     final Haptics h = HapticsScope.of(context);
     final int n = widget.segments.length;
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
@@ -206,11 +237,26 @@ class _GlassSegmentedState<T> extends State<GlassSegmented<T>>
                       width: w * (1 + stretch),
                       top: 0,
                       bottom: 0,
-                      child: GlassSurface(
-                        tier: widget.thumbTier,
-                        radius: Radii.capsule,
-                        tinted: false,
-                        child: const SizedBox.expand(),
+                      child: DecoratedBox(
+                        position: DecorationPosition.foreground,
+                        // Light: the thumb's accent edge separates it from
+                        // the track (>= 3:1); dark keeps the glass alone.
+                        decoration: edge == null
+                            ? const BoxDecoration()
+                            : ShapeDecoration(
+                                shape: RoundedSuperellipseBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    Radii.capsule,
+                                  ),
+                                  side: BorderSide(color: edge, width: 1.5),
+                                ),
+                              ),
+                        child: GlassSurface(
+                          tier: widget.thumbTier,
+                          radius: Radii.capsule,
+                          tinted: false,
+                          child: const SizedBox.expand(),
+                        ),
                       ),
                     );
                   },
@@ -234,7 +280,9 @@ class _GlassSegmentedState<T> extends State<GlassSegmented<T>>
                                 label,
                                 style: TextStyle(
                                   color: fg.withValues(
-                                    alpha: value == widget.selected ? 1 : 0.65,
+                                    alpha: value == widget.selected
+                                        ? 1
+                                        : LightSurfaces.dim(0.65, dark: dark),
                                   ),
                                   fontWeight: FontWeight.w600,
                                   fontSize: 14,
@@ -259,6 +307,35 @@ class _GlassSegmentedState<T> extends State<GlassSegmented<T>>
 /// accent border and glow at [selection] 0..1.
 ShapeDecoration modeSelectionFrame(LightTone tone, double selection) {
   final double t = selection.clamp(0.0, 1.0);
+  if (!tone.dark) {
+    // Light: a fine edge in a deeper shade of the light's hue (>= 3:1 on the
+    // tile), the light's colour shining onto the surface below, and a small
+    // neutral contact shadow for lift.
+    final LightSurfaces light = LightSurfaces(tone);
+    return ShapeDecoration(
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(Radii.medium),
+        side: BorderSide(
+          color: Color(light.accentBorder).withValues(alpha: t),
+          width: 1.5,
+        ),
+      ),
+      shadows: t == 0
+          ? const <BoxShadow>[]
+          : <BoxShadow>[
+              BoxShadow(
+                color: Color(light.glow).withValues(alpha: 0.45 * t),
+                blurRadius: 22,
+                offset: const Offset(0, 8),
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08 * t),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+    );
+  }
   return ShapeDecoration(
     shape: RoundedSuperellipseBorder(
       borderRadius: BorderRadius.circular(Radii.medium),

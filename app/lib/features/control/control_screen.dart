@@ -10,6 +10,7 @@ import '../../app/providers.dart';
 import '../../core/color/color_science.dart';
 import '../../core/color/colour_engine.dart';
 import '../../core/color/led_white_points.dart';
+import '../../core/color/light_surfaces.dart';
 import '../../core/color/light_tone.dart';
 import '../../core/model/channel_color.dart';
 import '../../core/model/channel_layout.dart';
@@ -773,16 +774,23 @@ class BrightnessPill extends ConsumerWidget {
       whitePoints,
       l,
     );
-    final Color fill = _pillFill(
-      mode.colorUse == EbColorUse.never
-          ? Color(mode.gradient.first)
-          : swatchOf(p.look.color, whitePoints),
-      dark: dark,
-    );
-    // Icon and text over the fill take the colour that reads on it.
-    final Color onFill = fill.computeLuminance() > 0.45
+    final Color swatch = mode.colorUse == EbColorUse.never
+        ? Color(mode.gradient.first)
+        : swatchOf(p.look.color, whitePoints);
+    // Light: saturated (whites a neutral mid-tone), >= 3:1 on the track.
+    final LightSurfaces? light = dark
+        ? null
+        : LightSurfaces(ToneScope.of(context));
+    // Light: the light's own colour, painted luminous by the slider; its ink
+    // (dark or white, >= 4.5:1 on every part of the fill).
+    final Color fill = light == null ? _pillFill(swatch, dark: dark) : swatch;
+    final Color onFill = light != null
+        ? Color(light.luminous(swatch.toARGB32()).ink)
+        : fill.computeLuminance() > 0.45
         ? const Color(0xFF15171C)
         : Colors.white;
+    // Dimmed, but on light surfaces never below 4.5:1.
+    final double dimFloor = dark ? 0 : LightSurfaces.dimAlpha;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -793,6 +801,8 @@ class BrightnessPill extends ConsumerWidget {
           enabled: s != null,
           height: 56,
           fill: fill,
+          // Light: real liquid glass over the canvas (dark keeps the panel).
+          glassTier: dark ? GlassTier.panel : GlassTier.chrome,
           valueText: (double x) => label(l, x),
           // The sun follows the level: small and faint low, full at the top.
           leadingBuilder: (double x, double width) {
@@ -805,7 +815,7 @@ class BrightnessPill extends ConsumerWidget {
                   key: const ValueKey<String>('brightness-icon'),
                   size: 15 + 6 * x,
                   color: (overFill ? onFill : fg).withValues(
-                    alpha: x <= 0 ? 0.4 : 0.55 + 0.45 * x,
+                    alpha: math.max(dimFloor, x <= 0 ? 0.4 : 0.55 + 0.45 * x),
                   ),
                 ),
               ),
@@ -817,7 +827,7 @@ class BrightnessPill extends ConsumerWidget {
               label(l, x),
               style: TextStyle(
                 color: (overFill ? onFill : fg).withValues(
-                  alpha: x <= 0 ? 0.6 : 1,
+                  alpha: x <= 0 ? math.max(dimFloor, 0.6) : 1,
                 ),
                 fontWeight: FontWeight.w500,
                 fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],

@@ -259,24 +259,35 @@ void main() {
     final double w = 5 / 255 * size.width;
     expect(w / size.width, closeTo(0.02, 0.001));
     final Radius end = Radius.circular(w / 2 < h / 2 ? w / 2 : h / 2);
+    // Light theme (as tested): the faint glass track, the luminous fill
+    // (its body, specular highlight and inner glow) and its fine edge; no
+    // grip bar after it.
+    final RRect body = RRect.fromRectAndCorners(
+      Rect.fromLTWH(0, 0, w, h),
+      topRight: end,
+      bottomRight: end,
+    );
     expect(
       track,
       paints
         ..clipRRect()
         ..rrect(
-          rrect: RRect.fromRectAndCorners(
-            Rect.fromLTWH(0, 0, w, h),
-            topRight: end,
-            bottomRight: end,
+          rrect: RRect.fromRectAndRadius(
+            Offset.zero & size,
+            Radius.circular(h / 2),
           ),
         )
-        ..circle(),
+        ..rrect(rrect: body)
+        ..rect()
+        ..circle()
+        ..rrect(rrect: body.deflate(0.6), style: PaintingStyle.stroke),
     );
-    // One rounded rect (the fill): no grip bar.
     expect(
       track,
       isNot(
         paints
+          ..rrect()
+          ..rrect()
           ..rrect()
           ..rrect(),
       ),

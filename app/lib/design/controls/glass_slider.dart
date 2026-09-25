@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/semantics.dart';
 
+import '../../core/color/light_surfaces.dart';
 import '../../core/color/light_tone.dart';
 import '../glass/glass_surface.dart';
 import '../haptics/haptics.dart';
@@ -39,6 +40,7 @@ class GlassSlider extends StatefulWidget {
     this.trailingBuilder,
     this.valueText,
     this.enabled = true,
+    this.glassTier = GlassTier.panel,
     super.key,
   }) : assert(trailing == null || trailingBuilder == null),
        assert(leading == null || leadingBuilder == null);
@@ -71,6 +73,10 @@ class GlassSlider extends StatefulWidget {
   final String semanticLabel;
   final String Function(double value)? valueText;
   final bool enabled;
+
+  /// The glass of the track (chrome = real refraction, for a slider floating
+  /// on the canvas; panel for sliders inside panels).
+  final GlassTier glassTier;
 
   @override
   State<GlassSlider> createState() => _GlassSliderState();
@@ -215,6 +221,11 @@ class _GlassSliderState extends State<GlassSlider>
     final LightTone tone = ToneScope.of(context);
     final Haptics h = HapticsScope.of(context);
     final Color fill = widget.fill ?? Color(tone.accent);
+    // Light: the fill as light inside glass (its colour, gradient, specular,
+    // inner glow, same-hue edge and coloured under-light).
+    final LuminousFill? luminous = tone.dark
+        ? null
+        : LightSurfaces(tone).luminous(fill.toARGB32());
     // Only the words follow the value here; the track repaints from [_v].
     return ValueListenableBuilder<String>(
       valueListenable: _shown,
@@ -232,11 +243,17 @@ class _GlassSliderState extends State<GlassSlider>
           child: child,
         );
       },
-      child: _body(context, tone, fill, h),
+      child: _body(context, tone, fill, luminous, h),
     );
   }
 
-  Widget _body(BuildContext context, LightTone tone, Color fill, Haptics h) {
+  Widget _body(
+    BuildContext context,
+    LightTone tone,
+    Color fill,
+    LuminousFill? luminous,
+    Haptics h,
+  ) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
         final double width = c.maxWidth;
@@ -291,40 +308,55 @@ class _GlassSliderState extends State<GlassSlider>
             opacity: widget.enabled ? 1 : 0.45,
             child: SizedBox(
               height: widget.height,
-              child: GlassSurface(
-                radius: Radii.capsule,
-                child: RepaintBoundary(
-                  child: CustomPaint(
-                    painter: _TrackPainter(
-                      value: _v,
-                      min: widget.min,
-                      max: widget.max,
-                      fill: fill,
-                      track: widget.track,
-                      dark: tone.dark,
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: Space.m),
-                      child: Row(
-                        children: <Widget>[
-                          // At large text sizes the label shrinks to fit the
-                          // pill instead of overflowing it.
-                          Expanded(
-                            child: Align(
-                              alignment: AlignmentDirectional.centerStart,
-                              child: leading == null
-                                  ? null
-                                  : FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      child: leading,
-                                    ),
+              child: CustomPaint(
+                // Light: the fill's colour cast onto the surface below.
+                painter: luminous == null || widget.track != null
+                    ? null
+                    : _UnderLight(
+                        value: _v,
+                        min: widget.min,
+                        max: widget.max,
+                        colour: Color(luminous.under),
+                      ),
+                child: GlassSurface(
+                  tier: widget.glassTier,
+                  radius: Radii.capsule,
+                  child: RepaintBoundary(
+                    child: CustomPaint(
+                      painter: _TrackPainter(
+                        value: _v,
+                        min: widget.min,
+                        max: widget.max,
+                        fill: fill,
+                        luminous: luminous,
+                        track: widget.track,
+                        dark: tone.dark,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: Space.m,
+                        ),
+                        child: Row(
+                          children: <Widget>[
+                            // At large text sizes the label shrinks to fit the
+                            // pill instead of overflowing it.
+                            Expanded(
+                              child: Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: leading == null
+                                    ? null
+                                    : FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: leading,
+                                      ),
+                              ),
                             ),
-                          ),
-                          if (trailing != null) ...<Widget>[
-                            const SizedBox(width: Space.s),
-                            FittedBox(fit: BoxFit.scaleDown, child: trailing),
+                            if (trailing != null) ...<Widget>[
+                              const SizedBox(width: Space.s),
+                              FittedBox(fit: BoxFit.scaleDown, child: trailing),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -346,6 +378,7 @@ class _TrackPainter extends CustomPainter {
     required this.fill,
     required this.track,
     required this.dark,
+    this.luminous,
   }) : super(repaint: value);
 
   final ValueListenable<double> value;
@@ -354,6 +387,9 @@ class _TrackPainter extends CustomPainter {
   final Color fill;
   final List<Color>? track;
   final bool dark;
+
+  /// Light theme: how the pill's fill is painted.
+  final LuminousFill? luminous;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -375,19 +411,108 @@ class _TrackPainter extends CustomPainter {
       final double r = size.height / 2 - 4;
       final double x = r + 4 + fraction * (size.width - 2 * (r + 4));
       final Offset c = Offset(x, size.height / 2);
-      canvas.drawCircle(
-        c,
-        r + 1.5,
-        Paint()
-          ..color = Colors.black.withValues(alpha: 0.25)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
-      );
+      if (dark) {
+        canvas.drawCircle(
+          c,
+          r + 1.5,
+          Paint()
+            ..color = Colors.black.withValues(alpha: 0.25)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+        );
+      } else {
+        // Light: a soft neutral shadow under the knob.
+        final Offset below = c + const Offset(0, 1.5);
+        canvas.drawCircle(
+          below,
+          r + 3,
+          Paint()
+            ..shader = RadialGradient(
+              colors: <Color>[
+                Colors.black.withValues(alpha: 0.18),
+                Colors.black.withValues(alpha: 0),
+              ],
+              stops: <double>[r / (r + 3), 1],
+            ).createShader(Rect.fromCircle(center: below, radius: r + 3)),
+        );
+      }
       canvas.drawCircle(c, r, Paint()..color = Colors.white);
+      if (!dark) {
+        // A crisp dark outline keeps the knob visible on light gradients.
+        canvas.drawCircle(
+          c,
+          r - 0.5,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1
+            ..color = Colors.black.withValues(alpha: 0.35),
+        );
+      }
       canvas.drawCircle(
         c,
         r - 3,
         Paint()..color = Color.lerp(t.first, t.last, fraction)!,
       );
+    } else if (luminous != null) {
+      // Light pill: a faint glass track, then the fill as light inside glass:
+      // the light's colour brightening toward the leading end, a white
+      // specular across the top half, a soft inner glow at the leading end
+      // and a fine edge in a deeper shade of the same hue (the boundary).
+      final LuminousFill l = luminous!;
+      canvas.drawRRect(
+        shape,
+        Paint()
+          ..color = Colors.black.withValues(alpha: LightSurfaces.trackAlpha),
+      );
+      if (fraction > 0) {
+        final double h = size.height;
+        final double w = fraction * size.width;
+        final Rect rect = Rect.fromLTWH(0, 0, w, h);
+        final Radius end = Radius.circular(math.min(h / 2, w / 2));
+        final RRect body = RRect.fromRectAndCorners(
+          rect,
+          topRight: end,
+          bottomRight: end,
+        );
+        canvas.drawRRect(
+          body,
+          Paint()
+            ..shader = LinearGradient(
+              colors: <Color>[Color(l.deep), Color(l.base), Color(l.bright)],
+              stops: const <double>[0, 0.6, 1],
+            ).createShader(rect),
+        );
+        canvas.save();
+        canvas.clipRRect(body);
+        canvas.drawRect(
+          Rect.fromLTWH(0, 0, w, h / 2),
+          Paint()
+            ..shader = const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: <Color>[Color(0x73FFFFFF), Color(0x00FFFFFF)],
+            ).createShader(Rect.fromLTWH(0, 0, w, h / 2)),
+        );
+        final Offset glowAt = Offset(math.max(h * 0.4, w - h * 0.45), h * 0.55);
+        canvas.drawCircle(
+          glowAt,
+          h * 0.9,
+          Paint()
+            ..shader = RadialGradient(
+              colors: <Color>[
+                Colors.white.withValues(alpha: 0.38),
+                Colors.white.withValues(alpha: 0),
+              ],
+            ).createShader(Rect.fromCircle(center: glowAt, radius: h * 0.9)),
+        );
+        canvas.restore();
+        canvas.drawRRect(
+          body.deflate(0.6),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.2
+            ..color = Color(l.edge),
+        );
+      }
     } else if (fraction > 0) {
       // Pill slider: the filled part in its colour, fraction × width all the
       // way down to 0. Drawn inside the track's clip, so its left end is the
@@ -430,8 +555,49 @@ class _TrackPainter extends CustomPainter {
       old.min != min ||
       old.max != max ||
       old.fill != fill ||
+      old.luminous != luminous ||
       old.track != track ||
       old.dark != dark;
+}
+
+/// Light theme: the slider fill's colour shining onto the surface below it
+/// (translucent, blurred, slightly lower), following the value.
+class _UnderLight extends CustomPainter {
+  _UnderLight({
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.colour,
+  }) : super(repaint: value);
+
+  final ValueListenable<double> value;
+  final double min;
+  final double max;
+  final Color colour;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double f = ((value.value - min) / (max - min)).clamp(0.0, 1.0);
+    if (f <= 0) return;
+    final double h = size.height;
+    final double w = math.max(h * 0.6, f * size.width);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(h * 0.1, h * 0.3, w - h * 0.2, h * 0.85),
+        Radius.circular(h / 2),
+      ),
+      Paint()
+        ..color = colour.withValues(alpha: 0.26)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_UnderLight old) =>
+      old.value != value ||
+      old.min != min ||
+      old.max != max ||
+      old.colour != colour;
 }
 
 /// Semantics helper for 1..10 level sliders ("Speed 5 of 10").

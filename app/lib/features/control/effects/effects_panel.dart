@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/color/led_white_points.dart';
+import '../../../core/color/light_tone.dart';
+import '../../../core/color/light_surfaces.dart';
 import '../../../core/model/channel_color.dart';
 import '../../../core/model/channel_layout.dart';
 import '../../../core/model/light_capabilities.dart';
@@ -102,7 +104,12 @@ class EffectsPanel extends StatelessWidget {
             padding: const EdgeInsets.only(top: Space.s),
             child: Text(
               l.modeUnavailableRainbow,
-              style: TextStyle(color: fg.withValues(alpha: 0.6), fontSize: 13),
+              style: TextStyle(
+                color: fg.withValues(
+                  alpha: LightSurfaces.dim(0.6, dark: fg == Colors.white),
+                ),
+                fontSize: 13,
+              ),
             ),
           ),
         // The selected effect's sliders: the card grows and shrinks into
@@ -279,25 +286,56 @@ class _ModeSettings extends StatelessWidget {
     final AppLocalizations l = AppLocalizations.of(context);
     final FixtureSession? s = session;
     final EbColorModeKind? kind = mode.colorModeKind;
+    // Light: the label and value switch to whatever reads on the fill once
+    // it reaches them (the fill is a solid colour there).
+    final LightTone tone = ToneScope.of(context);
+    final Color? onFill = tone.dark
+        ? null
+        : Color(LightSurfaces(tone).luminous(tone.accent).ink);
+    Color ink(bool overFill) => overFill && onFill != null ? onFill : fg;
+    const TextStyle figures = TextStyle(
+      fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+    );
     Widget slider(String label, int value, void Function(int v) send) =>
-        GlassSlider(
-          value: value.toDouble(),
-          min: 1,
-          max: 10,
-          divisions: 9,
-          semanticLabel: label,
-          enabled: s != null,
-          valueText: (double v) => l.levelOfTen(v.round()),
-          leading: Text(label, style: TextStyle(color: fg)),
-          trailing: Text(
-            '$value',
-            style: TextStyle(
-              color: fg,
-              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+        onFill == null
+        ? GlassSlider(
+            value: value.toDouble(),
+            min: 1,
+            max: 10,
+            divisions: 9,
+            semanticLabel: label,
+            enabled: s != null,
+            valueText: (double v) => l.levelOfTen(v.round()),
+            leading: Text(label, style: TextStyle(color: fg)),
+            trailing: Text(
+              '$value',
+              style: TextStyle(
+                color: fg,
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              ),
             ),
-          ),
-          onChanged: (double v) => send(v.round()),
-        );
+            onChanged: (double v) => send(v.round()),
+          )
+        : GlassSlider(
+            value: value.toDouble(),
+            min: 1,
+            max: 10,
+            divisions: 9,
+            semanticLabel: label,
+            enabled: s != null,
+            valueText: (double v) => l.levelOfTen(v.round()),
+            leadingBuilder: (double v, double width) => Text(
+              label,
+              style: TextStyle(color: ink((v - 1) / 9 * width >= Space.m + 24)),
+            ),
+            trailingBuilder: (double v, double width) => Text(
+              '${v.round()}',
+              style: figures.copyWith(
+                color: ink((v - 1) / 9 * width >= width - Space.m - 12),
+              ),
+            ),
+            onChanged: (double v) => send(v.round()),
+          );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
