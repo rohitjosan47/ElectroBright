@@ -4,6 +4,7 @@
 // scenario. The numbers are written to build/perf/idle_activity.txt; the
 // assertions pin the behaviour each scenario must keep.
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:electrobright/app/app_session.dart';
 import 'package:electrobright/app/providers.dart';
@@ -91,13 +92,14 @@ Future<Activity> measure(
   final JsonStore store = c.read(storeProvider);
   final int writes0 = store.writes;
   final int steps = window.inMicroseconds ~/ _vsync.inMicroseconds;
-  int frames = 0;
+  int frames = 0, tickers = 0;
   // One pump per vsync. The engine would draw a frame at a vsync only when
   // something asked for one: a running ticker (it asks every vsync), or work
   // done in it (a rebuild or a repaint, e.g. after an advert or a status).
   for (int i = 0; i < steps; i++) {
     await onFrame?.call(i);
     final bool ticking = t.binding.transientCallbackCount > 0;
+    tickers = math.max(tickers, t.binding.transientCallbackCount);
     final int r0 = rebuilds, p0 = paints;
     await t.pump(_vsync);
     // No frames at all while the app is hidden or paused (the engine stops
@@ -116,7 +118,7 @@ Future<Activity> measure(
   final Discovery discovery = d.app.ble.discovery;
   a
     ..framesPerSecond = frames / seconds
-    ..tickers = t.binding.transientCallbackCount
+    ..tickers = math.max(tickers, t.binding.transientCallbackCount)
     ..scan = discovery.isScanning
         ? (discovery.strongestNeed?.name ?? 'on')
         : 'none'
@@ -204,7 +206,11 @@ void main() {
       // do. Baseline: Home's add-flow scan runs under the control screen
       // (item 3).
       if (tab == 'Effects') {
-        expect(a.tickers, 12);
+        // The tiles step at 30 Hz, one frame per step (A); no ticker runs
+        // between steps.
+        expect(a.tickers, 0);
+        expect(a.paintsPerFrame, greaterThan(0));
+        expect(a.framesPerSecond, inInclusiveRange(20, 30));
       } else {
         expect(a.tickers, 0);
         expect(a.framesPerSecond, 0);
@@ -220,7 +226,15 @@ void main() {
     quiet(d);
     await d.session('Living room').setMode(10);
     await DemoApp.settle(t, 1);
-    await measure(t, d, 'control on, Rainbow, Colour', light: 'Living room');
+    final Activity a = await measure(
+      t,
+      d,
+      'control on, Rainbow, Colour',
+      light: 'Living room',
+    );
+    // The animated orb draws only when it steps: at most 30 Hz (A).
+    expect(a.tickers, 0);
+    expect(a.framesPerSecond, inInclusiveRange(20, 30));
     await DemoApp.shutDown(t);
   }, timeout: const Timeout(Duration(minutes: 8)));
 
@@ -238,10 +252,11 @@ void main() {
         'control off, $tab',
         light: 'Living room',
       );
-      // Baseline: with the light off only the Effects tiles tick (B).
+      // Baseline: with the light off only the Effects tiles animate (B).
       if (tab == 'Effects') {
-        expect(a.tickers, 12);
-        expect(a.framesPerSecond, greaterThan(100));
+        expect(a.tickers, 0);
+        expect(a.paintsPerFrame, greaterThan(0));
+        expect(a.framesPerSecond, inInclusiveRange(20, 30));
       } else {
         expect(a.tickers, 0);
       }

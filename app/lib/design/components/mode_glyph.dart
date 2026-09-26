@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -50,24 +51,54 @@ class ModeGlyph extends StatefulWidget {
 
 class _ModeGlyphState extends State<ModeGlyph>
     with SingleTickerProviderStateMixin {
+  // Runs for one frame per step: between steps nothing changes, so the
+  // glyph sleeps on a timer instead of asking for a frame every vsync.
   late final Ticker _ticker = createTicker(_onTick);
   // Starts on the still frame; runs on from there when animated.
   late final ValueNotifier<double> _t = ValueNotifier<double>(
     ModeGlyph.stillTime(widget.glyph),
   );
-  Duration _last = Duration.zero;
-  Duration _acc = Duration.zero;
+  Timer? _wake;
+  // Frame time of the last step, and of the last frame drawn.
+  Duration? _base;
+  Duration _now = Duration.zero;
+  // Time since the last step when the glyph was stopped; it resumes from it.
+  Duration _carry = Duration.zero;
 
   // Mode previews are capped at 30 fps (plan §11): plenty for a glyph.
   static const Duration _frame = Duration(microseconds: 33333);
 
-  void _onTick(Duration elapsed) {
-    final Duration dt = elapsed - _last;
-    _last = elapsed;
-    _acc += dt;
-    if (_acc < _frame) return;
-    _t.value += _acc.inMicroseconds / 1e6 * widget.speed;
-    _acc = Duration.zero;
+  void _onTick(Duration _) {
+    _now = SchedulerBinding.instance.currentFrameTimeStamp;
+    final Duration? base = _base;
+    if (base == null) {
+      _base = _now - _carry;
+    } else if (_now - base >= _frame) {
+      _t.value += (_now - base).inMicroseconds / 1e6 * widget.speed;
+      _base = _now;
+    }
+    _ticker.stop();
+    _sleep();
+  }
+
+  // Sleeps until the next step is due, then asks for the frame that draws
+  // it.
+  void _sleep() {
+    _wake = Timer(_frame - (_now - _base!), () {
+      _wake = null;
+      _ticker.start();
+    });
+  }
+
+  bool get _running => _ticker.isActive || _wake != null;
+
+  void _stop() {
+    _wake?.cancel();
+    _wake = null;
+    if (_ticker.isActive) _ticker.stop();
+    final Duration? base = _base;
+    if (base != null) _carry = _now - base;
+    _base = null;
   }
 
   void _sync() {
@@ -76,12 +107,22 @@ class _ModeGlyphState extends State<ModeGlyph>
         !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
     if (run && !ModeGlyph.moves(widget.glyph)) {
       // Nothing to animate: every frame would be identical, so no ticker.
-      if (_ticker.isActive) _ticker.stop();
-    } else if (run && !_ticker.isActive) {
-      _last = Duration.zero;
-      _ticker.start();
+      _stop();
+    } else if (run && !_running) {
+      // Started during a frame, time counts from that frame (as a ticker's
+      // does) and nothing is due before the first step; otherwise the next
+      // frame starts the clock.
+      final SchedulerBinding b = SchedulerBinding.instance;
+      if (b.schedulerPhase.index > SchedulerPhase.idle.index &&
+          b.schedulerPhase.index < SchedulerPhase.postFrameCallbacks.index) {
+        _now = b.currentFrameTimeStamp;
+        _base = _now - _carry;
+        _sleep();
+      } else {
+        _ticker.start();
+      }
     } else if (!run) {
-      if (_ticker.isActive) _ticker.stop();
+      _stop();
       _t.value = ModeGlyph.stillTime(widget.glyph);
     }
   }
@@ -100,6 +141,7 @@ class _ModeGlyphState extends State<ModeGlyph>
 
   @override
   void dispose() {
+    _wake?.cancel();
     _ticker.dispose();
     _t.dispose();
     super.dispose();
