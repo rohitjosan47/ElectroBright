@@ -174,8 +174,9 @@ void main() {
   testWidgets('home, adverts from unconnected lights', (WidgetTester t) async {
     final DemoApp d = await start(t);
     final Activity a = await measure(t, d, 'home, lights advertising');
-    // Baseline: every advert rebuilds Home (item 2 flips this).
-    expect(a.homeBuildsPerSecond, greaterThan(0));
+    // Adverts that change nothing Home shows don't rebuild it (item 2).
+    expect(a.homeBuildsPerSecond, 0);
+    expect(a.framesPerSecond, 0);
     expect(a.scan, 'addFlow');
     await DemoApp.shutDown(t);
   }, timeout: const Timeout(Duration(minutes: 8)));

@@ -183,14 +183,45 @@ final class NearbyNotifier extends Notifier<List<NearbyLight>> {
       return out;
     }
 
-    final StreamSubscription<SeenDevice> sub = d.updates.listen(
-      (_) => state = compute(),
-    );
-    ref.listen(fixturesProvider, (_, _) => state = compute());
+    // Only a change to what the list shows is written (and heard): in
+    // debug builds any write also rebuilds the provider scope.
+    void update() {
+      final List<NearbyLight> next = compute();
+      if (updateShouldNotify(state, next)) state = next;
+    }
+
+    final StreamSubscription<SeenDevice> sub = d.updates.listen((SeenDevice s) {
+      // Another kind of device can't join the list; it matters only if it
+      // is listed already.
+      if (s.deviceClass == DeviceClass.other &&
+          !state.any((NearbyLight n) => n.seen.id == s.id)) {
+        return;
+      }
+      update();
+    });
+    ref.listen(fixturesProvider, (_, _) => update());
     ref.onDispose(() {
       unawaited(sub.cancel());
       lease.release();
     });
     return compute();
+  }
+
+  /// Listeners hear of a change only when what the list shows changes: the
+  /// lights, their order, names, types and signal bars (not every RSSI
+  /// wobble).
+  @override
+  bool updateShouldNotify(List<NearbyLight> previous, List<NearbyLight> next) {
+    if (previous.length != next.length) return true;
+    for (int i = 0; i < next.length; i++) {
+      final NearbyLight a = previous[i], b = next[i];
+      if (a.seen.id != b.seen.id ||
+          a.seen.name != b.seen.name ||
+          a.layoutHint != b.layoutHint ||
+          a.seen.signalBars != b.seen.signalBars) {
+        return true;
+      }
+    }
+    return false;
   }
 }
