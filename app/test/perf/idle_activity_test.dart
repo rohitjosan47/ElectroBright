@@ -331,11 +331,12 @@ void main() {
       'timer sheet open',
       light: 'Living room',
     );
-    // Baseline: two countdowns, each on its own clock (K). The Solid orb
-    // behind the sheet is still (item 1): only the countdowns draw.
+    // Two countdowns on one clock (K; baseline: a frame each a second).
+    // The Solid orb behind the sheet is still (item 1): only the
+    // countdowns draw, together.
     expect(sheet.countdownBuildsPerSecond, 2);
     expect(sheet.tickers, 0);
-    expect(sheet.framesPerSecond, lessThanOrEqualTo(2));
+    expect(sheet.framesPerSecond, 1);
     Navigator.of(t.element(find.byType(ControlScreen))).pop();
     await DemoApp.settle(t, 1);
     await t.tap(find.byIcon(Icons.tune_rounded));

@@ -51,6 +51,28 @@ String countdown(Duration d) {
   return s >= 3600 ? '${s ~/ 3600}:$mm:$ss' : '$mm:$ss';
 }
 
+/// One clock for every countdown shown: they change on the same tick.
+abstract final class _CountdownClock {
+  static final Set<VoidCallback> _listeners = <VoidCallback>{};
+  static Timer? _timer;
+
+  static void add(VoidCallback listener) {
+    _listeners.add(listener);
+    _timer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      for (final VoidCallback l in _listeners.toList()) {
+        l();
+      }
+    });
+  }
+
+  static void remove(VoidCallback listener) {
+    _listeners.remove(listener);
+    if (_listeners.isNotEmpty) return;
+    _timer?.cancel();
+    _timer = null;
+  }
+}
+
 /// Time left on the light's sleep timer (null = none), ticking each second
 /// while it can be seen (not under a full-screen route).
 class TimerCountdown extends ConsumerStatefulWidget {
@@ -68,7 +90,7 @@ class TimerCountdown extends ConsumerStatefulWidget {
 
 class _TimerCountdownState extends ConsumerState<TimerCountdown> {
   ProviderSubscription<Duration?>? _deadline;
-  Timer? _tick;
+  bool _ticking = false;
   bool _shown = true;
 
   @override
@@ -86,8 +108,7 @@ class _TimerCountdownState extends ConsumerState<TimerCountdown> {
     if (shown == _shown) return;
     _shown = shown;
     if (!shown) {
-      _tick?.cancel();
-      _tick = null;
+      _stopTicking();
     } else {
       _arm(_deadline?.read());
     }
@@ -102,7 +123,7 @@ class _TimerCountdownState extends ConsumerState<TimerCountdown> {
   @override
   void dispose() {
     _deadline?.close();
-    _tick?.cancel();
+    _stopTicking();
     super.dispose();
   }
 
@@ -119,15 +140,24 @@ class _TimerCountdownState extends ConsumerState<TimerCountdown> {
   void _arm(Duration? deadline) {
     final Duration now = ref.read(servicesProvider).scheduler.now;
     if (deadline == null || deadline <= now || !_shown) {
-      _tick?.cancel();
-      _tick = null;
+      _stopTicking();
       return;
     }
-    _tick ??= Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() {});
-      _arm(_deadline?.read());
-    });
+    if (_ticking) return;
+    _ticking = true;
+    _CountdownClock.add(_onTick);
+  }
+
+  void _onTick() {
+    if (!mounted) return;
+    setState(() {});
+    _arm(_deadline?.read());
+  }
+
+  void _stopTicking() {
+    if (!_ticking) return;
+    _ticking = false;
+    _CountdownClock.remove(_onTick);
   }
 
   @override
