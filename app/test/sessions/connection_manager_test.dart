@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:electrobright/core/ble/ble_central.dart';
+import 'package:electrobright/core/ble/ble_link.dart';
 import 'package:electrobright/core/model/fixture.dart';
 import 'package:electrobright/core/model/channel_color.dart';
 import 'package:electrobright/core/model/channel_layout.dart';
@@ -17,6 +18,38 @@ Future<void> _pump([int n = 30]) async {
   for (int i = 0; i < n; i++) {
     await Future<void>.delayed(Duration.zero);
   }
+}
+
+/// Advertises like the simulated radio; refuses every connect while
+/// [refuse] (a light that is seen but won't take a connection).
+final class _RefusingCentral implements BleCentral {
+  _RefusingCentral(this.inner);
+  final SimCentral inner;
+  bool refuse = false;
+  int connects = 0;
+
+  @override
+  Stream<BleAdapterState> get adapterState => inner.adapterState;
+  @override
+  BleAdapterState get currentAdapterState => inner.currentAdapterState;
+  @override
+  Stream<Advertisement> scan({
+    List<String> services = const <String>[],
+    ScanIntensity intensity = ScanIntensity.balanced,
+  }) => inner.scan(services: services, intensity: intensity);
+  @override
+  Future<BleLink> connect(
+    String deviceId, {
+    required Map<String, List<String>> services,
+    Duration? timeout,
+  }) async {
+    connects++;
+    if (refuse) throw const ConnectException('refused');
+    return inner.connect(deviceId, services: services, timeout: timeout);
+  }
+
+  @override
+  Future<void> clearCache(String deviceId) => inner.clearCache(deviceId);
 }
 
 final class _World {
@@ -336,6 +369,71 @@ void main() {
     w.discovery.paused = false;
     expect(w.discovery.isScanning, isTrue);
     lease.release();
+    await w.dispose();
+  });
+
+  test('a light that fails while advertising keeps its backoff', () async {
+    final ManualScheduler clock = ManualScheduler();
+    final SimCentral sim = SimCentral(
+      scheduler: clock,
+      fixtures: <SimFixture>[SimFixture.electroBright(id: 'dev0')],
+    );
+    final _RefusingCentral central = _RefusingCentral(sim)..refuse = true;
+    final Discovery discovery = Discovery(
+      central: central,
+      scheduler: clock,
+      isAndroid: false,
+    );
+    final ConnectionManager manager = ConnectionManager(
+      central: central,
+      discovery: discovery,
+      scheduler: clock,
+      policy: const ConnectionPolicy(isAndroid: false),
+    );
+    manager.register(
+      Fixture(
+        id: 'f0',
+        deviceId: 'dev0',
+        name: 'Light 0',
+        layout: ChannelLayout.rgbw,
+        driver: DriverKind.electroBright,
+        addedAt: DateTime(2026),
+      ),
+    );
+    manager.want('f0', WantReason.screen);
+    Future<void> run(Duration d) async {
+      const Duration step = Duration(milliseconds: 10);
+      for (Duration t = Duration.zero; t < d; t += step) {
+        await _pump(5);
+        clock.advance(step);
+      }
+      await _pump();
+    }
+
+    // Adverts every 150 ms; the backoff (0.5, 1, 2, 4, 8 s with jitter)
+    // allows about six attempts in 20 s, not one per advert.
+    await run(const Duration(seconds: 20));
+    expect(central.connects, inInclusiveRange(4, 7));
+    expect(manager.session('f0')!.status.phase, LinkPhase.unavailable);
+    // Once it takes connections it connects on its next scheduled retry.
+    central.refuse = false;
+    await run(const Duration(seconds: 20));
+    expect(manager.session('f0')!.status.phase, LinkPhase.ready);
+    await manager.dispose();
+    await discovery.dispose();
+    sim.dispose();
+  });
+
+  test('a light that comes back reconnects on its first advert', () async {
+    final _World w = _World();
+    w.central.setAvailable('dev0', available: false);
+    w.manager.want('f0', WantReason.favourite);
+    // Long gone: its backoff is at its longest.
+    await w.run(const Duration(seconds: 120));
+    expect(w.s(0).status.phase, LinkPhase.unavailable);
+    w.central.setAvailable('dev0', available: true);
+    await w.run(const Duration(seconds: 1));
+    expect(w.s(0).status.phase, LinkPhase.ready);
     await w.dispose();
   });
 

@@ -285,7 +285,10 @@ final class ConnectionManager {
     for (final _Slot s in _slots.values) {
       if (s.session.fixture.deviceId != d.id) continue;
       // Advertising means it is free right now: skip the remaining backoff.
+      // Not if it was advertising when it last failed: the advert is no news
+      // and retrying at once would only fail again (a retry per advert).
       if (s.wants.isNotEmpty && s.link == null && !s.connecting) {
+        if (s.retry != null && s.retryInSight) continue;
         s.retry?.cancel();
         s.retry = null;
         _evaluate();
@@ -436,7 +439,11 @@ final class ConnectionManager {
       if (e.gattStatus == 133) {
         s.gatt133++;
         if (s.gatt133 >= 2) await _central.clearCache(f.deviceId);
-        _retryIn(s, Duration(milliseconds: 600 * s.gatt133));
+        _retryIn(
+          s,
+          Duration(milliseconds: 600 * s.gatt133),
+          inSight: _inSight(f.deviceId),
+        );
       } else {
         _failed(s);
       }
@@ -469,10 +476,20 @@ final class ConnectionManager {
     final Duration base =
         policy.backoff[min(s.attempt - 1, policy.backoff.length - 1)];
     final double jitter = 0.8 + _random.nextDouble() * 0.4;
-    _retryIn(s, Duration(microseconds: (base.inMicroseconds * jitter).round()));
+    _retryIn(
+      s,
+      Duration(microseconds: (base.inMicroseconds * jitter).round()),
+      inSight: _inSight(s.session.fixture.deviceId),
+    );
   }
 
-  void _retryIn(_Slot s, Duration d) {
+  /// Advertising just now (within a couple of advert intervals).
+  bool _inSight(String deviceId) =>
+      _discovery.seenRecently(deviceId, const Duration(seconds: 2));
+
+  /// [inSight]: the light was advertising when the attempt failed.
+  void _retryIn(_Slot s, Duration d, {bool inSight = false}) {
+    s.retryInSight = inSight;
     s.retry?.cancel();
     s.retry = _scheduler.after(d, () {
       s.retry = null;
@@ -512,6 +529,9 @@ final class _Slot {
   Duration lastUsed = Duration.zero;
   Duration? userAt;
   Cancelable? retry;
+
+  /// The pending [retry] follows a failure while the light was advertising.
+  bool retryInSight = false;
   Cancelable? idleTimer;
   // Cancelled in _onClosed / on re-attach.
   // ignore: cancel_subscriptions
