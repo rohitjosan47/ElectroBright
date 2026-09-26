@@ -242,6 +242,12 @@ final class GroupSession {
       StreamController<GroupLook>.broadcast();
 
   bool get active => _active;
+
+  /// Lights this phone connects at once (the group's budget).
+  int get budget => _connections.policy.maxConnections;
+
+  /// Whose timer span the sleep-timer sheet keeps for the group.
+  static const String timerSpanKey = 'all-lights';
   GroupStatus get status => _status;
   Stream<GroupStatus> get statuses => _statuses.stream;
   GroupLook get look => _groupLook;

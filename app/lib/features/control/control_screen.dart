@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
@@ -8,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/app_session.dart';
 import '../../app/providers.dart';
 import '../../core/color/colour_engine.dart';
-import '../../core/color/light_surfaces.dart';
 import '../../core/color/light_tone.dart';
 import '../../core/model/channel_color.dart';
 import '../../core/model/channel_layout.dart';
@@ -19,9 +17,7 @@ import '../../core/protocol/eb/mode_catalog.dart';
 import '../../design/canvas/ambient_canvas.dart';
 import '../../design/components/fixture_type.dart';
 import '../../design/components/glass_controls.dart';
-import '../../design/controls/glass_slider.dart';
 import '../../design/glass/glass_surface.dart';
-import '../../design/haptics/haptics.dart';
 import '../../design/tokens/tokens.dart';
 import '../../design/tone/colour_glide.dart';
 import '../../design/tone/light_level.dart';
@@ -36,6 +32,9 @@ import 'colour/colour_editor.dart';
 import 'effects/effects_panel.dart';
 import 'effects/mode_presentation.dart';
 import 'presets/presets_panel.dart';
+import 'shared/brightness_pill_slider.dart';
+import 'shared/control_header.dart';
+import 'shared/tab_switcher.dart';
 import 'timer_sheet.dart';
 
 /// `--dart-define=EB_PERF=1` shows Flutter's performance overlay on the
@@ -152,10 +151,14 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
           MediaQuery.paddingOf(context).bottom + Space.gutter,
         ),
         children: <Widget>[
-          _Header(
-            fixture: f,
-            live: st.live,
-            sleeping: sleeping,
+          ControlHeader(
+            title: f.name,
+            subtitle: FixtureTypeBadge(
+              layout: f.layout,
+              whitePoints: f.whitePoints,
+            ),
+            on: !sleeping,
+            lit: st.live && !sleeping,
             fg: fg,
             onPower: enabled
                 ? () => unawaited(session.setPower(on: sleeping))
@@ -206,7 +209,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
             onChanged: (ControlTab t) => setState(() => _tab = t),
           ),
           const SizedBox(height: Space.m),
-          _TabSwitcher(
+          TabSwitcher(
             index: tabs.indexOf(tab),
             child: KeyedSubtree(
               key: ValueKey<ControlTab>(tab),
@@ -270,125 +273,6 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     ControlTab.effects => l.tabEffects,
     ControlTab.presets => l.tabPresets,
   };
-}
-
-/// The tab body: a new panel fades in while sliding 12 px in the direction
-/// of travel (left towards a later tab) on a [Motion.snappy] spring, the old
-/// one fading and sliding out; the height glides so the page doesn't jump.
-/// Under Reduce Motion the panel is simply swapped.
-class _TabSwitcher extends StatefulWidget {
-  const _TabSwitcher({required this.index, required this.child});
-
-  /// Position of the tab shown (sets the direction of travel).
-  final int index;
-
-  /// The panel, keyed by its tab.
-  final Widget child;
-
-  @override
-  State<_TabSwitcher> createState() => _TabSwitcherState();
-}
-
-class _TabSwitcherState extends State<_TabSwitcher>
-    with SingleTickerProviderStateMixin {
-  static const double _slide = 12;
-
-  /// Progress of the switch; 1 = the new panel is in place.
-  late final AnimationController _t = AnimationController.unbounded(
-    vsync: this,
-    value: 1,
-  );
-  Widget? _out;
-  double _dir = 1;
-  int _switches = 0;
-
-  @override
-  void didUpdateWidget(_TabSwitcher old) {
-    super.didUpdateWidget(old);
-    if (widget.child.key == old.child.key) return;
-    if (Motion.reduced(context)) {
-      _t.stop();
-      _t.value = 1;
-      _out = null;
-      return;
-    }
-    _out = old.child;
-    _dir = widget.index >= old.index ? 1 : -1;
-    final int switchNo = ++_switches;
-    _t.value = 0;
-    _t
-        .animateWith(
-          // Done once the rest is invisible (0.06 px, 0.5 % opacity), so the
-          // two panels overlap for as few frames as possible.
-          SpringSimulation(
-            Motion.snappy,
-            0,
-            1,
-            0,
-            tolerance: const Tolerance(distance: 0.005, velocity: 0.05),
-          ),
-        )
-        .whenCompleteOrCancel(() {
-          // Only the latest switch clears its outgoing panel.
-          if (mounted && switchNo == _switches) setState(() => _out = null);
-        });
-  }
-
-  @override
-  void dispose() {
-    _t.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final Widget panels = AnimatedBuilder(
-      animation: _t,
-      builder: (BuildContext context, _) {
-        final double t = _t.value.clamp(0.0, 1.0);
-        final Widget? out = _out;
-        return Stack(
-          clipBehavior: Clip.none,
-          children: <Widget>[
-            // The old panel on top of the list's flow, so the height
-            // follows the new one.
-            if (out != null)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: IgnorePointer(
-                  child: Opacity(
-                    opacity: 1 - t,
-                    child: Transform.translate(
-                      offset: Offset(-_dir * _slide * t, 0),
-                      child: out,
-                    ),
-                  ),
-                ),
-              ),
-            Opacity(
-              opacity: out == null ? 1 : t,
-              child: Transform.translate(
-                offset: Offset(out == null ? 0 : _dir * _slide * (1 - t), 0),
-                child: widget.child,
-              ),
-            ),
-          ],
-        );
-      },
-    );
-    // Reduce Motion: no height glide either (a zero-length AnimatedSize
-    // would finish inside its own layout).
-    if (Motion.reduced(context)) return panels;
-    return AnimatedSize(
-      duration: Motion.medium,
-      curve: Motion.emphasized,
-      alignment: Alignment.topCenter,
-      clipBehavior: Clip.none,
-      child: panels,
-    );
-  }
 }
 
 /// What the control screen itself shows of a light's status: no colour, no
@@ -669,66 +553,6 @@ class _PresetsTab extends ConsumerWidget {
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header({
-    required this.fixture,
-    required this.live,
-    required this.sleeping,
-    required this.fg,
-    required this.onPower,
-  });
-  final Fixture fixture;
-  final bool live;
-  final bool sleeping;
-  final Color fg;
-  final VoidCallback? onPower;
-
-  @override
-  Widget build(BuildContext context) {
-    final AppLocalizations l = AppLocalizations.of(context);
-    return Row(
-      children: <Widget>[
-        GlassIconButton(
-          icon: Icons.chevron_left_rounded,
-          label: MaterialLocalizations.of(context).backButtonTooltip,
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
-        const SizedBox(width: Space.s),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                fixture.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: fg,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: Space.xxs),
-              FixtureTypeBadge(
-                layout: fixture.layout,
-                whitePoints: fixture.whitePoints,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: Space.s),
-        GlassIconButton(
-          icon: Icons.power_settings_new_rounded,
-          label: sleeping ? l.powerOn : l.powerOff,
-          active: live && !sleeping,
-          haptic: sleeping ? HapticEvent.powerOn : HapticEvent.powerOff,
-          onPressed: onPower,
-        ),
-      ],
-    );
-  }
-}
-
 /// Brightness (on a single-white light: its intensity). 0 turns the light
 /// off on release. A sleeping light shows 0 (the brightness it wakes to is
 /// kept by the session). On a single-white light whose channel is below full,
@@ -750,11 +574,6 @@ class BrightnessPill extends ConsumerWidget {
   final Color fg;
   final FixtureSession? session;
 
-  /// What the pill says: "Off" at 0 (released there, or asleep), otherwise
-  /// the percentage, never "0 %" while the light still gives some light.
-  static String label(AppLocalizations l, double x) =>
-      x <= 0 ? l.brightnessOff : '${math.max(1, (x * 100).round())} %';
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
@@ -773,55 +592,15 @@ class BrightnessPill extends ConsumerWidget {
     final int brightness = p.sleeping ? 0 : p.brightness;
     final FixtureSession? s = enabled ? session : null;
     final bool partial = single && p.level < 255 && brightness > 0;
-    final bool dark = ToneScope.darkOf(context);
-    // One fixed fill per theme, with fixed ink on it: the pill shows the
-    // brightness by its length, never the light's colour.
-    final Color onFill = PillFill.inkOf(dark: dark);
-    // Dimmed, but on light surfaces never below 4.5:1.
-    final double dimFloor = dark ? 0 : LightSurfaces.dimAlpha;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        GlassSlider(
-          key: const ValueKey<String>('brightness'),
+        BrightnessPillSlider(
           value: brightness / 255,
-          semanticLabel: single ? l.intensity : l.brightness,
+          intensity: single,
           enabled: s != null,
-          height: 56,
-          // Light: real liquid glass over the canvas (dark keeps the panel).
-          glassTier: dark ? GlassTier.panel : GlassTier.chrome,
-          valueText: (double x) => label(l, x),
-          // The sun follows the level: small and faint low, full at the top.
-          leadingBuilder: (double x, double width) {
-            final bool overFill = x * width >= Space.m + 24;
-            return SizedBox.square(
-              dimension: 24,
-              child: Center(
-                child: Icon(
-                  Icons.wb_sunny_outlined,
-                  key: const ValueKey<String>('brightness-icon'),
-                  size: 15 + 6 * x,
-                  color: (overFill ? onFill : fg).withValues(
-                    alpha: math.max(dimFloor, x <= 0 ? 0.4 : 0.55 + 0.45 * x),
-                  ),
-                ),
-              ),
-            );
-          },
-          trailingBuilder: (double x, double width) {
-            final bool overFill = x * width >= width - Space.m - 20;
-            return Text(
-              label(l, x),
-              style: TextStyle(
-                color: (overFill ? onFill : fg).withValues(
-                  alpha: x <= 0 ? math.max(dimFloor, 0.6) : 1,
-                ),
-                fontWeight: FontWeight.w500,
-                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-              ),
-            );
-          },
-          onChangeStart: (_) => s?.beginGesture(EbKeys.brightness),
+          fg: fg,
+          onChangeStart: () => s?.beginGesture(EbKeys.brightness),
           onChanged: (double x) =>
               s?.setBrightness((x * 255).round(), live: true),
           onChangeEnd: (double x) {

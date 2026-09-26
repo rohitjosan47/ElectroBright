@@ -83,6 +83,50 @@
   },
   "addIdentify": "Flash it",
   "addName": "Name",
+  "mixed": "Mixed",
+  "allLightsTitle": "All Lights",
+  "allLightsSubtitle": "Same settings on every light",
+  "groupConnected": "{ready} of {total} connected",
+  "@groupConnected": {
+    "placeholders": {
+      "ready": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "groupConnecting": "{count} connecting",
+  "@groupConnecting": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "groupLimited": "This phone can connect {count} lights at once; favourites first",
+  "@groupLimited": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "groupApplied": "Applied to {ok} of {total} lights",
+  "@groupApplied": {
+    "placeholders": {
+      "ok": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "timersDiffer": "Timers differ",
+  "groupLights": "Lights in this group",
+  "groupInclude": "Include in All Lights",
   "defaultLightName": "{type} light",
   "@defaultLightName": {
     "placeholders": {

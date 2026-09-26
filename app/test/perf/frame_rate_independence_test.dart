@@ -317,7 +317,7 @@ void main() {
       );
       await DemoApp.settle(t, 1);
       final Finder switcher = find.byWidgetPredicate(
-        (Widget w) => w.runtimeType.toString() == '_TabSwitcher',
+        (Widget w) => w.runtimeType.toString() == 'TabSwitcher',
       );
       await t.tap(find.text('Effects').first);
       final List<Sample> tabs = await record(

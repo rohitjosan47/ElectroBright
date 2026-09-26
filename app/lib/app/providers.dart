@@ -301,3 +301,8 @@ final Provider<Common<Duration>> groupTimerProvider =
         _groupLookProvider.select((GroupLook l) => l.timerDeadline),
       ),
     );
+
+/// The group's sleep-timer deadline when every light shares one.
+final Provider<Duration?> groupTimerDeadlineProvider = Provider<Duration?>(
+  (Ref ref) => ref.watch(groupTimerProvider).value,
+);

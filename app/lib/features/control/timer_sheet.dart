@@ -73,15 +73,26 @@ abstract final class _CountdownClock {
   }
 }
 
-/// Time left on the light's sleep timer (null = none), ticking each second
-/// while it can be seen (not under a full-screen route).
+/// A light's sleep-timer deadline (scheduler time; null = none).
+final ProviderFamily<Duration?, String> timerDeadlineProvider =
+    Provider.family<Duration?, String>(
+      (Ref ref, String fixtureId) => ref.watch(
+        fixtureStatusProvider(fixtureId)
+            .select((FixtureStatus s) => s.state?.timerDeadline),
+      ),
+    );
+
+/// Time left until [deadline] (null = none), ticking each second while it
+/// can be seen (not under a full-screen route).
 class TimerCountdown extends ConsumerStatefulWidget {
   const TimerCountdown({
-    required this.fixtureId,
+    required this.deadline,
     required this.builder,
     super.key,
   });
-  final String fixtureId;
+
+  /// A light's ([timerDeadlineProvider]) or the group's deadline.
+  final ProviderListenable<Duration?> deadline;
   final Widget Function(BuildContext context, Duration? left) builder;
 
   @override
@@ -117,7 +128,7 @@ class _TimerCountdownState extends ConsumerState<TimerCountdown> {
   @override
   void didUpdateWidget(TimerCountdown old) {
     super.didUpdateWidget(old);
-    if (old.fixtureId != widget.fixtureId) _listen();
+    if (old.deadline != widget.deadline) _listen();
   }
 
   @override
@@ -130,7 +141,7 @@ class _TimerCountdownState extends ConsumerState<TimerCountdown> {
   void _listen() {
     _deadline?.close();
     _deadline = ref.listenManual(
-      _deadlineOf(widget.fixtureId),
+      widget.deadline,
       (_, Duration? deadline) => _arm(deadline),
       fireImmediately: true,
     );
@@ -162,7 +173,7 @@ class _TimerCountdownState extends ConsumerState<TimerCountdown> {
 
   @override
   Widget build(BuildContext context) {
-    final Duration? deadline = ref.watch(_deadlineOf(widget.fixtureId));
+    final Duration? deadline = ref.watch(widget.deadline);
     final Duration now = ref.watch(servicesProvider).scheduler.now;
     final Duration? left = deadline == null ? null : deadline - now;
     return widget.builder(
@@ -170,10 +181,6 @@ class _TimerCountdownState extends ConsumerState<TimerCountdown> {
       left == null || left <= Duration.zero ? null : left,
     );
   }
-
-  static ProviderListenable<Duration?> _deadlineOf(String fixtureId) =>
-      fixtureStatusProvider(fixtureId)
-          .select((FixtureStatus s) => s.state?.timerDeadline);
 }
 
 /// The duration a light's running timer was started with from this app.
@@ -231,20 +238,61 @@ Future<void> showTimerSheet(
   BuildContext context, {
   required String fixtureId,
   required FixtureSession session,
+}) {
+  final AppLocalizations l = AppLocalizations.of(context);
+  Future<String?> send(int seconds) async {
+    final EbResult r = await session.setTimer(seconds);
+    if (r.isSuccess) return null;
+    return r.outcome == EbOutcome.disconnected
+        ? l.errorOffline
+        : l.errorGeneric;
+  }
+
+  return showSleepTimerSheet(
+    context,
+    deadline: timerDeadlineProvider(fixtureId),
+    spanKey: fixtureId,
+    onStart: (Duration d) => send(d.inSeconds),
+    onCancel: () => send(0),
+  );
+}
+
+/// The sleep-timer sheet: a dial to choose a duration ([onStart]), or the
+/// running countdown to [deadline] with [onCancel]. Both answer null when
+/// done (the sheet closes) or the message to show. [spanKey]: whose
+/// [TimerSpan] the dial measures against.
+Future<void> showSleepTimerSheet(
+  BuildContext context, {
+  required ProviderListenable<Duration?> deadline,
+  required String spanKey,
+  required Future<String?> Function(Duration d) onStart,
+  required Future<String?> Function() onCancel,
 }) => showModalBottomSheet<void>(
   context: context,
   isScrollControlled: true,
   showDragHandle: true,
   builder: (BuildContext ctx) => ToneScope(
     tone: ToneScope.of(context),
-    child: _TimerSheet(fixtureId: fixtureId, session: session),
+    child: _TimerSheet(
+      deadline: deadline,
+      spanKey: spanKey,
+      onStart: onStart,
+      onCancel: onCancel,
+    ),
   ),
 );
 
 class _TimerSheet extends ConsumerStatefulWidget {
-  const _TimerSheet({required this.fixtureId, required this.session});
-  final String fixtureId;
-  final FixtureSession session;
+  const _TimerSheet({
+    required this.deadline,
+    required this.spanKey,
+    required this.onStart,
+    required this.onCancel,
+  });
+  final ProviderListenable<Duration?> deadline;
+  final String spanKey;
+  final Future<String?> Function(Duration d) onStart;
+  final Future<String?> Function() onCancel;
 
   @override
   ConsumerState<_TimerSheet> createState() => _TimerSheetState();
@@ -254,15 +302,16 @@ class _TimerSheetState extends ConsumerState<_TimerSheet> {
   int _index = 4; // 10 min
 
   Future<void> _set(int seconds) async {
-    final AppLocalizations l = AppLocalizations.of(context);
     final TimerSpanNotifier span = ref.read(
-      timerSpanProvider(widget.fixtureId).notifier,
+      timerSpanProvider(widget.spanKey).notifier,
     );
     final Duration deadline =
         ref.read(servicesProvider).scheduler.now + Duration(seconds: seconds);
-    final EbResult r = await widget.session.setTimer(seconds);
+    final String? error = seconds == 0
+        ? await widget.onCancel()
+        : await widget.onStart(Duration(seconds: seconds));
     if (!mounted) return;
-    if (r.isSuccess) {
+    if (error == null) {
       if (seconds == 0) {
         span.cancelled();
       } else {
@@ -270,22 +319,15 @@ class _TimerSheetState extends ConsumerState<_TimerSheet> {
       }
       Navigator.of(context).pop();
     } else {
-      showGlassToast(
-        context,
-        r.outcome == EbOutcome.disconnected ? l.errorOffline : l.errorGeneric,
-        icon: Icons.error_outline_rounded,
-      );
+      showGlassToast(context, error, icon: Icons.error_outline_rounded);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
-    final TimerSpan? span = ref.watch(timerSpanProvider(widget.fixtureId));
-    final Duration? deadline = ref.watch(
-      fixtureStatusProvider(widget.fixtureId)
-          .select((FixtureStatus s) => s.state?.timerDeadline),
-    );
+    final TimerSpan? span = ref.watch(timerSpanProvider(widget.spanKey));
+    final Duration? deadline = ref.watch(widget.deadline);
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(
@@ -295,7 +337,7 @@ class _TimerSheetState extends ConsumerState<_TimerSheet> {
           Space.gutter,
         ),
         child: TimerCountdown(
-          fixtureId: widget.fixtureId,
+          deadline: widget.deadline,
           builder: (BuildContext context, Duration? left) => Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -371,11 +413,8 @@ class ControlToolbar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
     final FixtureSession? s = enabled ? session : null;
-    final Color fg = ToneScope.darkOf(context)
-        ? Colors.white
-        : const Color(0xFF15171C);
     return TimerCountdown(
-      fixtureId: fixtureId,
+      deadline: timerDeadlineProvider(fixtureId),
       builder: (BuildContext context, Duration? left) => Column(
         children: <Widget>[
           Row(
@@ -421,22 +460,33 @@ class ControlToolbar extends ConsumerWidget {
               ],
             ],
           ),
-          if (left != null)
-            Padding(
-              padding: const EdgeInsets.only(top: Space.xs),
-              child: Text(
-                l.timerOff(countdown(left)),
-                key: const ValueKey<String>('timer-left'),
-                style: TextStyle(
-                  color: fg.withValues(alpha: 0.75),
-                  fontSize: 13,
-                  fontFeatures: const <FontFeature>[
-                    FontFeature.tabularFigures(),
-                  ],
-                ),
-              ),
-            ),
+          if (left != null) TimerCaption(l.timerOff(countdown(left))),
         ],
+      ),
+    );
+  }
+}
+
+/// The line under a timer button ("Off in 4:59", "Timers differ").
+class TimerCaption extends StatelessWidget {
+  const TimerCaption(this.text, {super.key});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color fg = ToneScope.darkOf(context)
+        ? Colors.white
+        : const Color(0xFF15171C);
+    return Padding(
+      padding: const EdgeInsets.only(top: Space.xs),
+      child: Text(
+        text,
+        key: const ValueKey<String>('timer-left'),
+        style: TextStyle(
+          color: fg.withValues(alpha: 0.75),
+          fontSize: 13,
+          fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+        ),
       ),
     );
   }

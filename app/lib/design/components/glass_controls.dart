@@ -526,6 +526,7 @@ class ModeTile extends StatelessWidget {
     required this.onTap,
     required this.color,
     this.animate = true,
+    this.badge,
     super.key,
   });
 
@@ -534,6 +535,9 @@ class ModeTile extends StatelessWidget {
   final VoidCallback onTap;
   final Color color;
   final bool animate;
+
+  /// A short note in the corner (e.g. "3/5": how many lights have it).
+  final String? badge;
 
   @override
   Widget build(BuildContext context) {
@@ -564,11 +568,15 @@ class ModeTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Expanded(
-                child: ModeGlyph(
-                  glyph: spec.glyph,
-                  color: own ? palette.first : color,
-                  palette: palette,
-                  animate: animate,
+                child: _Badged(
+                  badge: badge,
+                  fg: fg,
+                  child: ModeGlyph(
+                    glyph: spec.glyph,
+                    color: own ? palette.first : color,
+                    palette: palette,
+                    animate: animate,
+                  ),
                 ),
               ),
               const SizedBox(height: Space.xs),
@@ -586,6 +594,40 @@ class ModeTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// [child] with [badge] (if any) in its top-right corner.
+class _Badged extends StatelessWidget {
+  const _Badged({required this.badge, required this.fg, required this.child});
+  final String? badge;
+  final Color fg;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final String? b = badge;
+    if (b == null) return child;
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        child,
+        Align(
+          alignment: Alignment.topRight,
+          child: Text(
+            b,
+            style: TextStyle(
+              color: fg.withValues(
+                alpha: LightSurfaces.dim(0.7, dark: fg == Colors.white),
+              ),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

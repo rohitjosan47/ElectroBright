@@ -22,7 +22,7 @@ import '../../../drivers/electrobright/eb_types.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../sessions/fixture_session.dart';
 import '../colour/colour_editor.dart';
-import '../effects/effects_panel.dart';
+import '../effects/effects_grid.dart';
 import '../effects/mode_presentation.dart';
 import 'preset_meta.dart';
 

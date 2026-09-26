@@ -4,6 +4,7 @@ import 'package:electrobright/app/app_session.dart';
 import 'package:electrobright/bootstrap/service_registry.dart';
 import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/model/fixture.dart';
+import 'package:electrobright/core/protocol/eb/eb_fixture_catalog.dart';
 import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/core/store/json_store.dart';
 import 'package:electrobright/core/util/scheduler.dart';
@@ -15,9 +16,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// The app in demo mode with one saved light of every fixture type.
+/// The app in demo mode with one saved light of every fixture type (or the
+/// lights given to [start]).
 final class DemoApp {
-  DemoApp._(this.services, this.app);
+  DemoApp._(this.services, this.app, this._lights);
 
   /// Saved demo lights: name -> (simulated device id, layout).
   static const Map<String, (String, ChannelLayout)> lights =
@@ -29,8 +31,20 @@ final class DemoApp {
         'Hallway': ('demo-w', ChannelLayout.w),
       };
 
+  /// All Lights: an RGB, two identical RGBW lights (same type and
+  /// firmware), a tunable white and a single white.
+  static const Map<String, (String, ChannelLayout)> groupLights =
+      <String, (String, ChannelLayout)>{
+        'Desk strip': ('demo-rgb', ChannelLayout.rgb),
+        'Living room': ('demo-rgbw', ChannelLayout.rgbw),
+        'Reading lamp': ('demo-rgbw-2', ChannelLayout.rgbw),
+        'Kitchen': ('demo-cct', ChannelLayout.cct),
+        'Hallway': ('demo-w', ChannelLayout.w),
+      };
+
   final AppServices services;
   final AppSession app;
+  final Map<String, (String, ChannelLayout)> _lights;
 
   /// Pumps [seconds] of app time in 100 ms frames.
   static Future<void> settle(WidgetTester t, [int seconds = 2]) async {
@@ -39,8 +53,12 @@ final class DemoApp {
     }
   }
 
-  /// Starts demo mode, adds every light and returns on Home.
-  static Future<DemoApp> start(WidgetTester t) async {
+  /// Starts demo mode, adds every light and returns on Home. A light whose
+  /// simulated device the demo does not have gets one of its type.
+  static Future<DemoApp> start(
+    WidgetTester t, {
+    Map<String, (String, ChannelLayout)> lights = DemoApp.lights,
+  }) async {
     // App time follows the test's fake timers.
     final Stopwatch watch = clock.stopwatch()..start();
     final AppServices services = AppServices(
@@ -64,10 +82,19 @@ final class DemoApp {
     final AppSession app = ProviderScope.containerOf(
       t.element(find.text('Lights')),
     ).read(appSessionProvider)!;
+    final SimCentral radio = services.demoLights!;
     for (final MapEntry<String, (String, ChannelLayout)> e in lights.entries) {
+      if (!radio.fixtures.any((SimFixture f) => f.id == e.value.$1)) {
+        radio.fixtures.add(
+          SimFixture.electroBright(
+            id: e.value.$1,
+            fixture: EbFixtureCatalog.forLayout(e.value.$2),
+          ),
+        );
+      }
       app.registry.add(
         Fixture(
-          id: idOf(e.key),
+          id: _idOf(e.value.$1),
           deviceId: e.value.$1,
           name: e.key,
           layout: e.value.$2,
@@ -77,10 +104,16 @@ final class DemoApp {
       );
     }
     await settle(t, 1);
-    return DemoApp._(services, app);
+    return DemoApp._(services, app, lights);
   }
 
-  static String idOf(String name) => 'f-${lights[name]!.$1}';
+  static String _idOf(String deviceId) => 'f-$deviceId';
+
+  /// The fixture id of a default demo light.
+  static String idOf(String name) => _idOf(lights[name]!.$1);
+
+  /// The fixture id of [name] among this app's lights.
+  String id(String name) => _idOf(_lights[name]!.$1);
 
   /// Opens [name]'s control screen from Home; it connects.
   Future<void> open(WidgetTester t, String name) async {
@@ -100,11 +133,11 @@ final class DemoApp {
   }
 
   FixtureSession session(String name) =>
-      app.ble.connections.session(idOf(name))!;
+      app.ble.connections.session(id(name))!;
 
   /// The simulated light (the firmware twin).
   EbDeviceModel model(String name) => services.demoLights!.fixtures
-      .firstWhere((SimFixture f) => f.id == lights[name]!.$1)
+      .firstWhere((SimFixture f) => f.id == _lights[name]!.$1)
       .model;
 
   /// The simulated light's scene.
