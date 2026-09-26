@@ -6,21 +6,26 @@ import android.view.Display
 
 /**
  * Flutter never declares a frame rate to Android, so on many devices the app
- * would stay at 60 Hz. Ask for the highest refresh rate available at the
- * current resolution.
+ * would stay at 60 Hz. While something moves or a finger is down the app asks
+ * for the highest refresh rate available at the current resolution; the rest
+ * of the time it leaves the rate to the system, which can lower it.
  */
 object DisplayRefresh {
-    fun preferHighestRefreshRate(activity: Activity) {
-        val display = displayOf(activity) ?: return
-        val current = display.mode
-        val best = display.supportedModes
-            .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
-            .maxByOrNull { it.refreshRate } ?: return
+    fun setHigh(activity: Activity, high: Boolean) {
+        val modeId = if (high) highestModeId(activity) ?: return else 0
         val params = activity.window.attributes
-        if (params.preferredDisplayModeId != best.modeId) {
-            params.preferredDisplayModeId = best.modeId
+        if (params.preferredDisplayModeId != modeId) {
+            params.preferredDisplayModeId = modeId
             activity.window.attributes = params
         }
+    }
+
+    private fun highestModeId(activity: Activity): Int? {
+        val display = displayOf(activity) ?: return null
+        val current = display.mode
+        return display.supportedModes
+            .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
+            .maxByOrNull { it.refreshRate }?.modeId
     }
 
     fun rates(activity: Activity): Pair<Double, Double> {

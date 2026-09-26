@@ -120,6 +120,10 @@ class PlatformHost(private val activity: Activity) : PlatformHostApi {
         return DisplayInfo(refreshRate = current, maxRefreshRate = max)
     }
 
+    override fun setHighRefreshRate(high: Boolean) {
+        DisplayRefresh.setHigh(activity, high)
+    }
+
     private companion object {
         const val REQUEST_PERMISSIONS = 0xEB01
         const val REQUEST_ENABLE_BLUETOOTH = 0xEB02

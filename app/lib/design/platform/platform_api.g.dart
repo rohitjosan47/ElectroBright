@@ -503,6 +503,29 @@ class PlatformHostApi {
     );
     return pigeonVar_replyValue! as DisplayInfo;
   }
+
+  /// Android: asks for the display's highest refresh rate while [high]
+  /// (something moves or a finger is down); otherwise leaves the rate to
+  /// the system. iOS: nothing (ProMotion adapts on its own).
+  Future<void> setHighRefreshRate(bool high) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.electrobright.PlatformHostApi.setHighRefreshRate$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[high],
+    );
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+  }
 }
 
 abstract class PlatformEventsApi {

@@ -401,6 +401,10 @@ protocol PlatformHostApi {
   func beginBackgroundTask(name: String) throws -> Int64
   func endBackgroundTask(id: Int64) throws
   func displayInfo() throws -> DisplayInfo
+  /// Android: asks for the display's highest refresh rate while [high]
+  /// (something moves or a finger is down); otherwise leaves the rate to
+  /// the system. iOS: nothing (ProMotion adapts on its own).
+  func setHighRefreshRate(high: Bool) throws
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -544,6 +548,24 @@ class PlatformHostApiSetup {
       }
     } else {
       displayInfoChannel.setMessageHandler(nil)
+    }
+    /// Android: asks for the display's highest refresh rate while [high]
+    /// (something moves or a finger is down); otherwise leaves the rate to
+    /// the system. iOS: nothing (ProMotion adapts on its own).
+    let setHighRefreshRateChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.electrobright.PlatformHostApi.setHighRefreshRate\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      setHighRefreshRateChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let highArg = args[0] as! Bool
+        do {
+          try api.setHighRefreshRate(high: highArg)
+          reply(wrapResult(nil))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      setHighRefreshRateChannel.setMessageHandler(nil)
     }
   }
 }

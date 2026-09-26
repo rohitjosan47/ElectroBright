@@ -431,6 +431,12 @@ interface PlatformHostApi {
   fun beginBackgroundTask(name: String): Long
   fun endBackgroundTask(id: Long)
   fun displayInfo(): DisplayInfo
+  /**
+   * Android: asks for the display's highest refresh rate while [high]
+   * (something moves or a finger is down); otherwise leaves the rate to
+   * the system. iOS: nothing (ProMotion adapts on its own).
+   */
+  fun setHighRefreshRate(high: Boolean)
 
   companion object {
     /** The codec used by PlatformHostApi. */
@@ -579,6 +585,24 @@ interface PlatformHostApi {
           channel.setMessageHandler { _, reply ->
             val wrapped: List<Any?> = try {
               listOf(api.displayInfo())
+            } catch (exception: Throwable) {
+              PlatformApiPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.electrobright.PlatformHostApi.setHighRefreshRate$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val highArg = args[0] as Boolean
+            val wrapped: List<Any?> = try {
+              api.setHighRefreshRate(highArg)
+              listOf(null)
             } catch (exception: Throwable) {
               PlatformApiPigeonUtils.wrapError(exception)
             }

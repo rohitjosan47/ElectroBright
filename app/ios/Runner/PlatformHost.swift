@@ -90,6 +90,10 @@ final class PlatformHost: NSObject, PlatformHostApi {
     return DisplayInfo(refreshRate: maxFps, maxRefreshRate: maxFps)
   }
 
+  // ProMotion adapts the rate on its own (the engine's display link asks
+  // for up to the display's maximum only while frames are drawn).
+  func setHighRefreshRate(high: Bool) throws {}
+
   // MARK: Background tasks
 
   func beginBackgroundTask(name: String) throws -> Int64 {

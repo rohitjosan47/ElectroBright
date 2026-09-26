@@ -11,6 +11,7 @@ import 'app/app_session.dart';
 import 'bootstrap/service_registry.dart';
 import 'core/store/json_store.dart';
 import 'design/canvas/ambient_canvas.dart';
+import 'design/platform/refresh_governor.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,6 +20,11 @@ Future<void> main() async {
   prepareAmbientCanvas();
   final AppServices services = AppServices();
   await services.platform.init();
+  // Android: a high refresh rate only while something moves or a finger is
+  // down (iOS adapts on its own).
+  if (Platform.isAndroid) {
+    RefreshGovernor(services.platform.setHighRefreshRate).start();
+  }
   final Directory support = await getApplicationSupportDirectory();
   final JsonStore store = await JsonStore.open(
     Directory('${support.path}/store'),

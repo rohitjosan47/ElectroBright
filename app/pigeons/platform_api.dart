@@ -101,6 +101,11 @@ abstract class PlatformHostApi {
   void endBackgroundTask(int id);
 
   DisplayInfo displayInfo();
+
+  /// Android: asks for the display's highest refresh rate while [high]
+  /// (something moves or a finger is down); otherwise leaves the rate to
+  /// the system. iOS: nothing (ProMotion adapts on its own).
+  void setHighRefreshRate(bool high);
 }
 
 @FlutterApi()

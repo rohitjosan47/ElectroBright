@@ -48,6 +48,11 @@ final class PlatformBridge implements BackgroundTasks, PlatformEventsApi {
   Future<DisplayInfo> displayInfo() =>
       _safe(_api.displayInfo, DisplayInfo(refreshRate: 60, maxRefreshRate: 60));
 
+  /// Android: the display's highest refresh rate while [high], otherwise the
+  /// system's choice (see RefreshGovernor).
+  void setHighRefreshRate(bool high) =>
+      unawaited(_safe(() => _api.setHighRefreshRate(high), null));
+
   @override
   Future<int> begin(String name) =>
       _safe(() => _api.beginBackgroundTask(name), -1);
