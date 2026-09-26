@@ -204,8 +204,7 @@ void main() {
         light: 'Living room',
       );
       // The static Solid orb doesn't tick (item 1); only the Effects tiles
-      // do. Baseline: Home's add-flow scan runs under the control screen
-      // (item 3).
+      // do. Home's add-flow scan stops under the control screen (item 3).
       if (tab == 'Effects') {
         // The tiles step at 30 Hz, one frame per step (A); no ticker runs
         // between steps.
@@ -216,7 +215,7 @@ void main() {
         expect(a.tickers, 0);
         expect(a.framesPerSecond, 0);
       }
-      expect(a.scan, 'addFlow');
+      expect(a.scan, 'none');
     }
     await DemoApp.shutDown(t);
   }, timeout: const Timeout(Duration(minutes: 8)));
@@ -376,10 +375,9 @@ void main() {
       'paused, after 25 s',
       light: 'Living room',
     );
-    // No frames in the background; baseline: the add-flow scan stays on
-    // (item 3).
+    // No frames and no scan in the background (item 3).
     expect(paused.framesPerSecond, 0);
-    expect(paused.scan, 'addFlow');
+    expect(paused.scan, 'none');
     for (final AppLifecycleState s in <AppLifecycleState>[
       AppLifecycleState.hidden,
       AppLifecycleState.inactive,

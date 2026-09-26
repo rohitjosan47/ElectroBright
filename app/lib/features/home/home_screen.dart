@@ -42,6 +42,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
+  List<NearbyLight> _nearby = const <NearbyLight>[];
   final Map<String, Want> _wants = <String, Want>{};
   StreamSubscription<LayoutChange>? _layoutSub;
   FixtureRegistry? _registry;
@@ -244,7 +245,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final AppLocalizations l = AppLocalizations.of(context);
     final AppSession? app = ref.watch(appSessionProvider);
     final List<Fixture> fixtures = ref.watch(fixturesProvider);
-    final List<NearbyLight> nearby = ref.watch(nearbyProvider);
+    // The nearby list, and the fast scan behind it, only while Home is on
+    // screen: covered by a full-screen route it keeps the last list.
+    if (TickerMode.valuesOf(context).enabled) {
+      _nearby = ref.watch(nearbyProvider);
+    }
+    final List<NearbyLight> nearby = _nearby;
     if (app != null) {
       _syncWants(app, fixtures);
       _watchLayoutChanges(app);

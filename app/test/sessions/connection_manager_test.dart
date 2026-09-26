@@ -310,6 +310,36 @@ void main() {
   );
 
   test(
+    'the reconnect scan stops as the app goes to background, not later',
+    () async {
+      final _World w = _World();
+      w.central.setAvailable('dev0', available: false);
+      w.manager.want('f0', WantReason.screen);
+      await w.run(const Duration(seconds: 1));
+      expect(w.discovery.strongestNeed, ScanNeed.reconnect);
+      await w.manager.onBackground();
+      expect(w.discovery.strongestNeed, isNull);
+      await w.manager.onForeground();
+      expect(w.discovery.strongestNeed, ScanNeed.reconnect);
+      await w.dispose();
+    },
+  );
+
+  test('a paused discovery keeps its leases and resumes the scan', () async {
+    final _World w = _World();
+    final ScanLease lease = w.discovery.acquire(ScanNeed.addFlow);
+    await w.run(const Duration(milliseconds: 100));
+    expect(w.discovery.isScanning, isTrue);
+    w.discovery.paused = true;
+    expect(w.discovery.isScanning, isFalse);
+    expect(w.discovery.strongestNeed, ScanNeed.addFlow);
+    w.discovery.paused = false;
+    expect(w.discovery.isScanning, isTrue);
+    lease.release();
+    await w.dispose();
+  });
+
+  test(
     'Android waits for an advert and connects one light at a time',
     () async {
       final _World w = _World(android: true, lights: 3);

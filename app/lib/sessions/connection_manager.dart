@@ -196,6 +196,8 @@ final class ConnectionManager {
   Future<void> onBackground() async {
     if (_inBackground) return;
     _inBackground = true;
+    // Nothing reconnects in the background: drop the reconnect scan now.
+    _evaluate();
     if (policy.stayConnectedInBackground) return;
     _backgroundTask = await _background.begin('eb-release');
     _backgroundTimer = _scheduler.after(policy.backgroundGrace, () {

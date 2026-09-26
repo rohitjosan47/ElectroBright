@@ -71,10 +71,15 @@ class _RootState extends ConsumerState<_Root> {
   AppLifecycleListener _listen() => AppLifecycleListener(
     onPause: () {
       unawaited(ref.read(appSessionProvider.notifier).saveAll());
-      unawaited(ref.read(appSessionProvider)?.ble.connections.onBackground());
+      final AppSession? app = ref.read(appSessionProvider);
+      app?.ble.discovery.paused = true;
+      unawaited(app?.ble.connections.onBackground());
     },
-    onResume: () =>
-        unawaited(ref.read(appSessionProvider)?.ble.connections.onForeground()),
+    onResume: () {
+      final AppSession? app = ref.read(appSessionProvider);
+      app?.ble.discovery.paused = false;
+      unawaited(app?.ble.connections.onForeground());
+    },
   );
 
   @override

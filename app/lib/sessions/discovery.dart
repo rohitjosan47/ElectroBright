@@ -126,6 +126,7 @@ final class Discovery {
   Cancelable? _duty;
   bool _dutyOff = false;
   bool _disposed = false;
+  bool _paused = false;
 
   int scanStarts = 0;
 
@@ -142,6 +143,15 @@ final class Discovery {
       : _leases
             .map((ScanLease l) => l.need)
             .reduce((ScanNeed a, ScanNeed b) => a.index <= b.index ? a : b);
+
+  /// While the app is in the background no scan runs; leases are kept and
+  /// the scan resumes with the app.
+  bool get paused => _paused;
+  set paused(bool value) {
+    if (value == _paused) return;
+    _paused = value;
+    _reconfigure();
+  }
 
   ScanLease acquire(ScanNeed need) {
     final ScanLease lease = ScanLease._(this, need);
@@ -176,7 +186,10 @@ final class Discovery {
   }
 
   _ScanConfig? _wanted() {
-    if (_disposed || _adapter != BleAdapterState.ready || _leases.isEmpty) {
+    if (_disposed ||
+        _paused ||
+        _adapter != BleAdapterState.ready ||
+        _leases.isEmpty) {
       return null;
     }
     ScanNeed top = ScanNeed.presence;
