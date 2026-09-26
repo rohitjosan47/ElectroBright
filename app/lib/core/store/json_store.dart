@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:meta/meta.dart';
+
 /// The app's small database: one JSON file per collection in Application
 /// Support, `{"schemaVersion": n, "data": ...}`.
 ///
@@ -62,7 +64,12 @@ final class JsonStore {
   Object? read(String collection) => _cache[collection];
 
   /// Replaces [collection] (written to disk within [writeDelay]).
+  /// Writes requested so far (tests: how often the app persists).
+  @visibleForTesting
+  int writes = 0;
+
   void write(String collection, Object? data) {
+    writes++;
     _cache[collection] = data;
     if (directory == null) return;
     _dirty.add(collection);

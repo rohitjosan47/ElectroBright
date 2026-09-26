@@ -134,6 +134,15 @@ final class Discovery {
   SeenDevice? seen(String id) => _seen[id];
   bool get isScanning => _scan != null;
 
+  /// The strongest scan need held right now (tests and diagnostics), or
+  /// null when no lease is held.
+  @visibleForTesting
+  ScanNeed? get strongestNeed => _leases.isEmpty
+      ? null
+      : _leases
+            .map((ScanLease l) => l.need)
+            .reduce((ScanNeed a, ScanNeed b) => a.index <= b.index ? a : b);
+
   ScanLease acquire(ScanNeed need) {
     final ScanLease lease = ScanLease._(this, need);
     _leases.add(lease);
