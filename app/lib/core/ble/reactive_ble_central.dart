@@ -75,6 +75,7 @@ final class ReactiveBleCentral implements BleCentral {
     String deviceId, {
     required Map<String, List<String>> services,
     Duration? timeout,
+    Future<void>? cancel,
   }) {
     final Completer<BleLink> ready = Completer<BleLink>();
     late final _ReactiveBleLink link;
@@ -145,6 +146,14 @@ final class ReactiveBleCentral implements BleCentral {
         ready.completeError(const ConnectException('timed out'));
       });
     }
+    unawaited(
+      cancel?.then((_) {
+        if (ready.isCompleted) return;
+        guard?.cancel();
+        unawaited(sub.cancel());
+        ready.completeError(const ConnectException('cancelled'));
+      }),
+    );
     return ready.future;
   }
 

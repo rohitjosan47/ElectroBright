@@ -117,7 +117,6 @@ final class ConnectionManager {
   late final StreamSubscription<SeenDevice> _advertSub;
   BleAdapterState _adapter = BleAdapterState.unknown;
   final Map<String, _Slot> _slots = <String, _Slot>{};
-  int _connecting = 0;
   bool _inBackground = false;
   Cancelable? _backgroundTimer;
   int? _backgroundTask;
@@ -226,6 +225,8 @@ final class ConnectionManager {
     for (final _Slot s in _slots.values) {
       s.retry?.cancel();
       s.retry = null;
+      // A waiting connect would take the light the moment it appears.
+      s.cancelConnect();
       await s.link?.disconnect();
     }
     await _endBackgroundTask();
@@ -312,6 +313,8 @@ final class ConnectionManager {
       if (s.wants.isEmpty && s.link == null && !s.connecting) {
         s.session.setPhase(LinkPhase.idle);
       }
+      // A waiting (open-ended) connect nobody wants any more is abandoned.
+      if (s.wants.isEmpty) s.cancelConnect();
     }
 
     final List<_Slot> candidates =
@@ -331,8 +334,11 @@ final class ConnectionManager {
           });
 
     for (final _Slot s in candidates) {
-      if (_connecting >= policy.parallelConnects) break;
       final String deviceId = s.session.fixture.deviceId;
+      if (_busyConnects >= policy.parallelConnects &&
+          !(_openEnded(s) && !_inSight(deviceId))) {
+        continue;
+      }
       final bool userJustAsked =
           s.userAt != null &&
           _scheduler.now - s.userAt! < const Duration(seconds: 3);
@@ -356,6 +362,21 @@ final class ConnectionManager {
 
   int get _connectedCount =>
       _slots.values.where((_Slot s) => s.link != null).length;
+
+  /// iOS favourites wait for the light to appear (open-ended connect).
+  bool _openEnded(_Slot s) =>
+      !policy.isAndroid && s.priority == WantReason.favourite;
+
+  /// Connects in progress that take a slot: an open-ended connect to a light
+  /// that isn't advertising is only waiting for it (the system does), so it
+  /// never keeps a light the user opens from connecting.
+  int get _busyConnects => _slots.values
+      .where(
+        (_Slot s) =>
+            s.connecting &&
+            !(s.openEnded && !_inSight(s.session.fixture.deviceId)),
+      )
+      .length;
 
   /// Disconnects the least-recently-used idle light to make room for [forS].
   bool _evictOne(_Slot forS) {
@@ -390,12 +411,13 @@ final class ConnectionManager {
 
   Future<void> _connect(_Slot s) async {
     s.connecting = true;
-    _connecting++;
     s.session.setPhase(LinkPhase.connecting, attempt: s.attempt);
     final Fixture f = s.session.fixture;
     BleLink? link;
-    final bool openEnded =
-        !policy.isAndroid && s.priority == WantReason.favourite;
+    final bool openEnded = s.openEnded = _openEnded(s);
+    final Completer<void>? cancel = s.cancel = openEnded
+        ? Completer<void>()
+        : null;
     // An open-ended iOS connect waits quietly; after the normal timeout the
     // UI still says "unavailable" so the user is never left guessing.
     final Cancelable? honest = openEnded
@@ -411,6 +433,7 @@ final class ConnectionManager {
         },
         // iOS favourites wait for the light to appear (open-ended connect).
         timeout: openEnded ? null : policy.connectTimeout,
+        cancel: cancel?.future,
       );
       if (_disposed || s.wants.isEmpty || _inBackground) {
         await link.disconnect();
@@ -436,7 +459,13 @@ final class ConnectionManager {
         detail: e.reason,
       );
     } on ConnectException catch (e) {
-      if (e.gattStatus == 133) {
+      if (cancel?.isCompleted ?? false) {
+        // Abandoned (unwanted, or the app went to background): not a
+        // failure; it is tried again when wanted in the foreground.
+        s.session.setPhase(
+          s.wants.isEmpty ? LinkPhase.idle : LinkPhase.waiting,
+        );
+      } else if (e.gattStatus == 133) {
         s.gatt133++;
         if (s.gatt133 >= 2) await _central.clearCache(f.deviceId);
         _retryIn(
@@ -453,7 +482,8 @@ final class ConnectionManager {
     } finally {
       honest?.cancel();
       s.connecting = false;
-      _connecting--;
+      s.openEnded = false;
+      s.cancel = null;
       _evaluate();
     }
   }
@@ -532,6 +562,18 @@ final class _Slot {
 
   /// The pending [retry] follows a failure while the light was advertising.
   bool retryInSight = false;
+
+  /// The connect in progress is open-ended (it waits for the light).
+  bool openEnded = false;
+
+  /// Completing it abandons the open-ended connect in progress.
+  Completer<void>? cancel;
+
+  void cancelConnect() {
+    final Completer<void>? c = cancel;
+    if (c != null && !c.isCompleted) c.complete();
+  }
+
   Cancelable? idleTimer;
   // Cancelled in _onClosed / on re-attach.
   // ignore: cancel_subscriptions

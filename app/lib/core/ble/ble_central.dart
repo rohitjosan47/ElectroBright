@@ -80,10 +80,13 @@ abstract interface class BleCentral {
 
   /// Connects and prepares a link: services discovered, MTU negotiated.
   /// [timeout] null = wait until the peripheral appears (iOS favourites).
+  /// Completing [cancel] before the link is up abandons the attempt (it
+  /// fails with a [ConnectException]).
   Future<BleLink> connect(
     String deviceId, {
     required Map<String, List<String>> services,
     Duration? timeout,
+    Future<void>? cancel,
   });
 
   /// Android: forget cached GATT tables (recovery after repeated status 133).

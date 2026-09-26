@@ -161,11 +161,17 @@ final class _TracingCentral implements BleCentral {
     String deviceId, {
     required Map<String, List<String>> services,
     Duration? timeout,
+    Future<void>? cancel,
   }) async {
     _trace.add('link', 'connect $deviceId');
     try {
       return TracingLink(
-        await inner.connect(deviceId, services: services, timeout: timeout),
+        await inner.connect(
+          deviceId,
+          services: services,
+          timeout: timeout,
+          cancel: cancel,
+        ),
         _trace,
       );
     } on Object catch (e) {

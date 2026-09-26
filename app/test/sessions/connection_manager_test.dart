@@ -28,6 +28,9 @@ final class _RefusingCentral implements BleCentral {
   bool refuse = false;
   int connects = 0;
 
+  /// Links established.
+  int links = 0;
+
   @override
   Stream<BleAdapterState> get adapterState => inner.adapterState;
   @override
@@ -42,10 +45,18 @@ final class _RefusingCentral implements BleCentral {
     String deviceId, {
     required Map<String, List<String>> services,
     Duration? timeout,
+    Future<void>? cancel,
   }) async {
     connects++;
     if (refuse) throw const ConnectException('refused');
-    return inner.connect(deviceId, services: services, timeout: timeout);
+    final BleLink link = await inner.connect(
+      deviceId,
+      services: services,
+      timeout: timeout,
+      cancel: cancel,
+    );
+    links++;
+    return link;
   }
 
   @override
@@ -60,13 +71,10 @@ final class _World {
         for (int i = 0; i < lights; i++) SimFixture.electroBright(id: 'dev$i'),
       ],
     );
-    discovery = Discovery(
-      central: central,
-      scheduler: clock,
-      isAndroid: android,
-    );
+    radio = _RefusingCentral(central);
+    discovery = Discovery(central: radio, scheduler: clock, isAndroid: android);
     manager = ConnectionManager(
-      central: central,
+      central: radio,
       discovery: discovery,
       scheduler: clock,
       policy: ConnectionPolicy(isAndroid: android),
@@ -87,6 +95,9 @@ final class _World {
 
   final ManualScheduler clock = ManualScheduler();
   late final SimCentral central;
+
+  /// The radio the app uses (the simulated one, counting links).
+  late final _RefusingCentral radio;
   late final Discovery discovery;
   late final ConnectionManager manager;
 
@@ -434,6 +445,65 @@ void main() {
     w.central.setAvailable('dev0', available: true);
     await w.run(const Duration(seconds: 1));
     expect(w.s(0).status.phase, LinkPhase.ready);
+    await w.dispose();
+  });
+
+  test('iOS: favourites waiting for absent lights never block a light the '
+      'user opens', () async {
+    final _World w = _World(lights: 3);
+    w.central.setAvailable('dev0', available: false);
+    w.central.setAvailable('dev1', available: false);
+    w.manager.want('f0', WantReason.favourite);
+    w.manager.want('f1', WantReason.favourite);
+    await w.run(const Duration(seconds: 3));
+    expect(w.s(0).status.phase, LinkPhase.connecting);
+    expect(w.s(1).status.phase, LinkPhase.connecting);
+    w.manager.want('f2', WantReason.screen);
+    await w.run(const Duration(seconds: 1));
+    expect(w.s(2).status.phase, LinkPhase.ready);
+    // The waiting favourites connect as soon as their lights appear.
+    w.central.setAvailable('dev0', available: true);
+    await w.run(const Duration(seconds: 1));
+    expect(w.s(0).status.phase, LinkPhase.ready);
+    await w.dispose();
+  });
+
+  test(
+    'iOS: in the background a waiting connect is abandoned, so it never '
+    'takes a light that appears; back in the foreground it connects',
+    () async {
+      final _World w = _World();
+      w.central.setAvailable('dev0', available: false);
+      w.manager.want('f0', WantReason.favourite);
+      await w.run(const Duration(seconds: 3));
+      expect(w.s(0).status.phase, LinkPhase.connecting);
+      await w.manager.onBackground();
+      await w.run(const Duration(seconds: 21));
+      final int links = w.radio.links;
+      w.central.setAvailable('dev0', available: true);
+      await w.run(const Duration(seconds: 5));
+      expect(w.radio.links, links, reason: 'no link, not even a brief one');
+      await w.manager.onForeground();
+      await w.run(const Duration(seconds: 2));
+      expect(w.s(0).status.phase, LinkPhase.ready);
+      await w.dispose();
+    },
+  );
+
+  test('iOS: a waiting connect nobody wants is abandoned', () async {
+    final _World w = _World();
+    w.central.setAvailable('dev0', available: false);
+    final Want want = w.manager.want('f0', WantReason.favourite);
+    await w.run(const Duration(seconds: 3));
+    expect(w.s(0).status.phase, LinkPhase.connecting);
+    want.release();
+    await w.run(const Duration(milliseconds: 100));
+    expect(w.s(0).status.phase, LinkPhase.idle);
+    final int connects = w.central.connects;
+    w.central.setAvailable('dev0', available: true);
+    await w.run(const Duration(seconds: 3));
+    expect(w.central.fixtures.single.connected, isFalse);
+    expect(w.central.connects, connects);
     await w.dispose();
   });
 

@@ -217,6 +217,7 @@ final class SimCentral implements BleCentral {
     String deviceId, {
     required Map<String, List<String>> services,
     Duration? timeout,
+    Future<void>? cancel,
   }) {
     connects++;
     final Completer<BleLink> ready = Completer<BleLink>();
@@ -256,6 +257,13 @@ final class SimCentral implements BleCentral {
         }
       });
     }
+    unawaited(
+      cancel?.then((_) {
+        if (ready.isCompleted) return;
+        guard?.cancel();
+        ready.completeError(const ConnectException('cancelled'));
+      }),
+    );
     _connectTimer(connectDelay, attempt);
     return ready.future;
   }
