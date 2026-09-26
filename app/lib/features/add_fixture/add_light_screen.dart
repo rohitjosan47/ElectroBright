@@ -26,6 +26,16 @@ import '../firmware_update/firmware_update_screen.dart';
 
 enum _Step { pick, connecting, found, failed }
 
+/// [base], or "[base] 2", "[base] 3"... : the first not in [taken].
+String uniqueLightName(String base, Iterable<String> taken) {
+  final Set<String> used = taken.toSet();
+  if (!used.contains(base)) return base;
+  for (int n = 2; ; n++) {
+    final String name = '$base $n';
+    if (!used.contains(name)) return name;
+  }
+}
+
 /// Adding a light: pick it from the nearby list, connect and identify it
 /// (its firmware says what type it is), flash it to be sure, name it, save.
 /// Nothing is saved until Save; Cancel always releases the light.
@@ -128,10 +138,7 @@ class _AddLightScreenState extends ConsumerState<AddLightScreen> {
       setState(() {
         _firmware = fw;
         _step = _Step.found;
-        _name.text = fixtureTypeDescription(
-          AppLocalizations.of(context),
-          fw.layout,
-        );
+        _name.text = _defaultName(fw.layout);
       });
     } else if (st.phase == LinkPhase.incompatible) {
       _timeout?.cancel();
@@ -152,6 +159,16 @@ class _AddLightScreenState extends ConsumerState<AddLightScreen> {
     }
   }
 
+  /// The type's name ("RGBW light"), numbered to be unique among the saved
+  /// lights (every light of a type advertises the same BLE name).
+  String _defaultName(ChannelLayout layout) {
+    final AppLocalizations l = AppLocalizations.of(context);
+    return uniqueLightName(
+      l.defaultLightName(fixtureTypeName(l, layout)),
+      _app.registry.fixtures.map((Fixture f) => f.name),
+    );
+  }
+
   Future<void> _identify() async {
     final String? id = _candidateId;
     final FixtureSession? s = id == null
@@ -169,7 +186,7 @@ class _AddLightScreenState extends ConsumerState<AddLightScreen> {
     final NearbyLight? n = _picked;
     if (id == null || fw == null || n == null) return;
     final String name = _name.text.trim().isEmpty
-        ? fixtureTypeDescription(AppLocalizations.of(context), fw.layout)
+        ? _defaultName(fw.layout)
         : _name.text.trim();
     _saved = true;
     _app.registry.add(

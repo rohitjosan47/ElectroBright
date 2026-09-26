@@ -83,6 +83,14 @@
   },
   "addIdentify": "Flash it",
   "addName": "Name",
+  "defaultLightName": "{type} light",
+  "@defaultLightName": {
+    "placeholders": {
+      "type": {
+        "type": "String"
+      }
+    }
+  },
   "addSave": "Save",
   "cancel": "Cancel",
   "addAlready": "Already added as {name}",

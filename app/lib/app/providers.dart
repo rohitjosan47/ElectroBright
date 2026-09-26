@@ -16,6 +16,7 @@ import '../sessions/discovery.dart';
 import '../sessions/fixture_registry.dart';
 import '../drivers/electrobright/eb_types.dart';
 import '../sessions/fixture_session.dart';
+import '../sessions/group_session.dart';
 import 'app_session.dart';
 
 /// The saved lights (live).
@@ -229,3 +230,74 @@ final class NearbyNotifier extends Notifier<List<NearbyLight>> {
     return false;
   }
 }
+
+/// All Lights (null when BLE is not running).
+final Provider<GroupSession?> groupSessionProvider = Provider<GroupSession?>(
+  (Ref ref) => ref.watch(appSessionProvider)?.group,
+);
+
+/// The group's members and counts.
+final NotifierProvider<GroupStatusNotifier, GroupStatus> groupStatusProvider =
+    NotifierProvider<GroupStatusNotifier, GroupStatus>(GroupStatusNotifier.new);
+
+final class GroupStatusNotifier extends Notifier<GroupStatus> {
+  @override
+  GroupStatus build() {
+    final GroupSession? g = ref.watch(groupSessionProvider);
+    if (g == null) return const GroupStatus();
+    final StreamSubscription<GroupStatus> sub = g.statuses.listen(
+      (GroupStatus s) => state = s,
+    );
+    ref.onDispose(sub.cancel);
+    return g.status;
+  }
+}
+
+/// What the group's ready lights show together; read through the providers
+/// below, so each control hears only of what it shows.
+final NotifierProvider<_GroupLookNotifier, GroupLook> _groupLookProvider =
+    NotifierProvider<_GroupLookNotifier, GroupLook>(_GroupLookNotifier.new);
+
+final class _GroupLookNotifier extends Notifier<GroupLook> {
+  @override
+  GroupLook build() {
+    final GroupSession? g = ref.watch(groupSessionProvider);
+    if (g == null) return const GroupLook();
+    final StreamSubscription<GroupLook> sub = g.looks.listen(
+      (GroupLook l) => state = l,
+    );
+    ref.onDispose(sub.cancel);
+    return g.look;
+  }
+}
+
+/// The ready lights' common brightness, or mixed.
+final Provider<Common<int>> groupBrightnessProvider = Provider<Common<int>>(
+  (Ref ref) =>
+      ref.watch(_groupLookProvider.select((GroupLook l) => l.brightness)),
+);
+
+/// Whether any ready light is on.
+final Provider<bool> groupAnyOnProvider = Provider<bool>(
+  (Ref ref) => ref.watch(_groupLookProvider.select((GroupLook l) => l.anyOn)),
+);
+
+/// The ready lights' common mode, or mixed.
+final Provider<Common<int>> groupModeProvider = Provider<Common<int>>(
+  (Ref ref) => ref.watch(_groupLookProvider.select((GroupLook l) => l.mode)),
+);
+
+/// The ready lights' common colour, or mixed.
+final Provider<Common<ColourIntent>> groupColourProvider =
+    Provider<Common<ColourIntent>>(
+      (Ref ref) =>
+          ref.watch(_groupLookProvider.select((GroupLook l) => l.colour)),
+    );
+
+/// The ready lights' common sleep-timer deadline (within 2 s), mixed or none.
+final Provider<Common<Duration>> groupTimerProvider =
+    Provider<Common<Duration>>(
+      (Ref ref) => ref.watch(
+        _groupLookProvider.select((GroupLook l) => l.timerDeadline),
+      ),
+    );

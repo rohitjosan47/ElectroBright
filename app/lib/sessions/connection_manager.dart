@@ -48,6 +48,7 @@ final class ConnectionPolicy {
     this.unavailableAfter = 3,
     this.stayConnectedInBackground = false,
     this.sessionOptions,
+    this._maxConnections,
   });
 
   final bool isAndroid;
@@ -70,7 +71,9 @@ final class ConnectionPolicy {
   final bool stayConnectedInBackground;
   final EbSessionOptions? sessionOptions;
 
-  int get maxConnections => isAndroid ? 5 : 8;
+  /// Links open at once ([maxConnections] overrides the platform's).
+  int get maxConnections => _maxConnections ?? (isAndroid ? 5 : 8);
+  final int? _maxConnections;
   int get parallelConnects => isAndroid ? 1 : 2;
 }
 

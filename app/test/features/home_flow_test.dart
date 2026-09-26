@@ -1,6 +1,8 @@
 import 'package:electrobright/app.dart';
 import 'package:electrobright/app/app_session.dart';
 import 'package:electrobright/bootstrap/service_registry.dart';
+import 'package:electrobright/core/model/channel_layout.dart';
+import 'package:electrobright/core/model/fixture.dart';
 import 'package:electrobright/core/store/json_store.dart';
 import 'package:electrobright/design/gallery/gallery.dart';
 import 'package:electrobright/features/add_fixture/add_light_screen.dart';
@@ -107,6 +109,54 @@ void main() {
       'CCT',
     );
     // Shut the app down (saves, then stops the simulated radio).
+    await t.pumpWidget(const SizedBox());
+    await t.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await settle(t, 1);
+  });
+
+  testWidgets('a new light is named after its type, numbered to be unique', (
+    WidgetTester t,
+  ) async {
+    t.view.physicalSize = const Size(1179, 5200);
+    t.view.devicePixelRatio = 3;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(app(JsonStore.memory()));
+    await t.pump();
+    await t.tap(find.text('Try demo lights'));
+    await settle(t);
+    final AppSession session = ProviderScope.containerOf(
+      t.element(find.text('Lights')),
+    ).read(appSessionProvider)!;
+    // An RGBW light already saved under the type's name.
+    session.registry.add(
+      Fixture(
+        id: 'fx-first',
+        deviceId: 'elsewhere',
+        name: 'RGBW light',
+        layout: ChannelLayout.rgbw,
+        driver: DriverKind.electroBright,
+        addedAt: DateTime(2026),
+      ),
+    );
+    await settle(t, 1);
+
+    await t.tap(find.text('RGBW · Colour + white'));
+    await settle(t);
+    expect(find.byType(AddLightScreen), findsOneWidget);
+    // Identify is there before saving.
+    expect(find.byIcon(Icons.flare_rounded), findsOneWidget);
+    expect(
+      t.widget<TextField>(find.byType(TextField)).controller!.text,
+      'RGBW light 2',
+    );
+    await t.tap(find.text('Save'));
+    await settle(t);
+    expect(session.registry.fixtures.map((Fixture f) => f.name), <String>[
+      'RGBW light',
+      'RGBW light 2',
+    ]);
     await t.pumpWidget(const SizedBox());
     await t.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 200)),

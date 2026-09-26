@@ -9,6 +9,7 @@ import '../core/store/json_store.dart';
 import '../core/store/legacy_import.dart';
 import '../core/store/preset_reset.dart';
 import '../sessions/fixture_registry.dart';
+import '../sessions/group_session.dart';
 
 /// Everything that exists once the user chose real or demo lights.
 final class AppSession {
@@ -17,12 +18,16 @@ final class AppSession {
     required this.store,
     required this.ble,
     required this.registry,
+    required this.group,
   });
 
   final bool demo;
   final JsonStore store;
   final BleStack ble;
   final FixtureRegistry registry;
+
+  /// All Lights (created and disposed with the session).
+  final GroupSession group;
 }
 
 /// The app's main store (settings, and the real lights), opened in main().
@@ -54,6 +59,7 @@ final class _Runtime {
     final AppSession? s = session;
     session = null;
     if (s == null) return;
+    s.group.dispose();
     unawaited(
       s.registry.saveAll().whenComplete(() async {
         await s.registry.dispose();
@@ -115,6 +121,7 @@ final class AppController extends Notifier<AppSession?> {
     final AppSession? old = state;
     if (old != null) {
       state = _runtime.session = null;
+      old.group.dispose();
       await old.registry.saveAll();
       await old.registry.dispose();
     }
@@ -147,6 +154,12 @@ final class AppController extends Notifier<AppSession?> {
       store: store,
       ble: ble,
       registry: registry,
+      group: GroupSession(
+        registry: registry,
+        connections: ble.connections,
+        store: store,
+        scheduler: services.scheduler,
+      ),
     );
   }
 
