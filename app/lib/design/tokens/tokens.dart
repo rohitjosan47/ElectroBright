@@ -15,61 +15,41 @@ abstract final class Space {
 }
 
 /// The fill of every pill slider (brightness, speed, frequency, level):
-/// frosted brand glass, periwinkle from the theme seed ([seed]), one fixed
-/// look per theme — never the light's colour — with fixed ink on it (so the
-/// ink never flips as the fill changes).
+/// clear water in a glass tube, the same in every light — never the light's
+/// colour — with fixed ink on it (so the ink never flips as the fill
+/// changes). Completely transparent: it has no colour of its own, takes the
+/// colour of whatever is behind it, refracts it and catches the light
+/// (meniscus, glint, bright edges).
 abstract final class PillFill {
-  /// The brand's theme seed (periwinkle; the logo glows cyan into indigo).
-  static const Color seed = Color(0xFF5B8CFF);
-
-  /// Dark theme: a luminous tint over the dark track, a soft periwinkle
-  /// glow, deep navy ink.
+  /// Dark theme: white ink, a faint periwinkle glow around the water.
   static const PillGlass dark = PillGlass(
-    deep: Color(0xFF82A6F3),
-    base: Color(0xFF94B6FF),
-    bright: Color(0xFFACC7FF),
-    opacity: 0.86,
-    ink: Color(0xFF0B1030),
+    ink: Color(0xFFFFFFFF),
     halo: Color(0xFF6D9AFF),
+    solid: Color(0xFF394D71),
   );
 
-  /// Light theme: a clearer, more saturated tint over the light track, a
-  /// soft bluish shadow, white ink.
+  /// Light theme: navy ink, a soft bluish shadow around the water.
   static const PillGlass light = PillGlass(
-    deep: Color(0xFF1137AC),
-    base: Color(0xFF1E47BC),
-    bright: Color(0xFF345BBE),
-    opacity: 0.9,
-    ink: Color(0xFFFFFFFF),
+    ink: Color(0xFF14204A),
     halo: Color(0xFF132C6F),
+    solid: Color(0xFFBACFF3),
   );
 
   static PillGlass of({required bool dark}) => dark ? PillFill.dark : light;
   static Color inkOf({required bool dark}) => of(dark: dark).ink;
 }
 
-/// One theme's pill glass: the tint from its start ([deep]) through [base]
-/// to its leading end ([bright]), all the seed's hue at different
-/// lightnesses, laid on the track at [opacity] (the glass beneath shows
-/// through); the [ink] on it (>= 4.5:1 on every part of the fill, over any
-/// canvas); and the [halo] around it (a glow in dark, a shadow in light).
+/// One theme's pill water: the [ink] on it (>= 4.5:1 over every light's
+/// track, which is what shows through), the [halo] around it (a glow in
+/// dark, a shadow in light) and, under Reduce Transparency only, the [solid]
+/// colour it becomes.
 @immutable
 final class PillGlass {
-  const PillGlass({
-    required this.deep,
-    required this.base,
-    required this.bright,
-    required this.opacity,
-    required this.ink,
-    required this.halo,
-  });
+  const PillGlass({required this.ink, required this.halo, required this.solid});
 
-  final Color deep;
-  final Color base;
-  final Color bright;
-  final double opacity;
   final Color ink;
   final Color halo;
+  final Color solid;
 }
 
 /// Continuous-corner radii; nested shapes use concentric radii

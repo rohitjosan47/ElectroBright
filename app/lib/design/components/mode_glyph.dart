@@ -104,8 +104,8 @@ class _ModeGlyphState extends State<ModeGlyph>
   // zero under loose constraints).
   Widget build(BuildContext context) {
     // Light: the full rendering in the light's own colours, plus a coloured
-    // under-light and, for colours too light to show on a tile, a fine
-    // outline in a deeper shade (never a darker body).
+    // under-light and, for colours too light to show on a tile, a deeper
+    // shade of the colour in the glow's halo (never a ring).
     final bool dark = ToneScope.darkOf(context);
     final LightSurfaces? light = dark
         ? null
@@ -148,7 +148,8 @@ class GlyphPainter extends CustomPainter {
   /// Light theme: the glyph's colour shining onto the tile below it.
   final Color? under;
 
-  /// Light theme: a fine outline for a glyph too light to show on its tile.
+  /// Light theme: a deeper shade for a glyph too light to show on its tile
+  /// (the halo of its glow, the edge of a screen).
   final Color? outline;
 
   bool get _light => under != null;
@@ -168,6 +169,155 @@ class GlyphPainter extends CustomPainter {
 
   Color _pal(int i) => palette.isEmpty ? color : palette[i % palette.length];
 
+  /// The rainbow's bands, inside (violet) to outside (red): a refined,
+  /// vivid spectrum.
+  static const List<Color> _spectrum = <Color>[
+    Color(0xFFB45CF0),
+    Color(0xFF5E5CE6),
+    Color(0xFF0A84FF),
+    Color(0xFF30D158),
+    Color(0xFFFFD60A),
+    Color(0xFFFF9F0A),
+    Color(0xFFFF453A),
+  ];
+
+  /// A glowing rainbow arch: continuous bands (red outside to violet
+  /// inside, or warm to cool whites on a tunable-white light) with a soft
+  /// halo, ends fading into mist, a gleam of light gliding along it, the
+  /// halo breathing and a few sparkles twinkling on its outer edge.
+  void _rainbow(Canvas canvas, Offset c, double r, double time) {
+    // Rainbow's own colours: the spectrum; anything else is the light's
+    // rendering of it (warm to cool whites on a tunable-white light), shown
+    // inside (cool) to outside (warm).
+    final List<int> own = EbModeCatalog.modes
+        .firstWhere((EbModeSpec m) => m.glyph == EbModeGlyph.rainbow)
+        .gradient;
+    final bool ownColours =
+        palette.isEmpty ||
+        (palette.length == own.length &&
+            <int>[for (final Color p in palette) p.toARGB32()].indexed
+                .every(((int, int) e) => e.$2 == own[e.$1]));
+    final List<Color> bands = ownColours
+        ? _spectrum
+        : palette.reversed.toList();
+    final Offset o = c + Offset(0, r * 0.42);
+    final double outer = r * 0.95, inner = r * 0.47;
+    final double width = outer - inner;
+    final Rect arc = Rect.fromCircle(center: o, radius: (outer + inner) / 2);
+    final Rect disc = Rect.fromCircle(center: o, radius: outer);
+    final Shader spectrum = RadialGradient(
+      colors: bands,
+      stops: <double>[
+        for (int i = 0; i < bands.length; i++)
+          (inner + width * (i + 0.5) / bands.length) / outer,
+      ],
+    ).createShader(disc);
+    final Rect bounds = disc.inflate(r * 0.25);
+    final BlendMode add = _light ? BlendMode.srcOver : BlendMode.plus;
+    canvas.saveLayer(bounds, Paint());
+    // The halo, breathing.
+    final double breathe = 0.5 + 0.5 * math.sin(time * 1.3);
+    canvas.drawArc(
+      arc,
+      math.pi,
+      math.pi,
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width * 1.15
+        ..shader = spectrum
+        ..color = Color.fromRGBO(
+          0,
+          0,
+          0,
+          (_light ? 0.3 : 0.45) + 0.15 * breathe,
+        )
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.12),
+    );
+    // The bands.
+    canvas.drawArc(
+      arc,
+      math.pi,
+      math.pi,
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width
+        ..shader = spectrum
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.012),
+    );
+    // A gleam gliding along the arch (entering and leaving past the ends).
+    final double sweep = (time * 0.32) % 1;
+    final double at = math.pi - 0.5 + sweep * (math.pi + 1);
+    canvas.drawArc(
+      arc,
+      math.pi,
+      math.pi,
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width * 0.9
+        ..blendMode = add
+        ..shader = SweepGradient(
+          startAngle: at - 0.32,
+          endAngle: at + 0.32,
+          colors: <Color>[
+            Colors.white.withValues(alpha: 0),
+            // Softer on white bands (white on white blows out).
+            Colors.white.withValues(
+              alpha: (_light ? 0.55 : 0.5) * (ownColours ? 1 : 0.45),
+            ),
+            Colors.white.withValues(alpha: 0),
+          ],
+          tileMode: TileMode.decal,
+        ).createShader(bounds)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.03),
+    );
+    // Sparkles twinkling on the outer edge, each in its own rhythm.
+    for (final (double a, double phase) in <(double, double)>[
+      (math.pi * 1.22, 0),
+      (math.pi * 1.55, 2.1),
+      (math.pi * 1.8, 4.2),
+    ]) {
+      final double tw = math
+          .pow(math.max(0, math.sin(time * 1.7 + phase)), 8)
+          .toDouble();
+      if (tw < 0.02) continue;
+      final Offset p =
+          o + Offset(math.cos(a), math.sin(a)) * (outer + r * 0.05);
+      final double s = r * 0.11 * (0.6 + 0.4 * tw);
+      final Paint star = Paint()
+        ..color = Colors.white.withValues(alpha: (_light ? 0.9 : 0.85) * tw)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.008);
+      canvas.drawOval(
+        Rect.fromCenter(center: p, width: s * 2, height: s * 0.28),
+        star,
+      );
+      canvas.drawOval(
+        Rect.fromCenter(center: p, width: s * 0.28, height: s * 2),
+        star,
+      );
+    }
+    // The ends fade into mist.
+    canvas.drawRect(
+      bounds,
+      Paint()
+        ..blendMode = BlendMode.dstIn
+        ..shader = SweepGradient(
+          startAngle: math.pi,
+          endAngle: 2 * math.pi,
+          colors: const <Color>[
+            Color(0x00000000),
+            Color(0xFF000000),
+            Color(0xFF000000),
+            Color(0x00000000),
+          ],
+          stops: const <double>[0, 0.24, 0.76, 1],
+        ).createShader(bounds),
+    );
+    canvas.restore();
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final double time = t.value;
@@ -175,7 +325,7 @@ class GlyphPainter extends CustomPainter {
     final double r = size.shortestSide / 2;
 
     // Light: the colour cast onto the tile, below everything else.
-    final Color? cast = under;
+    final Color? cast = glyph == EbModeGlyph.rainbow ? null : under;
     if (cast != null) {
       final Offset below = c + Offset(0, r * 0.2);
       canvas.drawCircle(
@@ -193,21 +343,12 @@ class GlyphPainter extends CustomPainter {
 
     void glow(Offset p, double radius, Color col, double level) {
       if (level <= 0.01) return;
-      if (_light) {
-        // A soft neutral contact shadow under the glow's core.
-        final Offset low = p + Offset(0, radius * 0.1);
-        canvas.drawCircle(
-          low,
-          radius * 0.5,
-          Paint()
-            ..shader = RadialGradient(
-              colors: <Color>[
-                Colors.black.withValues(alpha: 0.08 * level),
-                Colors.black.withValues(alpha: 0),
-              ],
-            ).createShader(Rect.fromCircle(center: low, radius: radius * 0.5)),
-        );
-      }
+      // Full colour at the core, falling off gently (the light's own colour,
+      // not a pastel of it). A colour too light to show on a light tile keeps
+      // its bright core; a deeper shade of itself tints the soft halo, so the
+      // glow still reads (no ring, no dark spot).
+      final Color? deep = outline;
+      final Color halo = deep == null ? col : Color.lerp(col, deep, 0.7)!;
       canvas.drawCircle(
         p,
         radius,
@@ -215,29 +356,17 @@ class GlyphPainter extends CustomPainter {
           ..shader = RadialGradient(
             colors: <Color>[
               col.withValues(alpha: level),
-              col.withValues(alpha: level * 0.35),
-              col.withValues(alpha: 0),
+              halo.withValues(alpha: level * 0.5),
+              (deep ?? col).withValues(alpha: 0),
             ],
             stops: const <double>[0, 0.45, 1],
           ).createShader(Rect.fromCircle(center: p, radius: radius)),
       );
-      final Color? ring = outline;
-      if (ring != null) {
-        // A glow too light for its tile: a fine outline around its core.
-        canvas.drawCircle(
-          p,
-          radius * 0.42,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.2
-            ..color = ring.withValues(alpha: level.clamp(0.0, 1.0)),
-        );
-      }
     }
 
     switch (glyph) {
       case EbModeGlyph.solid:
-        glow(c, r * 0.95, color, 0.9);
+        glow(c, r * 0.95, color, 1);
       case EbModeGlyph.blink:
         glow(c, r * 0.95, color, (time * 1.6) % 1 < 0.5 ? 0.95 : 0.08);
       case EbModeGlyph.breath:
@@ -362,26 +491,7 @@ class GlyphPainter extends CustomPainter {
           );
         }
       case EbModeGlyph.rainbow:
-        final Rect ring = Rect.fromCircle(center: c, radius: r * 0.7);
-        canvas.drawCircle(
-          c,
-          r * 0.7,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = r * 0.28
-            ..shader = SweepGradient(
-              colors: const <Color>[
-                Color(0xFFFF0000),
-                Color(0xFFFFFF00),
-                Color(0xFF00FF00),
-                Color(0xFF00FFFF),
-                Color(0xFF0000FF),
-                Color(0xFFFF00FF),
-                Color(0xFFFF0000),
-              ],
-              transform: GradientRotation(time * 0.9),
-            ).createShader(ring),
-        );
+        _rainbow(canvas, c, r, time);
       case EbModeGlyph.fire:
       case EbModeGlyph.candle:
         final bool candle = glyph == EbModeGlyph.candle;

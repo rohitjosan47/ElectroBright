@@ -492,14 +492,20 @@ class _LevelGlideState extends ConsumerState<_LevelGlide>
   @override
   void initState() {
     super.initState();
-    ref.listenManual<double>(
-      fixtureStatusProvider(widget.fixtureId).select(_target),
-      (_, double target) => _glide(target),
+    ref.listenManual<(double, bool)>(
+      fixtureStatusProvider(widget.fixtureId).select(
+        (FixtureStatus s) =>
+            (_target(s), s.view?.gestures.contains(EbKeys.brightness) ?? false),
+      ),
+      (_, (double, bool) next) => _glide(next.$1, following: next.$2),
     );
   }
 
-  void _glide(double target) {
-    if (Motion.reduced(context)) {
+  /// A finger on the brightness pill: the orb and the canvas follow it
+  /// exactly (no lag). Other changes (a preset, turning off, a reconnect)
+  /// glide.
+  void _glide(double target, {required bool following}) {
+    if (following || Motion.reduced(context)) {
       _level
         ..stop()
         ..value = target;
@@ -936,6 +942,21 @@ class _ColourTab extends ConsumerWidget {
             enabled: s != null,
             onGestureStart: () => s?.beginGesture(EbKeys.color),
             onGestureEnd: () => s?.endGesture(EbKeys.color),
+            // A white below full level: its level moves into the brightness
+            // (same output), the channels go to full.
+            onFullRange: (ChannelColor full, double level) {
+              final int b =
+                  ref
+                      .read(fixtureStatusProvider(fixture.id))
+                      .state
+                      ?.scene
+                      .brightness ??
+                  255;
+              s?.setLook(
+                color: full,
+                brightness: (b * level).round().clamp(1, 255),
+              );
+            },
             onChanged: (
               ChannelColor c, {
               required bool live,

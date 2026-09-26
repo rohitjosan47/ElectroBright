@@ -5,6 +5,7 @@ import 'package:electrobright/design/components/mode_glyph.dart';
 import 'package:electrobright/design/controls/glass_slider.dart';
 import 'package:electrobright/design/controls/hue_wheel.dart';
 import 'package:electrobright/design/tokens/tokens.dart';
+import 'package:electrobright/design/tone/light_level.dart';
 import 'package:electrobright/features/control/colour/colour_editor.dart';
 import 'package:electrobright/features/control/control_screen.dart';
 import 'package:flutter/material.dart';
@@ -103,13 +104,36 @@ void main() {
     await DemoApp.shutDown(t);
   });
 
-  testWidgets('tunable white: temperature and level', (WidgetTester t) async {
+  testWidgets('a white below full level moves into the brightness', (
+    WidgetTester t,
+  ) async {
+    final DemoApp d = await open(t, 'Kitchen');
+    // A white at a quarter level (a preset, the Channels sliders), at 200.
+    d
+        .session('Kitchen')
+        .setLook(
+          color: ChannelColor(ChannelLayout.cct, const <int>[64, 64]),
+          brightness: 200,
+        );
+    await settle(t);
+    // Touching the temperature: channels to full, the level into the
+    // brightness (64 / 255 of 200), so the output stays the same.
+    await slideToEnd(t, 'Colour temperature', warm: true);
+    expect(d.twin('Kitchen').color.values, <int>[0, 255]);
+    expect(d.twin('Kitchen').brightness, (200 * 64 / 255).round());
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('tunable white: temperature, no level control', (
+    WidgetTester t,
+  ) async {
     final DemoApp d = await open(t, 'Kitchen');
     expect(tab('White'), findsOneWidget);
     expect(tab('Colour'), findsNothing);
     expect(find.byType(HueWheel), findsNothing);
     expect(slider('Colour temperature'), findsOneWidget);
-    expect(slider('Level'), findsOneWidget);
+    // The brightness pill dims it; there is no second dimmer.
+    expect(slider('Level'), findsNothing);
     // The temperature spans the LEDs' own range: warm end, warm LED only.
     await slideToEnd(t, 'Colour temperature', warm: true);
     expect(d.twin('Kitchen').color.values, <int>[0, 255]); // CW, WW
@@ -244,72 +268,82 @@ void main() {
     final DemoApp d = await open(t, 'Desk strip');
     d.session('Desk strip').setBrightness(5); // 2 %
     await settle(t);
+    final Finder pill = find.byKey(const ValueKey<String>('brightness'));
     final Finder track = find.descendant(
-      of: find.byKey(const ValueKey<String>('brightness')),
+      of: pill,
       matching: find.byWidgetPredicate(
         (Widget w) =>
             w is CustomPaint &&
             w.painter.runtimeType.toString() == '_TrackPainter',
       ),
     );
-    final Size size = t.getSize(track);
-    final double h = size.height;
-    // The fill (one fixed colour per theme) sits inside the track like
-    // liquid in a tube — inset on every side, clipped to the concentric inner
-    // capsule — about 2 % of the inner width (no minimum), its end rounded
-    // only as far as it is wide; a soft glass edge, no dark outline, no grip.
+    final Rect box = t.getRect(track);
+    final Size size = box.size;
+    // The water sits inside the track like liquid in a tube — inset on
+    // every side, about 2 % of the inner width (no minimum), rounded only
+    // as far as it is wide.
     const double inset = GlassSlider.fillInset;
-    final double ih = h - 2 * inset;
     final double w = 5 / 255 * (size.width - 2 * inset);
     expect(w / (size.width - 2 * inset), closeTo(0.02, 0.001));
-    final Radius end = Radius.circular(w / 2 < ih / 2 ? w / 2 : ih / 2);
-    final RRect body = RRect.fromRectAndCorners(
-      Rect.fromLTWH(inset, inset, w, ih),
-      topRight: end,
-      bottomRight: end,
+    final Rect water = t.getRect(
+      find.descendant(
+        of: pill,
+        matching: find.byKey(const ValueKey<String>('pill-water')),
+      ),
     );
-    expect(
-      track,
-      paints
-        ..clipRRect()
-        ..rrect(
-          rrect: RRect.fromRectAndRadius(
-            Offset.zero & size,
-            Radius.circular(h / 2),
-          ),
-        )
-        ..clipRRect(
-          rrect: RRect.fromRectAndRadius(
-            Rect.fromLTWH(inset, inset, size.width - 2 * inset, ih),
-            Radius.circular(ih / 2),
-          ),
-        )
-        ..rrect(rrect: body)
-        ..rect()
-        ..circle()
-        ..rrect(rrect: body.deflate(0.5), style: PaintingStyle.stroke),
-    );
-    // No solid (dark) outline: every stroke is a soft gradient highlight.
+    expect(water.left - box.left, closeTo(inset, 1e-6));
+    expect(water.top - box.top, closeTo(inset, 1e-6));
+    expect(box.bottom - water.bottom, closeTo(inset, 1e-6));
+    expect(water.width, closeTo(w, 1e-6));
+    // No solid (dark) outline: every stroke is soft (a gradient highlight or
+    // a blurred shading); and no grip (no knob circle).
     expect(
       track,
       paints..everything((Symbol method, List<dynamic> args) {
+        if (method == #drawCircle) return false;
         if (method != #drawRRect) return true;
         final Paint paint = args[1] as Paint;
-        return paint.style != PaintingStyle.stroke || paint.shader != null;
+        return paint.style != PaintingStyle.stroke ||
+            paint.shader != null ||
+            paint.maskFilter != null;
       }),
     );
-    // Track tint, contact shadow, fill and edge; nothing more (no grip).
-    expect(
-      track,
-      isNot(
-        paints
-          ..rrect()
-          ..rrect()
-          ..rrect()
-          ..rrect()
-          ..rrect(),
-      ),
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('the orb and canvas follow the brightness pill with no lag', (
+    WidgetTester t,
+  ) async {
+    final DemoApp d = await open(t, 'Desk strip');
+    d.session('Desk strip').setBrightness(51); // 20 %
+    await settle(t);
+    // The level the orb and the canvas show.
+    double shown() => LightLevel.of(t.element(find.byType(LightOrb))).value;
+    double pill() =>
+        d.session('Desk strip').status.state!.scene.brightness / 255;
+    final Rect r = t.getRect(find.byKey(const ValueKey<String>('brightness')));
+    final TestGesture g = await t.startGesture(
+      Offset(r.left + r.width * 0.2, r.center.dy),
     );
+    int frames = 0;
+    for (double x = 0.22; x <= 0.9; x += 0.02) {
+      await g.moveTo(Offset(r.left + r.width * x, r.center.dy));
+      await t.pump(const Duration(milliseconds: 16));
+      if (pill() > 0.2 + 1e-9) {
+        frames++;
+        expect(shown(), pill(), reason: 'at ${(x * 100).round()} %');
+      }
+    }
+    expect(frames, greaterThan(10));
+    await g.up();
+    await settle(t);
+    // A change not from a finger still glides.
+    d.session('Desk strip').setBrightness(26);
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 16));
+    expect(shown(), isNot(closeTo(26 / 255, 1e-6)));
+    await settle(t);
+    expect(shown(), closeTo(26 / 255, 1e-3));
     await DemoApp.shutDown(t);
   });
 

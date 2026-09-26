@@ -33,12 +33,14 @@ final class SteadyLevels {
   /// The channels these levels show.
   final ChannelColor source;
 
-  /// One level per channel of [source]'s layout, the largest 1.
+  /// One level per channel of [source]'s layout, the largest shown one 1;
+  /// channels the app does not show (white LEDs on a light with colour
+  /// LEDs) are 0.
   final List<double> levels;
 
   ChannelLayout get layout => source.layout;
 
-  /// All channels below this fraction of full scale: the hue is held.
+  /// All shown channels below this fraction of full scale: the hue is held.
   static const double holdBelow = 0.02;
 
   /// Channel steps the shown levels may differ from the channels by (one:
@@ -58,10 +60,24 @@ final class SteadyLevels {
     final SteadyLevels? prev = previous?.layout == channels.layout
         ? previous
         : null;
-    if (intent != null && intent.length == channels.layout.n) {
-      return SteadyLevels(channels, List<double>.unmodifiable(intent));
+    final ChannelLayout layout = channels.layout;
+    // Only the channels the app shows count (R, G and B on a light with
+    // colour LEDs; see LayoutPreview.shows).
+    List<double> shown(List<double> l) {
+      final List<double> kept = <double>[
+        for (int i = 0; i < l.length; i++)
+          LayoutPreview.shows(layout, i) ? l[i] : 0,
+      ];
+      final double m = kept.fold(0, math.max);
+      return List<double>.unmodifiable(
+        m <= 0 ? kept : <double>[for (final double x in kept) x / m],
+      );
     }
-    final int top = channels.maxChannel;
+
+    if (intent != null && intent.length == layout.n) {
+      return SteadyLevels(channels, shown(intent));
+    }
+    final int top = _top(channels);
     if (prev != null) {
       final bool dim = top < holdBelow * 255;
       if (dim || !exact && prev._quantisesTo(channels)) {
@@ -73,16 +89,24 @@ final class SteadyLevels {
     if (top <= 0) return null;
     return SteadyLevels(
       channels,
-      List<double>.unmodifiable(<double>[
-        for (final int v in channels.values) v / top,
-      ]),
+      shown(<double>[for (final int v in channels.values) v.toDouble()]),
     );
+  }
+
+  /// The largest channel the app shows.
+  static int _top(ChannelColor c) {
+    int top = 0;
+    for (int i = 0; i < c.layout.n; i++) {
+      if (LayoutPreview.shows(c.layout, i)) top = math.max(top, c[i]);
+    }
+    return top;
   }
 
   /// Whether these levels, scaled to [c]'s largest channel, come out as [c].
   bool _quantisesTo(ChannelColor c) {
-    final int top = c.maxChannel;
+    final int top = _top(c);
     for (int i = 0; i < c.layout.n; i++) {
+      if (!LayoutPreview.shows(c.layout, i)) continue;
       if ((levels[i] * top - c[i]).abs() > tolerance + 1e-9) return false;
     }
     return true;
@@ -92,7 +116,7 @@ final class SteadyLevels {
   LinearRgb emitted(LedWhitePoints wp) {
     LinearRgb sum = const LinearRgb(0, 0, 0);
     for (int i = 0; i < layout.n; i++) {
-      if (levels[i] <= 0) continue;
+      if (levels[i] <= 0 || !LayoutPreview.shows(layout, i)) continue;
       sum =
           sum +
           LayoutPreview.ledColour(layout.roles[i], wp) *

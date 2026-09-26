@@ -222,6 +222,7 @@ class _SolidRow extends StatelessWidget {
         },
         child: GlassSurface(
           radius: Radii.medium,
+          liquid: true,
           padding: const EdgeInsets.symmetric(
             horizontal: Space.m,
             vertical: Space.s,

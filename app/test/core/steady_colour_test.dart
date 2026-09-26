@@ -181,4 +181,88 @@ void main() {
       }
     }
   });
+
+  test('on a light with colour LEDs only R, G and B tint the colour shown', () {
+    _Argb swatch(ChannelColor c, {SteadyLevels? steady}) => ColorScience.toArgb(
+      SteadyLevels.colourOf(steady, c, wp) ??
+          DisplayColor.emitted(c, wp).normalized(),
+    ).asColor;
+    // RGBW: the white LED at any level leaves the colour alone.
+    for (final int w in <int>[0, 60, 255]) {
+      final ChannelColor c = ChannelColor.rgbw(255, 60, 0, w);
+      expect(
+        swatch(c),
+        swatch(ChannelColor.rgbw(255, 60, 0, 0)),
+        reason: 'W $w',
+      );
+      final SteadyLevels s = SteadyLevels.next(null, c)!;
+      expect(s.levels, <double>[1, 60 / 255, 0, 0], reason: 'W $w');
+      expect(swatch(c, steady: s), swatch(ChannelColor.rgbw(255, 60, 0, 0)));
+    }
+    // RGBCCT: neither white LED does.
+    final ChannelColor pure = ChannelColor(ChannelLayout.rgbcct, <int>[
+      0,
+      90,
+      255,
+      0,
+      0,
+    ]);
+    final ChannelColor whites = ChannelColor(ChannelLayout.rgbcct, <int>[
+      0,
+      90,
+      255,
+      200,
+      120,
+    ]);
+    expect(swatch(whites), swatch(pure));
+    // The white LED's level never moves a steady colour either.
+    SteadyLevels? s = SteadyLevels.next(null, ChannelColor.rgbw(3, 1, 0, 255));
+    s = SteadyLevels.next(s, ChannelColor.rgbw(3, 2, 0, 255));
+    expect(s!.levels, <double>[1, 1 / 3, 0, 0], reason: 'held below 2 %');
+    // An editor pick's white level is not shown.
+    const ColourEngine engine = ColourEngine(wp);
+    const HsvIntent pick = HsvIntent(Hsv(200, 1, 1), white: 1);
+    final SteadyLevels picked = SteadyLevels.next(
+      null,
+      engine.encode(pick, ChannelLayout.rgbw),
+      intent: engine.fullLevels(pick, ChannelLayout.rgbw),
+    )!;
+    expect(picked.levels.last, 0);
+    // Only the white LEDs on: a neutral white, the same for any white (the
+    // whites still never tint it), and the light is not shown as off.
+    DisplayColor shownFor(ChannelColor c) => DisplayColor.ofScene(
+      EbScene.defaults(c.layout).copyWith(color: c),
+      sleeping: false,
+    );
+    final DisplayColor warm = shownFor(
+      ChannelColor(ChannelLayout.rgbcct, <int>[0, 0, 0, 0, 255]),
+    );
+    final DisplayColor cool = shownFor(
+      ChannelColor(ChannelLayout.rgbcct, <int>[0, 0, 0, 255, 0]),
+    );
+    final DisplayColor wOnly = shownFor(ChannelColor.rgbw(0, 0, 0, 255));
+    for (final DisplayColor d in <DisplayColor>[warm, cool, wOnly]) {
+      expect(d.off, isFalse);
+      expect(<double>[d.color.r, d.color.g, d.color.b], <double>[1, 1, 1]);
+    }
+    // A light without colour LEDs shows its whites.
+    final ChannelColor cct = ChannelColor(ChannelLayout.cct, <int>[0, 255]);
+    expect(DisplayColor.emitted(cct, wp).max, greaterThan(0));
+  });
+}
+
+extension on int {
+  _Argb get asColor => _Argb(this);
+}
+
+/// An ARGB value compared by value (keeps the test free of Flutter).
+final class _Argb {
+  const _Argb(this.value);
+  final int value;
+  @override
+  bool operator ==(Object other) => other is _Argb && other.value == value;
+  @override
+  int get hashCode => value.hashCode;
+  @override
+  String toString() => '0x${value.toRadixString(16)}';
 }

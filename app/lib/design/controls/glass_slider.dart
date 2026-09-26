@@ -7,6 +7,9 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/semantics.dart';
 
 import '../../core/color/light_surfaces.dart';
+
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+
 import '../glass/glass_surface.dart';
 import '../haptics/haptics.dart';
 import '../haptics/haptics_scope.dart';
@@ -358,29 +361,47 @@ class _GlassSliderState extends State<GlassSlider>
                       track: widget.track,
                       dark: dark,
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: Space.m),
-                      child: Row(
-                        children: <Widget>[
-                          // At large text sizes the label shrinks to fit the
-                          // pill instead of overflowing it.
-                          Expanded(
-                            child: Align(
-                              alignment: AlignmentDirectional.centerStart,
-                              child: leading == null
-                                  ? null
-                                  : FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      child: leading,
-                                    ),
-                            ),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: <Widget>[
+                        // Pill sliders: the fill is water in the tube.
+                        if (widget.track == null)
+                          _WaterFill(
+                            value: _v,
+                            min: widget.min,
+                            max: widget.max,
+                            dark: dark,
                           ),
-                          if (trailing != null) ...<Widget>[
-                            const SizedBox(width: Space.s),
-                            FittedBox(fit: BoxFit.scaleDown, child: trailing),
-                          ],
-                        ],
-                      ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: Space.m,
+                          ),
+                          child: Row(
+                            children: <Widget>[
+                              // At large text sizes the label shrinks to fit the
+                              // pill instead of overflowing it.
+                              Expanded(
+                                child: Align(
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: leading == null
+                                      ? null
+                                      : FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: leading,
+                                        ),
+                                ),
+                              ),
+                              if (trailing != null) ...<Widget>[
+                                const SizedBox(width: Space.s),
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: trailing,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -468,18 +489,9 @@ class _TrackPainter extends CustomPainter {
         Paint()..color = Color.lerp(t.first, t.last, fraction)!,
       );
     } else {
-      // Pill slider: frosted brand glass (PillFill), one fixed look per
-      // theme, never the light's colour; it depends only on the value. Like
-      // coloured glass in a glass tube: inset from the track by the rim on
-      // every side, clipped to the concentric inner capsule (nothing is cut),
-      // shrinking smoothly to nothing; translucent, so the glass beneath
-      // shows through. A crisp specular band across its top (above where the
-      // icon and label sit, so their ink keeps its contrast), a soft inner
-      // glow in its own brighter tint at the leading end and a bright glass
-      // rim, no outline.
+      // Pill slider: the empty tube (the water in it is [_WaterFill], a
+      // refracting lens above this painter).
       final PillGlass glass = PillFill.of(dark: dark);
-      Color tint(Color c, [double k = 1]) =>
-          c.withValues(alpha: glass.opacity * k);
       if (!dark) {
         // A faint neutral tint so the empty track reads as glass.
         canvas.drawRRect(
@@ -493,80 +505,22 @@ class _TrackPainter extends CustomPainter {
         fraction,
       );
       if (shapes != null) {
-        const double inset = GlassSlider.fillInset;
-        final RRect tube = shapes.tube;
-        final RRect body = shapes.body;
-        final Rect rect = body.outerRect;
-        final double h = rect.height;
-        final double w = rect.width;
-        // Around the fill, inside the track: dark a very soft periwinkle
-        // glow, light a soft bluish shadow (never grey).
-        canvas.drawRRect(
-          dark ? body : body.shift(const Offset(0, 1)),
-          Paint()
-            ..color = glass.halo.withValues(alpha: dark ? 0.35 : 0.28)
-            ..maskFilter = MaskFilter.blur(BlurStyle.normal, dark ? 5 : 2),
-        );
+        // Around the water, inside the track: dark a faint periwinkle glow,
+        // light a soft bluish shadow (never grey). Only outside the water:
+        // it is transparent, and a halo beneath would cloud it.
         canvas.save();
-        canvas.clipRRect(tube);
+        canvas.clipPath(
+          Path.combine(
+            PathOperation.difference,
+            Path()..addRRect(shape),
+            Path()..addRRect(shapes.body),
+          ),
+        );
         canvas.drawRRect(
-          body,
+          dark ? shapes.body : shapes.body.shift(const Offset(0, 1)),
           Paint()
-            ..shader = LinearGradient(
-              colors: <Color>[
-                tint(glass.deep),
-                tint(glass.base),
-                tint(glass.bright),
-              ],
-              stops: const <double>[0, 0.6, 1],
-            ).createShader(rect),
-        );
-        canvas.clipRRect(body);
-        // The specular band: bright at the top edge, gone by 28 % of the
-        // height (the icon and label start at about 30 %).
-        final Rect top = Rect.fromLTWH(inset, inset, w, h * 0.28);
-        canvas.drawRect(
-          top,
-          Paint()
-            ..shader = LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: <Color>[
-                Colors.white.withValues(alpha: dark ? 0.55 : 0.42),
-                Colors.white.withValues(alpha: 0),
-              ],
-            ).createShader(top),
-        );
-        final Offset glowAt = Offset(
-          inset + math.max(h * 0.4, w - h * 0.45),
-          inset + h * 0.55,
-        );
-        canvas.drawCircle(
-          glowAt,
-          h * 0.9,
-          Paint()
-            ..shader = RadialGradient(
-              colors: <Color>[tint(glass.bright, 0.6), tint(glass.bright, 0)],
-            ).createShader(Rect.fromCircle(center: glowAt, radius: h * 0.9)),
-        );
-        // The glass rim: bright white along the top, the tint's own brighter
-        // tone along the bottom; no dark outline.
-        canvas.drawRRect(
-          body.deflate(0.5),
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1
-            ..shader = LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: <Color>[
-                Colors.white.withValues(alpha: 0.9),
-                Colors.white.withValues(alpha: 0),
-                glass.bright.withValues(alpha: 0),
-                glass.bright.withValues(alpha: dark ? 0.7 : 0.55),
-              ],
-              stops: const <double>[0, 0.4, 0.6, 1],
-            ).createShader(rect),
+            ..color = glass.halo.withValues(alpha: dark ? 0.34 : 0.26)
+            ..maskFilter = MaskFilter.blur(BlurStyle.normal, dark ? 6 : 2.5),
         );
         canvas.restore();
       }
@@ -581,6 +535,271 @@ class _TrackPainter extends CustomPainter {
       old.max != max ||
       old.track != track ||
       old.dark != dark;
+}
+
+/// A pill slider's fill: clear, colourless water in the glass tube, following the value
+/// (inset and concentric, shrinking smoothly to nothing; see
+/// [GlassSlider.fillShapes]). A real refracting lens (water's refractive
+/// index, a hint of dispersion, Fresnel edges) under painted light cues
+/// ([_WaterPainter]). Solid under Reduce Transparency; without refraction
+/// (route transitions, the kill switch) the cues alone.
+class _WaterFill extends StatelessWidget {
+  const _WaterFill({
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.dark,
+  });
+
+  final ValueListenable<double> value;
+  final double min;
+  final double max;
+  final bool dark;
+
+  /// Clear water: no tint, no whitening, the background's own saturation
+  /// (it takes whatever colour is behind it), water's refractive index, a
+  /// hint of dispersion and Fresnel edges.
+  static LiquidGlassSettings _water({required bool dark}) =>
+      LiquidGlassSettings(
+        glassColor: const Color(0x00FFFFFF),
+        thickness: 24,
+        blur: 1,
+        refractiveIndex: 1.33,
+        chromaticAberration: 0.03,
+        lightIntensity: dark ? 0.7 : 1,
+        fresnelStrength: dark ? 1.05 : 1.4,
+        saturation: 1,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final GlassPolicy? policy = GlassPolicy.maybeOf(context);
+    final PillGlass g = PillFill.of(dark: dark);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        final Size size = box.biggest;
+        return ValueListenableBuilder<double>(
+          valueListenable: value,
+          builder: (BuildContext context, double v, _) {
+            final double fraction = ((v - min) / (max - min)).clamp(0.0, 1.0);
+            final ({RRect tube, RRect body})? shapes = GlassSlider.fillShapes(
+              size,
+              fraction,
+            );
+            if (shapes == null) return const SizedBox.shrink();
+            final Rect r = shapes.body.outerRect;
+            final double radius = math.min(r.height / 2, r.width / 2);
+            final Widget cues = CustomPaint(
+              painter: _WaterPainter(glass: g, dark: dark, radius: radius),
+              child: const SizedBox.expand(),
+            );
+            final Widget water = (policy?.solid ?? false)
+                ? DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: g.solid,
+                      borderRadius: BorderRadius.circular(radius),
+                    ),
+                  )
+                : !(policy?.refraction ?? true)
+                ? cues
+                : GlassContainer(
+                    shape: LiquidRoundedRectangle(borderRadius: radius),
+                    useOwnLayer: true,
+                    settings: _water(dark: dark),
+                    child: cues,
+                  );
+            return ClipRRect(
+              clipper: _RRectClip(shapes.tube),
+              child: Stack(
+                children: <Widget>[
+                  Positioned.fromRect(
+                    key: const ValueKey<String>('pill-water'),
+                    rect: r,
+                    child: water,
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _RRectClip extends CustomClipper<RRect> {
+  const _RRectClip(this.rrect);
+  final RRect rrect;
+  @override
+  RRect getClip(Size size) => rrect;
+  @override
+  bool shouldReclip(_RRectClip old) => old.rrect != rrect;
+}
+
+/// The light on the water (it has no colour of its own): the meniscus along
+/// the top, a glint, a bright crescent where the leading end curves, a faint
+/// internal reflection along the bottom and Fresnel-bright edges. Everything bright
+/// stays above or below the band the icon and label sit in (30-70 % of the
+/// height), so their ink keeps its contrast.
+class _WaterPainter extends CustomPainter {
+  const _WaterPainter({
+    required this.glass,
+    required this.dark,
+    required this.radius,
+  });
+
+  final PillGlass glass;
+  final bool dark;
+  final double radius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double w = size.width, h = size.height;
+    final Rect rect = Offset.zero & size;
+    final RRect body = RRect.fromRectAndRadius(rect, Radius.circular(radius));
+    canvas.save();
+    canvas.clipRRect(body);
+    if (!dark) {
+      // Light: a little luminance, neutral (the background keeps its own
+      // colour; the navy ink only gains).
+      canvas.drawRRect(
+        body,
+        Paint()..color = Colors.white.withValues(alpha: 0.1),
+      );
+    } else {
+      // Dark: a faint soft glow just inside the edge.
+      canvas.drawRRect(
+        body.deflate(3),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 6
+          ..color = Colors.white.withValues(alpha: 0.05)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+      );
+    }
+    if (!dark) {
+      // Light: the water's thicker edge, a faint neutral shading just inside
+      // it (colourless, so the background keeps its own colour), gives the
+      // body a little more definition against the light track.
+      canvas.drawRRect(
+        body.deflate(2.5),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 5
+          ..color = Colors.black.withValues(alpha: 0.09)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+      );
+    }
+    // Internal reflection along the bottom.
+    canvas.drawRRect(
+      body.deflate(1.2),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: <Color>[
+            Colors.white.withValues(alpha: 0),
+            Colors.white.withValues(alpha: 0),
+            Colors.white.withValues(alpha: dark ? 0.22 : 0.4),
+          ],
+          stops: const <double>[0, 0.8, 1],
+        ).createShader(rect),
+    );
+    // The meniscus: a bright line hugging the top edge, softly haloed,
+    // fading towards both ends.
+    final double m = dark ? 0.62 : 0.95;
+    final Shader fade = LinearGradient(
+      colors: <Color>[
+        Colors.white.withValues(alpha: 0.2 * m),
+        Colors.white.withValues(alpha: m),
+        Colors.white.withValues(alpha: m),
+        Colors.white.withValues(alpha: 0.35 * m),
+      ],
+      stops: const <double>[0, 0.18, 0.8, 1],
+    ).createShader(rect);
+    final Rect top = Rect.fromLTWH(0, 0, w, h * 0.22);
+    canvas.save();
+    canvas.clipRect(top);
+    canvas.drawRRect(
+      body.deflate(dark ? 1.4 : 2),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = dark ? 2 : 4
+        ..shader = fade
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, dark ? 1.3 : 2.5),
+    );
+    // Dark: the line sits closer to the rim, so the bright border is a
+    // little narrower.
+    canvas.drawRRect(
+      body.deflate(dark ? 0.8 : 1.1),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = dark ? 0.9 : 1.2
+        ..shader = fade,
+    );
+    canvas.restore();
+    // A glint: the light source reflected near the top of the leading end.
+    if (w > h * 1.4) {
+      final Rect glint = Rect.fromCenter(
+        center: Offset(w - h * 0.95, h * 0.2),
+        width: h * 0.9,
+        height: h * 0.11,
+      );
+      canvas.drawOval(
+        glint,
+        Paint()
+          ..color = Colors.white.withValues(alpha: dark ? 0.62 : 0.9)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.6),
+      );
+    }
+    // The curved leading end catches the light: a thin bright crescent.
+    if (w > h * 0.6) {
+      final Rect cap = Rect.fromLTWH(
+        w - 2 * radius,
+        0,
+        2 * radius,
+        h,
+      ).deflate(1.2);
+      canvas.drawArc(
+        cap,
+        -math.pi / 3,
+        math.pi * 2 / 3,
+        false,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = dark ? 1.15 : 1.5
+          ..color = Colors.white.withValues(alpha: dark ? 0.45 : 0.75)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 0.8),
+      );
+    }
+    // Fresnel: the water's edges catch more light than its middle.
+    canvas.drawRRect(
+      body.deflate(dark ? 0.4 : 0.5),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = dark ? 0.75 : 1
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: <Color>[
+            Colors.white.withValues(alpha: dark ? 0.6 : 0.9),
+            Colors.white.withValues(alpha: 0.12),
+            Colors.white.withValues(alpha: 0.08),
+            (dark ? Colors.white : glass.halo).withValues(
+              alpha: dark ? 0.3 : 0.36,
+            ),
+          ],
+          stops: const <double>[0, 0.4, 0.6, 1],
+        ).createShader(rect),
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_WaterPainter old) =>
+      old.glass != glass || old.dark != dark || old.radius != radius;
 }
 
 /// Semantics helper for 1..10 level sliders ("Speed 5 of 10").

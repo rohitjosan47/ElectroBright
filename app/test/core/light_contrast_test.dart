@@ -3,7 +3,6 @@ import 'package:electrobright/core/color/hsv.dart';
 import 'package:electrobright/core/color/light_surfaces.dart';
 import 'package:electrobright/core/color/light_tone.dart';
 import 'package:electrobright/design/tokens/tokens.dart';
-import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Light theme contrast (policy V1), measured on what each element really
@@ -77,20 +76,38 @@ void main() {
     });
   }
 
-  test("the pill glass's fixed ink reads on every part of it", () {
-    // The fill is translucent: over any canvas it lies between the tint over
-    // black and the tint over white (compositing is monotone per channel).
-    for (final bool dark in <bool>[false, true]) {
-      final PillGlass g = PillFill.of(dark: dark);
-      for (final Color part in <Color>[g.deep, g.base, g.bright]) {
-        for (final int under in <int>[0xFF000000, 0xFFFFFFFF]) {
-          expect(
-            LightInk.contrast(
-              g.ink.toARGB32(),
-              LightInk.over(part.toARGB32(), g.opacity, under),
+  test("the pill glass's fixed ink reads on it over every light's track", () {
+    // The water is transparent: it is checked as it shows over the track of
+    // every light (light theme: chrome glass on the canvas; dark theme: the
+    // panel glass on the canvas's top and middle stops).
+    for (final MapEntry<String, (LinearRgb, bool)> e in lights.entries) {
+      final (LinearRgb colour, bool off) = e.value;
+      final DisplayColor d = DisplayColor(colour, 1, off: off);
+      final LightSurfaces s = LightSurfaces(LightTone.derive(d, dark: false));
+      final LightTone night = LightTone.derive(d, dark: true);
+      for (final (bool dark, int track) in <(bool, int)>[
+        (false, s.pillTrack),
+        for (final int canvas in <int>[night.canvas[0], night.canvas[1]])
+          (
+            true,
+            LightInk.over(
+              LightInk.over(LightInk.white, 0.1, night.tint),
+              0.16,
+              canvas,
             ),
+          ),
+      ]) {
+        final PillGlass g = PillFill.of(dark: dark);
+        // Colourless water: what shows under the ink is the track itself;
+        // under Reduce Transparency the solid fill.
+        for (final (String on, int under) in <(String, int)>[
+          ('the water', track),
+          ('the solid fill', g.solid.toARGB32()),
+        ]) {
+          expect(
+            LightInk.contrast(g.ink.toARGB32(), under),
             greaterThanOrEqualTo(4.5),
-            reason: '${dark ? 'dark' : 'light'} $part over $under',
+            reason: '${e.key}, ${dark ? 'dark' : 'light'}: ink on $on',
           );
         }
       }

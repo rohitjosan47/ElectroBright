@@ -329,6 +329,8 @@ class _SlotTileState extends State<_SlotTile> {
         onLongPress: _run(widget.onLongPress),
         child: GlassSurface(
           radius: Radii.medium,
+          liquid: true,
+          quietGlint: true,
           padding: const EdgeInsets.all(Space.s),
           child: Opacity(
             opacity: filled

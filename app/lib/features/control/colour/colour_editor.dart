@@ -38,6 +38,7 @@ class ColourEditor extends StatefulWidget {
     this.whitePoints = const LedWhitePoints(),
     this.onGestureStart,
     this.onGestureEnd,
+    this.onFullRange,
     this.showChannels = true,
     this.enabled = true,
     super.key,
@@ -48,6 +49,14 @@ class ColourEditor extends StatefulWidget {
   final LedWhitePoints whitePoints;
   final VoidCallback? onGestureStart;
   final VoidCallback? onGestureEnd;
+
+  /// Tunable white has no level control (the brightness pill dims it). A
+  /// white still below full level (a preset, the Channels sliders) moves to
+  /// full when its temperature is next touched: [full] is that temperature
+  /// at full level, and the parent moves [level] (perceptual 0..1) into the
+  /// master brightness, so the light's output stays the same. Without it,
+  /// the temperature keeps the level it has.
+  final void Function(ChannelColor full, double level)? onFullRange;
 
   final bool showChannels;
   final bool enabled;
@@ -126,6 +135,25 @@ class _ColourEditorState extends State<ColourEditor> {
   }
 
   void _rebuild() => setState(() => _tree = null);
+
+  /// The level of the white being edited (1 unless it came in lower).
+  double get _whiteLevel => switch (_intent) {
+    WhiteIntent(:final double level) => level,
+    _ => switch (_engine.decode(_encoded)) {
+      WhiteIntent(:final double level) => level,
+      _ => 1,
+    },
+  };
+
+  /// See [ColourEditor.onFullRange].
+  void _toFullRange(double kelvin, double level) {
+    final void Function(ChannelColor, double)? move = widget.onFullRange;
+    if (move == null || level >= 1 - 1e-3) return;
+    final WhiteIntent full = WhiteIntent(kelvin, 1);
+    final ChannelColor c = _engine.encode(full, _layout);
+    _model.value = (intent: full, encoded: c);
+    move(c, level);
+  }
 
   void _start() => widget.onGestureStart?.call();
 
@@ -306,24 +334,12 @@ class _ColourEditorState extends State<ColourEditor> {
                   ledColor(ChannelRole.ww, widget.whitePoints),
                   ledColor(ChannelRole.cw, widget.whitePoints),
                 ],
-                onChangeStart: (_) => _start(),
+                onChangeStart: (_) {
+                  _start();
+                  _toFullRange(k, w.level);
+                },
                 onChanged: (double v) =>
-                    _apply(WhiteIntent(v, w.level), live: true),
-                onChangeEnd: (_) => _end(),
-              ),
-            ),
-            const SizedBox(height: Space.m),
-            _Labelled(
-              label: l.level,
-              value: '${(w.level * 100).round()} %',
-              child: GlassSlider(
-                elevated: false,
-                value: w.level,
-                semanticLabel: l.level,
-                enabled: widget.enabled,
-                divisions: 20,
-                onChangeStart: (_) => _start(),
-                onChanged: (double v) => _apply(WhiteIntent(k, v), live: true),
+                    _apply(WhiteIntent(v, _whiteLevel), live: true),
                 onChangeEnd: (_) => _end(),
               ),
             ),
@@ -456,6 +472,9 @@ class _Labelled extends StatelessWidget {
 /// [steady]: the light's colour kept steady at low channel values (used when
 /// it shows [c]).
 Color swatchOf(ChannelColor c, LedWhitePoints wp, {SteadyLevels? steady}) {
+  // A colour light giving only white light shows neutral white (its white
+  // LEDs never tint the colour in the app).
+  if (LayoutPreview.whitesOnly(c)) return screenColour(LayoutPreview.neutral);
   final LinearRgb lin = DisplayColor.emitted(c, wp);
   return lin.max <= 0
       ? const Color(0xFF202228)

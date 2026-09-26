@@ -36,7 +36,9 @@ final class DisplayColor {
     final ChannelLayout layout = s.layout;
     LinearRgb c;
     if (EbModeCatalog.usesPickedColor(s)) {
-      final LinearRgb raw = emitted(s.color, whitePoints);
+      final LinearRgb raw = LayoutPreview.whitesOnly(s.color)
+          ? LayoutPreview.neutral
+          : emitted(s.color, whitePoints);
       // Black stays black (the light is off), whatever hue is held.
       c = raw.max <= 1e-6
           ? raw
@@ -57,11 +59,14 @@ final class DisplayColor {
     );
   }
 
-  /// Linear light of [color] on its fixture: each channel's LED at full scale
-  /// scaled by the channel value.
+  /// The colour the app shows for [color]: each shown channel's LED at full
+  /// scale, scaled by the channel value. On a light with colour LEDs only R,
+  /// G and B are shown (its white LEDs never tint the colour in the app,
+  /// [LayoutPreview.shows]); a white-only light shows its whites.
   static LinearRgb emitted(ChannelColor color, LedWhitePoints wp) {
     LinearRgb sum = const LinearRgb(0, 0, 0);
     for (int i = 0; i < color.layout.n; i++) {
+      if (!LayoutPreview.shows(color.layout, i)) continue;
       final double level = ColorScience.levelToLinear(color[i]);
       if (level <= 0) continue;
       sum = sum + LayoutPreview.ledColour(color.layout.roles[i], wp) * level;
@@ -74,6 +79,32 @@ final class DisplayColor {
 /// (firmware/core/ElectroBrightCore/src/render/ChannelMap.h) for previews:
 /// what coloured effect light looks like on a light's LEDs.
 abstract final class LayoutPreview {
+  /// A light with colour LEDs giving only white light (R, G and B at zero,
+  /// a white LED on): the app shows [neutral], untinted by the whites.
+  static bool whitesOnly(ChannelColor c) {
+    if (!c.layout.hasColour) return false;
+    bool white = false;
+    for (int i = 0; i < c.layout.n; i++) {
+      if (c[i] == 0) continue;
+      if (shows(c.layout, i)) return false;
+      white = true;
+    }
+    return white;
+  }
+
+  /// What the app shows for a colour light giving only white light.
+  static const LinearRgb neutral = LinearRgb(1, 1, 1);
+
+  /// Whether channel [i] of [layout] counts towards the colour the app
+  /// shows: on a light with colour LEDs only R, G and B (W, CW and WW never
+  /// affect the colour in the app); on a white-only light every channel.
+  static bool shows(ChannelLayout layout, int i) =>
+      !layout.hasColour ||
+      switch (layout.roles[i]) {
+        ChannelRole.r || ChannelRole.g || ChannelRole.b => true,
+        _ => false,
+      };
+
   /// Colour of one LED at full output (linear, max channel 1).
   static LinearRgb ledColour(ChannelRole role, LedWhitePoints wp) =>
       switch (role) {

@@ -558,6 +558,7 @@ class ModeTile extends StatelessWidget {
         },
         child: GlassSurface(
           radius: Radii.medium,
+          liquid: true,
           padding: const EdgeInsets.all(Space.s),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
