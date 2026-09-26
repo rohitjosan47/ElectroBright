@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/protocol/eb/eb_fixture_catalog.dart';
@@ -30,10 +31,8 @@ final class BleStack {
     connections.halt();
     discovery.halt();
     final BleCentral c = central;
-    if (c is _TracingCentral) {
-      final BleCentral inner = c.inner;
-      if (inner is SimCentral) inner.dispose();
-    }
+    final BleCentral inner = c is _TracingCentral ? c.inner : c;
+    if (inner is SimCentral) inner.dispose();
     await connections.dispose();
     await discovery.dispose();
   }
@@ -110,7 +109,10 @@ final class AppServices {
         : null;
     _demoLights = sim;
     final BleCentral inner = sim ?? ReactiveBleCentral();
-    final BleCentral central = _TracingCentral(inner, trace);
+    // Traced for the BLE Lab, which only debug builds show.
+    final BleCentral central = kDebugMode
+        ? _TracingCentral(inner, trace)
+        : inner;
     final Discovery discovery = Discovery(
       central: central,
       scheduler: scheduler,

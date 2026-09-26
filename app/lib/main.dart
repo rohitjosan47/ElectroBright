@@ -16,7 +16,12 @@ import 'design/platform/refresh_governor.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Async disk-to-RAM shader preload only; no GPU work before the first frame.
-  await LiquidGlassWidgets.initialize(enablePerformanceMonitor: false);
+  // Standard quality only: the app never renders premium glass, so its
+  // shaders aren't loaded.
+  await LiquidGlassWidgets.initialize(
+    enablePerformanceMonitor: false,
+    warmUpMode: GlassWarmUpMode.never,
+  );
   prepareAmbientCanvas();
   final AppServices services = AppServices();
   await services.platform.init();
