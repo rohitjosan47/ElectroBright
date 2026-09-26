@@ -50,7 +50,7 @@ class ModeGlyph extends StatefulWidget {
 }
 
 class _ModeGlyphState extends State<ModeGlyph>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   // Runs for one frame per step: between steps nothing changes, so the
   // glyph sleeps on a timer instead of asking for a frame every vsync.
   late final Ticker _ticker = createTicker(_onTick);
@@ -101,12 +101,24 @@ class _ModeGlyphState extends State<ModeGlyph>
     _base = null;
   }
 
+  // Frozen where it holds its frame: under a sheet or dialog (its route is
+  // not the top one), or while the app is not in the foreground.
+  bool get _frozen {
+    final AppLifecycleState? app = WidgetsBinding.instance.lifecycleState;
+    return !(ModalRoute.isCurrentOf(context) ?? true) ||
+        (app != null && app != AppLifecycleState.resumed);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) => _sync();
+
   void _sync() {
     final bool run =
         widget.animate &&
         !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
-    if (run && !ModeGlyph.moves(widget.glyph)) {
-      // Nothing to animate: every frame would be identical, so no ticker.
+    if (run && (!ModeGlyph.moves(widget.glyph) || _frozen)) {
+      // Nothing to animate (every frame would be identical), or frozen: no
+      // ticker. A frozen glyph resumes from the frame it holds.
       _stop();
     } else if (run && !_running) {
       // Started during a frame, time counts from that frame (as a ticker's
@@ -128,6 +140,12 @@ class _ModeGlyphState extends State<ModeGlyph>
   }
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _sync();
@@ -141,6 +159,7 @@ class _ModeGlyphState extends State<ModeGlyph>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _wake?.cancel();
     _ticker.dispose();
     _t.dispose();

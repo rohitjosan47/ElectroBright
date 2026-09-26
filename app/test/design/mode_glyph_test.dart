@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:electrobright/core/protocol/eb/mode_catalog.dart';
 import 'package:electrobright/design/components/mode_glyph.dart';
 import 'package:flutter/material.dart';
@@ -110,5 +112,54 @@ void main() {
     await t.pump(const Duration(milliseconds: 16));
     await t.pump(const Duration(milliseconds: 40));
     expect(timeOf(t), greaterThan(at));
+  });
+
+  testWidgets('frozen while the app is inactive, it holds its frame', (
+    WidgetTester t,
+  ) async {
+    await t.pumpWidget(glyph(EbModeGlyph.breath, reduced: false));
+    await t.pump(const Duration(milliseconds: 500));
+    await t.pump(const Duration(milliseconds: 40));
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await t.pump();
+    final double held = timeOf(t);
+    expect(held, isNot(ModeGlyph.stillTime(EbModeGlyph.breath)));
+    for (int i = 0; i < 30; i++) {
+      await t.pump(const Duration(milliseconds: 16));
+      expect(t.binding.hasScheduledFrame, isFalse, reason: 'frame $i');
+    }
+    expect(timeOf(t), held);
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 40));
+    expect(timeOf(t), greaterThan(held));
+    // It picks up where it was, without a jump over the frozen time.
+    expect(timeOf(t), lessThan(held + 0.1));
+  });
+
+  testWidgets('under a sheet it holds its frame; closed, it runs on', (
+    WidgetTester t,
+  ) async {
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: glyph(EbModeGlyph.fire, reduced: false)),
+      ),
+    );
+    await t.pump(const Duration(milliseconds: 200));
+    final BuildContext context = t.element(find.byType(ModeGlyph));
+    unawaited(
+      showModalBottomSheet<void>(
+        context: context,
+        builder: (_) => const SizedBox(height: 100),
+      ),
+    );
+    await t.pumpAndSettle();
+    final double held = timeOf(t);
+    await t.pump(const Duration(seconds: 1));
+    expect(timeOf(t), held);
+    Navigator.of(context).pop();
+    await t.pumpAndSettle();
+    await t.pump(const Duration(milliseconds: 40));
+    expect(timeOf(t), greaterThan(held));
   });
 }

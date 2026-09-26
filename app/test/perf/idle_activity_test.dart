@@ -235,6 +235,38 @@ void main() {
     // The animated orb draws only when it steps: at most 30 Hz (A).
     expect(a.tickers, 0);
     expect(a.framesPerSecond, inInclusiveRange(20, 30));
+
+    // Under a sheet it holds its frame (C).
+    await t.tap(find.byIcon(Icons.timer_outlined));
+    await DemoApp.settle(t, 1);
+    final Activity sheet = await measure(
+      t,
+      d,
+      'control on, Rainbow, timer sheet',
+      light: 'Living room',
+    );
+    expect(sheet.framesPerSecond, 0);
+    Navigator.of(t.element(find.byType(ControlScreen))).pop();
+    await DemoApp.settle(t, 1);
+    final Activity back = await measure(
+      t,
+      d,
+      'control on, Rainbow, sheet closed',
+      light: 'Living room',
+    );
+    expect(back.framesPerSecond, inInclusiveRange(20, 30));
+
+    // While the app is inactive (app switcher, Control Centre) too.
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    final Activity inactive = await measure(
+      t,
+      d,
+      'control on, Rainbow, app inactive',
+      light: 'Living room',
+    );
+    expect(inactive.framesPerSecond, 0);
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await DemoApp.settle(t, 1);
     await DemoApp.shutDown(t);
   }, timeout: const Timeout(Duration(minutes: 8)));
 
