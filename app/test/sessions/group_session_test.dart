@@ -469,7 +469,8 @@ void main() {
     expect(group.isFollowing(a), isTrue);
     expect(twin(a).scene.mode, 2, reason: 'caught up');
 
-    // rejoinAll: every light back, excluded ones too, and caught up.
+    // rejoinAll: every light back, excluded ones too, and caught up (the
+    // catch-up reaches every light, so every light follows again).
     unawaited(session(b).setMode(5));
     group.setExcluded(rgb, excluded: true);
     await run(const Duration(seconds: 1));
@@ -522,4 +523,69 @@ void main() {
     }
     expect(store.read(GroupSession.trimKey), isEmpty);
   });
+
+  test('only a light a group command reached is detached by a change on its '
+      'own controls', () async {
+    await build();
+    await activateAll();
+    // A group command that reaches only the colour lights.
+    await settle(group.setColour(const HsvIntent(Hsv(200, 1, 1))));
+    expect(group.isFollowing(a), isTrue);
+    expect(group.isFollowing(cct), isFalse);
+    expect(group.isFollowing(w), isFalse);
+
+    // Used on their own: colour, brightness, mode.
+    session(cct).setBrightness(60);
+    unawaited(session(w).setMode(3));
+    session(a).setBrightness(60);
+    await run(const Duration(seconds: 1));
+    // Never reached by the group: still in it, not detached.
+    for (final String id in <String>[cct, w]) {
+      expect(group.isOwn(id), isFalse, reason: id);
+      expect(group.isFollowing(id), isFalse, reason: id);
+      expect(
+        group.status.members.any((GroupMember m) => m.id == id && !m.own),
+        isTrue,
+        reason: id,
+      );
+    }
+    // Reached by it: detached.
+    expect(group.isOwn(a), isTrue);
+    expect(group.isFollowing(a), isFalse);
+  });
+
+  test(
+    'rejoining with nothing to catch up does not make a light follow',
+    () async {
+      await build();
+      await activateAll();
+      await settle(group.setBrightness(150));
+      session(a).setBrightness(70);
+      group.setExcluded(b, excluded: true);
+      await run(const Duration(seconds: 1));
+      expect(group.isOwn(a), isTrue);
+      // All Lights closed: nothing to catch up.
+      group.deactivate();
+      group.rejoinAll();
+      await run(const Duration(seconds: 1));
+      for (final String id in <String>[a, b]) {
+        expect(group.isOwn(id) || group.isExcluded(id), isFalse, reason: id);
+        expect(group.isFollowing(id), isFalse, reason: id);
+      }
+      // Used on their own for a while: they stay in the group.
+      session(a).setBrightness(40);
+      unawaited(session(b).setMode(3));
+      await run(const Duration(seconds: 1));
+      expect(group.isOwn(a), isFalse);
+      expect(group.isOwn(b), isFalse);
+      // Once the group reaches them again, they follow and can detach.
+      group.activate();
+      await run(const Duration(seconds: 2));
+      await settle(group.setMode(2));
+      expect(group.isFollowing(a), isTrue);
+      unawaited(session(a).setMode(4));
+      await run(const Duration(seconds: 1));
+      expect(group.isOwn(a), isTrue);
+    },
+  );
 }

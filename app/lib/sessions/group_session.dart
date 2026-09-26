@@ -250,7 +250,9 @@ final class GroupSession {
   /// Fixture ids left out of the group (persisted).
   static const String excludedKey = 'group.excluded';
 
-  /// Lights that got a group command since they last joined (persisted).
+  /// Lights a group command (or catch-up) reached since they last joined
+  /// (persisted). Only these are detached by a change on their own
+  /// controls.
   static const String followingKey = 'group.following';
 
   /// Lights detached by a change on their own controls (persisted).
@@ -336,8 +338,9 @@ final class GroupSession {
   }
 
   /// Takes a light back into the group (from its own settings or from being
-  /// left out): it follows again and, while the group is active, catches up
-  /// with what the group was sent.
+  /// left out). While the group is active it catches up with what the group
+  /// was sent; it follows the group again only once a group command or that
+  /// catch-up reaches it.
   void rejoin(String id) => _rejoin(<String>[id]);
 
   /// [rejoin] for every light.
@@ -352,7 +355,6 @@ final class GroupSession {
     for (final String id in known) {
       _own.remove(id);
       _excluded.remove(id);
-      _following.add(id);
     }
     _save();
     if (_active) {
