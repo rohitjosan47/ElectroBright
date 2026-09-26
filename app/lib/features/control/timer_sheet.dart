@@ -51,7 +51,8 @@ String countdown(Duration d) {
   return s >= 3600 ? '${s ~/ 3600}:$mm:$ss' : '$mm:$ss';
 }
 
-/// Time left on the light's sleep timer (null = none), ticking each second.
+/// Time left on the light's sleep timer (null = none), ticking each second
+/// while it can be seen (not under a full-screen route).
 class TimerCountdown extends ConsumerStatefulWidget {
   const TimerCountdown({
     required this.fixtureId,
@@ -68,11 +69,28 @@ class TimerCountdown extends ConsumerStatefulWidget {
 class _TimerCountdownState extends ConsumerState<TimerCountdown> {
   ProviderSubscription<Duration?>? _deadline;
   Timer? _tick;
+  bool _shown = true;
 
   @override
   void initState() {
     super.initState();
     _listen();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Covered by a full-screen route it stops; shown again, it reads the
+    // time left at once (the text is computed from the deadline).
+    final bool shown = TickerMode.valuesOf(context).enabled;
+    if (shown == _shown) return;
+    _shown = shown;
+    if (!shown) {
+      _tick?.cancel();
+      _tick = null;
+    } else {
+      _arm(_deadline?.read());
+    }
   }
 
   @override
@@ -100,7 +118,7 @@ class _TimerCountdownState extends ConsumerState<TimerCountdown> {
   /// Ticks each second while the light's timer runs, stops once it is over.
   void _arm(Duration? deadline) {
     final Duration now = ref.read(servicesProvider).scheduler.now;
-    if (deadline == null || deadline <= now) {
+    if (deadline == null || deadline <= now || !_shown) {
       _tick?.cancel();
       _tick = null;
       return;

@@ -346,8 +346,19 @@ void main() {
       'light settings on top',
       light: 'Living room',
     );
-    // Baseline: the covered countdown keeps rebuilding (item 6).
-    expect(covered.countdownBuildsPerSecond, 1);
+    // The covered countdown stops (item 6; baseline 1 a second) ...
+    expect(covered.countdownBuildsPerSecond, 0);
+    // ... and runs again when shown.
+    Navigator.of(t.element(find.byType(ControlScreen, skipOffstage: false)))
+        .pop();
+    await DemoApp.settle(t, 1);
+    final Activity shown = await measure(
+      t,
+      d,
+      'light settings closed',
+      light: 'Living room',
+    );
+    expect(shown.countdownBuildsPerSecond, 1);
     await DemoApp.shutDown(t);
   }, timeout: const Timeout(Duration(minutes: 8)));
 
