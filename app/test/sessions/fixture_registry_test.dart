@@ -161,6 +161,50 @@ void main() {
     await again.dispose();
   });
 
+  test('a repeated status is not emitted; last-known is saved once', () async {
+    final JsonStore store = await JsonStore.open(dir);
+    final FixtureRegistry reg = FixtureRegistry(
+      store: store,
+      connections: manager,
+    );
+    reg.add(guess());
+    final Want w = manager.want('f1', WantReason.screen);
+    await run(const Duration(seconds: 5));
+    w.release();
+    await run(const Duration(seconds: 70)); // idle grace: disconnects
+    final FixtureSession session = manager.session('f1')!;
+    expect(session.status.phase, isNot(LinkPhase.ready));
+    expect(session.status.lastKnown, isNotNull);
+
+    final List<FixtureStatus> emits = <FixtureStatus>[];
+    final StreamSubscription<FixtureStatus> sub = session.statuses.listen(
+      emits.add,
+    );
+    final int writes = store.writes;
+    // Connection churn while it's away: each change of phase is news, a
+    // repeat is not; the last-known state is unchanged, so never rewritten.
+    session.setPhase(LinkPhase.waiting);
+    session.setPhase(LinkPhase.waiting);
+    session.setPhase(LinkPhase.connecting);
+    session.setPhase(LinkPhase.connecting);
+    session.setPhase(LinkPhase.unavailable, attempt: 3);
+    session.setPhase(LinkPhase.unavailable, attempt: 3);
+    await _pump();
+    expect(
+      <LinkPhase>[for (final FixtureStatus e in emits) e.phase],
+      <LinkPhase>[
+        LinkPhase.waiting,
+        LinkPhase.connecting,
+        LinkPhase.unavailable,
+      ],
+    );
+    expect(store.writes, writes);
+
+    await sub.cancel();
+    await reg.dispose();
+    await store.close();
+  });
+
   test('white points come from the catalog, replacing saved ones', () async {
     const LedWhitePoints stale = LedWhitePoints(cwK: 5000, wwK: 3000);
     final LedWhitePoints product = EbFixtureCatalog.cct.whitePoints;

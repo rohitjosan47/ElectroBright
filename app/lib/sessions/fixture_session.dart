@@ -89,6 +89,32 @@ final class FixtureStatus {
         : s.copyWith(scene: s.scene.copyWith(brightness: b), sleeping: false);
   }
 
+  /// The same status: every field equal, and the very same live [view]
+  /// (a new view is always news).
+  @override
+  bool operator ==(Object other) =>
+      other is FixtureStatus &&
+      other.phase == phase &&
+      identical(other.view, view) &&
+      other.lastKnown == lastKnown &&
+      other.attempt == attempt &&
+      other.incompatibility == incompatibility &&
+      other.detail == detail &&
+      other.offlineBrightness == offlineBrightness &&
+      other.colourPick == colourPick;
+
+  @override
+  int get hashCode => Object.hash(
+    phase,
+    identityHashCode(view),
+    lastKnown,
+    attempt,
+    incompatibility,
+    detail,
+    offlineBrightness,
+    colourPick,
+  );
+
   FixtureStatus _withOffline(int? brightness) => FixtureStatus(
     phase: phase,
     view: view,
@@ -293,7 +319,12 @@ final class FixtureSession {
   }
 
   void _set(FixtureStatus s) {
-    _status = s._withOffline(_offlineBrightness)._withPick(_pick);
+    final FixtureStatus next = s
+        ._withOffline(_offlineBrightness)
+        ._withPick(_pick);
+    // Nothing new: no emit (and no rebuilds or saves behind it).
+    if (next == _status) return;
+    _status = next;
     if (!_statuses.isClosed) _statuses.add(_status);
   }
 

@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:collection/collection.dart';
+
 import '../core/color/led_white_points.dart';
 import '../core/model/fixture.dart';
 import '../core/protocol/eb/eb_fixture_catalog.dart';
@@ -184,7 +186,10 @@ final class FixtureRegistry {
     final Fixture? f = _fixtures[id];
     if (f == null || st.scene.layout != f.layout) return;
     final Map<String, Object?> all = _map(lastKnownCollection);
-    all[id] = DeviceStateJson.toJson(st);
+    final Map<String, Object?> json = DeviceStateJson.toJson(st);
+    // Saved already: no rewrite of the file.
+    if (const DeepCollectionEquality().equals(all[id], json)) return;
+    all[id] = json;
     _store.write(lastKnownCollection, all);
   }
 
