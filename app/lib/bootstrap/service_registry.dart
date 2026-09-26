@@ -116,7 +116,10 @@ final class AppServices {
       scheduler: scheduler,
       isAndroid: android,
     );
-    final ConnectionManager connections = ConnectionManager(
+    late final ConnectionManager connections;
+    // Saved lights are never forgotten.
+    discovery.keep = (String id) => connections.manages(id);
+    connections = ConnectionManager(
       central: central,
       discovery: discovery,
       scheduler: scheduler,

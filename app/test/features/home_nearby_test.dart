@@ -119,4 +119,25 @@ void main() {
     await DemoApp.settle(t, 10);
     await DemoApp.shutDown(t);
   });
+
+  testWidgets('a nearby light gone for 2 minutes leaves the list', (
+    WidgetTester t,
+  ) async {
+    t.view.physicalSize = const Size(393, 2400);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    final DemoApp d = await DemoApp.start(t);
+    await DemoApp.settle(t, 3);
+    expect(find.byType(NearbyRow), findsOneWidget);
+    d.radio.setAvailable('demo-legacy', available: false);
+    await DemoApp.settle(t, 100);
+    expect(find.byType(NearbyRow), findsOneWidget);
+    await DemoApp.settle(t, 35);
+    expect(find.byType(NearbyRow), findsNothing);
+    // Back again, it's listed again.
+    d.radio.setAvailable('demo-legacy', available: true);
+    await DemoApp.settle(t, 2);
+    expect(find.byType(NearbyRow), findsOneWidget);
+    await DemoApp.shutDown(t);
+  });
 }

@@ -112,12 +112,23 @@ final class Discovery {
   static const Duration iosPresenceOn = Duration(seconds: 8);
   static const Duration iosPresenceOff = Duration(seconds: 22);
 
+  /// An unsaved device not seen for this long of unfiltered scanning is
+  /// forgotten (off, or gone out of range).
+  static const Duration forgetAfter = Duration(minutes: 2);
+  static const Duration _forgetCheck = Duration(seconds: 10);
+
+  /// Devices never forgotten (the saved lights).
+  bool Function(String id) keep = _keepNone;
+  static bool _keepNone(String id) => false;
+
   BleAdapterState _adapter = BleAdapterState.unknown;
   late final StreamSubscription<BleAdapterState> _adapterSub;
   final List<ScanLease> _leases = <ScanLease>[];
   final Map<String, SeenDevice> _seen = <String, SeenDevice>{};
   final StreamController<SeenDevice> _updates =
       StreamController<SeenDevice>.broadcast();
+  final StreamController<String> _forgotten =
+      StreamController<String>.broadcast();
   final List<Duration> _starts = <Duration>[];
 
   StreamSubscription<Advertisement>? _scan;
@@ -125,12 +136,18 @@ final class Discovery {
   Cancelable? _deferred;
   Cancelable? _duty;
   bool _dutyOff = false;
+  // Since when an unfiltered scan (which sees every device) has run.
+  Duration? _unfilteredSince;
+  Cancelable? _forgetTimer;
   bool _disposed = false;
   bool _paused = false;
 
   int scanStarts = 0;
 
   Stream<SeenDevice> get updates => _updates.stream;
+
+  /// Ids of devices forgotten (see [forgetAfter]).
+  Stream<String> get forgotten => _forgotten.stream;
   Iterable<SeenDevice> get devices => _seen.values;
   SeenDevice? seen(String id) => _seen[id];
   bool get isScanning => _scan != null;
@@ -176,6 +193,7 @@ final class Discovery {
     _disposed = true;
     _deferred?.cancel();
     _duty?.cancel();
+    _forgetTimer?.cancel();
   }
 
   Future<void> dispose() async {
@@ -183,6 +201,7 @@ final class Discovery {
     await _adapterSub.cancel();
     await _scan?.cancel();
     unawaited(_updates.close());
+    unawaited(_forgotten.close());
   }
 
   _ScanConfig? _wanted() {
@@ -247,6 +266,10 @@ final class Discovery {
     _scan = _central
         .scan(services: config.services, intensity: config.intensity)
         .listen(_onAdvert, onError: (Object _) => _stop());
+    if (config.services.isEmpty) {
+      _unfilteredSince = _scheduler.now;
+      _forgetTimer = _scheduler.after(_forgetCheck, _forget);
+    }
     if (config.dutyCycled) {
       _duty = _scheduler.after(iosPresenceOn, () {
         _stop();
@@ -265,9 +288,32 @@ final class Discovery {
   void _stop() {
     _duty?.cancel();
     _duty = null;
+    _forgetTimer?.cancel();
+    _forgetTimer = null;
+    _unfilteredSince = null;
     final StreamSubscription<Advertisement>? s = _scan;
     _scan = null;
     if (s != null) unawaited(s.cancel());
+  }
+
+  /// Forgets unsaved devices an unfiltered scan hasn't seen for
+  /// [forgetAfter] (only time spent scanning counts: a device isn't
+  /// forgotten for not being looked for).
+  void _forget() {
+    final Duration? since = _unfilteredSince;
+    if (_disposed || since == null) return;
+    final Duration now = _scheduler.now;
+    if (now - since >= forgetAfter) {
+      final List<String> gone = <String>[
+        for (final SeenDevice d in _seen.values)
+          if (now - d.lastSeen > forgetAfter && !keep(d.id)) d.id,
+      ];
+      for (final String id in gone) {
+        _seen.remove(id);
+        _forgotten.add(id);
+      }
+    }
+    _forgetTimer = _scheduler.after(_forgetCheck, _forget);
   }
 
   void _onAdvert(Advertisement a) {

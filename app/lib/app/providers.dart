@@ -199,9 +199,13 @@ final class NearbyNotifier extends Notifier<List<NearbyLight>> {
       }
       update();
     });
+    final StreamSubscription<String> forgotten = d.forgotten.listen(
+      (_) => update(),
+    );
     ref.listen(fixturesProvider, (_, _) => update());
     ref.onDispose(() {
       unawaited(sub.cancel());
+      unawaited(forgotten.cancel());
       lease.release();
     });
     return compute();

@@ -507,6 +507,40 @@ void main() {
     await w.dispose();
   });
 
+  test('an unsaved device unseen for 2 minutes of scanning is forgotten; '
+      'a saved light never is', () async {
+    final _World w = _World(lights: 2);
+    // dev1 isn't saved: only dev0 is registered.
+    await w.manager.unregister('f1');
+    w.discovery.keep = w.manager.manages;
+    final List<String> forgotten = <String>[];
+    final StreamSubscription<String> sub = w.discovery.forgotten.listen(
+      forgotten.add,
+    );
+    final ScanLease lease = w.discovery.acquire(ScanNeed.addFlow);
+    await w.run(const Duration(seconds: 1));
+    expect(w.discovery.seen('dev0'), isNotNull);
+    expect(w.discovery.seen('dev1'), isNotNull);
+
+    // Both go away. Time without a scan doesn't count.
+    w.central.setAvailable('dev0', available: false);
+    w.central.setAvailable('dev1', available: false);
+    lease.release();
+    await w.run(const Duration(minutes: 5));
+    final ScanLease again = w.discovery.acquire(ScanNeed.addFlow);
+    await w.run(const Duration(seconds: 90));
+    expect(w.discovery.seen('dev1'), isNotNull);
+    // Two minutes of scanning without a sight of it: forgotten.
+    await w.run(const Duration(seconds: 45));
+    expect(w.discovery.seen('dev1'), isNull);
+    expect(forgotten, <String>['dev1']);
+    expect(w.discovery.seen('dev0'), isNotNull, reason: 'saved: kept');
+
+    again.release();
+    await sub.cancel();
+    await w.dispose();
+  });
+
   test(
     'Android waits for an advert and connects one light at a time',
     () async {

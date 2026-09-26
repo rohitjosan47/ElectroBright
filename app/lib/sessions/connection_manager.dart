@@ -127,6 +127,10 @@ final class ConnectionManager {
       _slots.values.map((_Slot s) => s.session);
   FixtureSession? session(String fixtureId) => _slots[fixtureId]?.session;
 
+  /// Whether [deviceId] is a registered (saved) light.
+  bool manages(String deviceId) =>
+      _slots.values.any((_Slot s) => s.session.fixture.deviceId == deviceId);
+
   void register(Fixture f) {
     final _Slot? s = _slots[f.id];
     if (s != null) {
