@@ -37,7 +37,11 @@ class AllLightsCard extends ConsumerWidget {
                 ),
               )
               .length;
-    final String status = l.groupConnected(ready, st.total);
+    // Out of every saved light, as on the All Lights screen.
+    final int saved = ref.watch(
+      fixturesProvider.select((List<Fixture> l) => l.length),
+    );
+    final String status = l.groupConnected(ready, saved);
     final Color fg = ToneScope.darkOf(context)
         ? Colors.white
         : const Color(0xFF15171C);

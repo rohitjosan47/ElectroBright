@@ -160,7 +160,7 @@ void main() {
     await t.ensureVisible(include);
     await t.tap(include);
     await DemoApp.settle(t, 1);
-    expect(find.text('4 of 4 connected'), findsOneWidget);
+    expect(find.text('4 of 5 connected'), findsOneWidget);
     final ChannelColor before = d.twin('Reading lamp').color;
     await t.ensureVisible(find.byType(ColourEditor));
     await pick(t, const HsvIntent(Hsv(120, 1, 1)));

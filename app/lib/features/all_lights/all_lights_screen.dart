@@ -357,6 +357,11 @@ class _StatusLine extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
     final GroupStatus st = ref.watch(groupStatusProvider);
+    // Out of every saved light: one left out of the group is not connected
+    // for it.
+    final int saved = ref.watch(
+      fixturesProvider.select((List<Fixture> l) => l.length),
+    );
     final TextStyle style = TextStyle(
       color: fg.withValues(alpha: 0.7),
       fontSize: 13,
@@ -368,7 +373,7 @@ class _StatusLine extends ConsumerWidget {
         children: <Widget>[
           Text(
             <String>[
-              l.groupConnected(st.ready, st.total),
+              l.groupConnected(st.ready, saved),
               if (st.connecting > 0) l.groupConnecting(st.connecting),
             ].join(' · '),
             key: const ValueKey<String>('group-status'),
