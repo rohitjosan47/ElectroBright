@@ -252,34 +252,58 @@ class GlyphPainter extends CustomPainter {
   /// inside, or warm to cool whites on a tunable-white light) with a soft
   /// halo, ends fading into mist, a gleam of light gliding along it, the
   /// halo breathing and a few sparkles twinkling on its outer edge.
-  void _rainbow(Canvas canvas, Offset c, double r, double time) {
-    // Rainbow's own colours: the spectrum; anything else is the light's
-    // rendering of it (warm to cool whites on a tunable-white light), shown
-    // inside (cool) to outside (warm).
-    final List<int> own = EbModeCatalog.modes
-        .firstWhere((EbModeSpec m) => m.glyph == EbModeGlyph.rainbow)
-        .gradient;
-    final bool ownColours =
-        palette.isEmpty ||
-        (palette.length == own.length &&
-            <int>[for (final Color p in palette) p.toARGB32()].indexed
-                .every(((int, int) e) => e.$2 == own[e.$1]));
-    final List<Color> bands = ownColours
-        ? _spectrum
-        : palette.reversed.toList();
+  static final List<int> _rainbowOwn = EbModeCatalog.modes
+      .firstWhere((EbModeSpec m) => m.glyph == EbModeGlyph.rainbow)
+      .gradient;
+
+  // Rainbow's own colours: the spectrum; anything else is the light's
+  // rendering of it (warm to cool whites on a tunable-white light), shown
+  // inside (cool) to outside (warm). Worked out once per painter.
+  late final bool _ownColours =
+      palette.isEmpty ||
+      (palette.length == _rainbowOwn.length &&
+          <int>[for (final Color p in palette) p.toARGB32()].indexed
+              .every(((int, int) e) => e.$2 == _rainbowOwn[e.$1]));
+  late final List<Color> _bands = _ownColours
+      ? _spectrum
+      : palette.reversed.toList();
+
+  // The arch's shaders that depend only on its size, kept across steps.
+  Size? _shadersFor;
+  late Shader _spectrumShader;
+  late Shader _mistShader;
+
+  void _rainbow(Canvas canvas, Size size, Offset c, double r, double time) {
+    final bool ownColours = _ownColours;
+    final List<Color> bands = _bands;
     final Offset o = c + Offset(0, r * 0.42);
     final double outer = r * 0.95, inner = r * 0.47;
     final double width = outer - inner;
     final Rect arc = Rect.fromCircle(center: o, radius: (outer + inner) / 2);
     final Rect disc = Rect.fromCircle(center: o, radius: outer);
-    final Shader spectrum = RadialGradient(
-      colors: bands,
-      stops: <double>[
-        for (int i = 0; i < bands.length; i++)
-          (inner + width * (i + 0.5) / bands.length) / outer,
-      ],
-    ).createShader(disc);
     final Rect bounds = disc.inflate(r * 0.25);
+    if (_shadersFor != size) {
+      _shadersFor = size;
+      _spectrumShader = RadialGradient(
+        colors: bands,
+        stops: <double>[
+          for (int i = 0; i < bands.length; i++)
+            (inner + width * (i + 0.5) / bands.length) / outer,
+        ],
+      ).createShader(disc);
+      _mistShader = SweepGradient(
+        startAngle: math.pi,
+        endAngle: 2 * math.pi,
+        colors: const <Color>[
+          Color(0x00000000),
+          Color(0xFF000000),
+          Color(0xFF000000),
+          Color(0x00000000),
+        ],
+        stops: const <double>[0, 0.24, 0.76, 1],
+      ).createShader(bounds);
+    }
+    final Shader spectrum = _spectrumShader;
     final BlendMode add = _light ? BlendMode.srcOver : BlendMode.plus;
     canvas.saveLayer(bounds, Paint());
     // The halo, breathing.
@@ -370,17 +394,7 @@ class GlyphPainter extends CustomPainter {
       bounds,
       Paint()
         ..blendMode = BlendMode.dstIn
-        ..shader = SweepGradient(
-          startAngle: math.pi,
-          endAngle: 2 * math.pi,
-          colors: const <Color>[
-            Color(0x00000000),
-            Color(0xFF000000),
-            Color(0xFF000000),
-            Color(0x00000000),
-          ],
-          stops: const <double>[0, 0.24, 0.76, 1],
-        ).createShader(bounds),
+        ..shader = _mistShader,
     );
     canvas.restore();
   }
@@ -558,7 +572,7 @@ class GlyphPainter extends CustomPainter {
           );
         }
       case EbModeGlyph.rainbow:
-        _rainbow(canvas, c, r, time);
+        _rainbow(canvas, size, c, r, time);
       case EbModeGlyph.fire:
       case EbModeGlyph.candle:
         final bool candle = glyph == EbModeGlyph.candle;
