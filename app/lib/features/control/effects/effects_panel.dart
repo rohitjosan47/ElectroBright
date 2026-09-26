@@ -56,7 +56,7 @@ class EffectsPanel extends StatelessWidget {
         .where((EbModeSpec m) => m.id == scene.mode)
         .firstOrNull;
     final Color colour = swatchOf(scene.color, whitePoints, steady: steady);
-    final Color fg = ToneScope.of(context).dark
+    final Color fg = ToneScope.darkOf(context)
         ? Colors.white
         : const Color(0xFF15171C);
     final bool large = MediaQuery.textScalerOf(context).scale(1) > 1.5;

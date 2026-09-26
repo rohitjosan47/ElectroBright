@@ -193,6 +193,11 @@ final class LightTone {
 
   /// The neutral tone for "no light" (first launch, nothing connected).
   static LightTone neutral({required bool dark}) =>
+      dark ? _neutralDark : _neutralLight;
+  // Derived once: the same for every screen without a light.
+  static final LightTone _neutralDark = _deriveNeutral(dark: true);
+  static final LightTone _neutralLight = _deriveNeutral(dark: false);
+  static LightTone _deriveNeutral({required bool dark}) =>
       derive(const DisplayColor(LinearRgb(1, 1, 1), 0, off: true), dark: dark);
 
   static LightTone derive(DisplayColor d, {required bool dark}) {

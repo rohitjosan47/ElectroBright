@@ -81,22 +81,26 @@ class _LightSettingsScreenState extends ConsumerState<LightSettingsScreen> {
     final AppLocalizations l = AppLocalizations.of(context);
     final Fixture? f = ref.watch(fixtureProvider(widget.fixtureId));
     if (f == null) return const Scaffold();
-    final FixtureStatus st = ref.watch(fixtureStatusProvider(widget.fixtureId));
+    // Only what the screen shows.
+    final (bool isReady, EbDeviceState? state) = ref.watch(
+      fixtureStatusProvider(widget.fixtureId)
+          .select((FixtureStatus s) => (s.isReady, s.state)),
+    );
     final LightCapabilities caps =
         ref.watch(capabilitiesProvider(widget.fixtureId)) ??
         LightCapabilities.assumed(f.layout);
     final FixtureSession? session = ref.watch(
       fixtureSessionProvider(widget.fixtureId),
     );
-    final bool ready = st.isReady && session != null;
+    final bool ready = isReady && session != null;
     final bool dark = Theme.of(context).brightness == Brightness.dark;
-    final EbScene? scene = st.state?.scene;
+    final EbScene? scene = state?.scene;
     final LightTone tone = scene == null
         ? LightTone.neutral(dark: dark)
         : LightTone.derive(
             DisplayColor.ofScene(
               scene,
-              sleeping: st.state!.sleeping,
+              sleeping: state!.sleeping,
               whitePoints: f.whitePoints,
               steady: ref.watch(steadyLevelsProvider(widget.fixtureId)),
             ),
@@ -282,7 +286,7 @@ class _LightSettingsScreenState extends ConsumerState<LightSettingsScreen> {
                 SwitchListTile(
                   key: const ValueKey<String>('settings-sound'),
                   title: Text(l.sound, style: title),
-                  value: st.state?.soundOn ?? false,
+                  value: state?.soundOn ?? false,
                   onChanged: ready
                       ? (bool on) => unawaited(session.setSound(on: on))
                       : null,

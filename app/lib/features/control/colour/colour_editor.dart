@@ -368,7 +368,7 @@ class _Channels extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
-    final bool dark = ToneScope.of(context).dark;
+    final bool dark = ToneScope.darkOf(context);
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
       child: ExpansionTile(
@@ -421,7 +421,7 @@ class _Labelled extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color fg = ToneScope.of(context).dark
+    final Color fg = ToneScope.darkOf(context)
         ? Colors.white
         : const Color(0xFF15171C);
     final TextStyle style = TextStyle(

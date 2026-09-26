@@ -400,7 +400,19 @@ void main() {
     final DemoApp d = await start(t);
     await d.open(t, 'Living room');
     quiet(d);
+    await DemoApp.settle(t, 1);
     d.session('Living room').setColor(ChannelColor.rgbw(0, 80, 255, 0));
+    // The second after it: the display glides to it. Widgets that only
+    // need light/dark aren't rebuilt on its steps (item 5; baseline 68
+    // rebuilds a frame, the toolbar's countdown 42 a second).
+    final Activity glide = await measure(
+      t,
+      d,
+      'colour glide (1 s after a change)',
+      light: 'Living room',
+    );
+    expect(glide.rebuildsPerFrame, lessThan(40));
+    expect(glide.countdownBuildsPerSecond, 0);
     await DemoApp.settle(t, 2);
     await measure(
       t,

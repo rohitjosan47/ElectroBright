@@ -323,7 +323,7 @@ class ControlToolbar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
     final FixtureSession? s = enabled ? session : null;
-    final Color fg = ToneScope.of(context).dark
+    final Color fg = ToneScope.darkOf(context)
         ? Colors.white
         : const Color(0xFF15171C);
     return TimerCountdown(

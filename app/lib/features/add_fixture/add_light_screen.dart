@@ -269,7 +269,7 @@ class _PickList extends ConsumerWidget {
     final AppLocalizations l = AppLocalizations.of(context);
     final List<NearbyLight> nearby = ref.watch(nearbyProvider);
     final List<Fixture> saved = ref.watch(fixturesProvider);
-    final bool dark = ToneScope.of(context).dark;
+    final bool dark = ToneScope.darkOf(context);
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
     return ListView(
       children: <Widget>[
@@ -309,7 +309,7 @@ class NearbyRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
-    final bool dark = ToneScope.of(context).dark;
+    final bool dark = ToneScope.darkOf(context);
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
     final ChannelLayout? hint = light.layoutHint;
     return Semantics(

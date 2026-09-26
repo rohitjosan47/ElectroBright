@@ -17,6 +17,7 @@ import '../../design/haptics/haptics.dart';
 import '../../design/haptics/haptics_scope.dart';
 import '../../design/tokens/tokens.dart';
 import '../../design/tone/tone_scope.dart';
+import '../../drivers/electrobright/eb_types.dart';
 import '../../l10n/app_localizations.dart';
 import '../../sessions/connection_manager.dart';
 import '../../sessions/fixture_session.dart';
@@ -40,10 +41,19 @@ class LightTile extends ConsumerWidget {
     final AppLocalizations l = AppLocalizations.of(context);
     final Fixture? f = ref.watch(fixtureProvider(fixtureId));
     if (f == null) return const SizedBox.shrink();
-    final FixtureStatus st = ref.watch(fixtureStatusProvider(fixtureId));
-    final EbScene? scene = st.state?.scene;
-    final bool sleeping = st.state?.sleeping ?? false;
-    final bool dark = ToneScope.of(context).dark;
+    // Only what the tile shows: not rebuilt for a change it doesn't show.
+    final (
+      EbDeviceState? state,
+      LinkPhase phase,
+      EbIncompatibility? incompatibility,
+    ) = ref.watch(
+      fixtureStatusProvider(fixtureId)
+          .select((FixtureStatus s) => (s.state, s.phase, s.incompatibility)),
+    );
+    final String presence = presenceOf(l, phase, incompatibility);
+    final EbScene? scene = state?.scene;
+    final bool sleeping = state?.sleeping ?? false;
+    final bool dark = ToneScope.darkOf(context);
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
 
     final DisplayColor? dc = scene == null
@@ -60,12 +70,12 @@ class LightTile extends ConsumerWidget {
     final String modeName = scene == null
         ? ''
         : EbModeCatalog.byId(scene.mode).name;
-    final bool live = st.phase == LinkPhase.ready;
+    final bool live = phase == LinkPhase.ready;
 
     return Semantics(
       button: true,
       label: '${f.name}, ${fixtureTypeName(l, f.layout)}',
-      value: presenceText(l, st),
+      value: presence,
       child: GestureDetector(
         onTap: onOpen,
         onLongPress: () {
@@ -112,7 +122,7 @@ class LightTile extends ConsumerWidget {
               const SizedBox(height: Space.xs),
               Text(
                 scene == null
-                    ? presenceText(l, st)
+                    ? presence
                     : stateLine(
                         l,
                         scene,
@@ -131,7 +141,7 @@ class LightTile extends ConsumerWidget {
               ),
               if (scene != null)
                 Text(
-                  presenceText(l, st),
+                  presence,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

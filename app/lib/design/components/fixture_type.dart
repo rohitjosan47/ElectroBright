@@ -61,7 +61,7 @@ class ChannelDots extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
-    final bool dark = ToneScope.of(context).dark;
+    final bool dark = ToneScope.darkOf(context);
     return Semantics(
       label: layout.roles.map((ChannelRole r) => channelName(l, r)).join(', '),
       child: Row(
@@ -128,7 +128,7 @@ class FixtureTypeBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
-    final bool dark = ToneScope.of(context).dark;
+    final bool dark = ToneScope.darkOf(context);
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: Space.xs, vertical: 3),

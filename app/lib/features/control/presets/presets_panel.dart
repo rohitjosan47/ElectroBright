@@ -55,7 +55,7 @@ class PresetsPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
     final PresetMeta meta = ref.watch(presetMetaProvider(fixtureId));
-    final Color fg = ToneScope.of(context).dark
+    final Color fg = ToneScope.darkOf(context)
         ? Colors.white
         : const Color(0xFF15171C);
     final int? active = meta.activeSlot(scene, onLight);

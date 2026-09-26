@@ -257,11 +257,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     final int connected = fixtures
         .where(
-          (Fixture f) =>
-              ref.watch(fixtureStatusProvider(f.id)).phase == LinkPhase.ready,
+          (Fixture f) => ref.watch(
+            fixtureStatusProvider(f.id)
+                .select((FixtureStatus s) => s.phase == LinkPhase.ready),
+          ),
         )
         .length;
-    final bool dark = ToneScope.of(context).dark;
+    final bool dark = ToneScope.darkOf(context);
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
     final bool bigText = MediaQuery.textScalerOf(context).scale(1) > 1.4;
 

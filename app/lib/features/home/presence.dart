@@ -6,14 +6,22 @@ import '../../l10n/app_localizations.dart';
 import '../../sessions/fixture_session.dart';
 
 /// Where a light is ("Connected", "Unavailable — …", "Firmware update needed").
-String presenceText(AppLocalizations l, FixtureStatus s) => switch (s.phase) {
+String presenceText(AppLocalizations l, FixtureStatus s) =>
+    presenceOf(l, s.phase, s.incompatibility);
+
+/// [presenceText] from the only fields it reads.
+String presenceOf(
+  AppLocalizations l,
+  LinkPhase phase,
+  EbIncompatibility? incompatibility,
+) => switch (phase) {
   LinkPhase.ready => l.presenceConnected,
   LinkPhase.connecting ||
   LinkPhase.handshaking ||
   LinkPhase.waiting => l.presenceConnecting,
   LinkPhase.unavailable => l.presenceUnavailable,
   LinkPhase.bluetoothOff => l.presenceBluetoothOff,
-  LinkPhase.incompatible => switch (s.incompatibility) {
+  LinkPhase.incompatible => switch (incompatibility) {
     EbIncompatibility.legacyFirmware => l.presenceUpdateNeeded,
     EbIncompatibility.unknownLayout => l.presenceNewerApp,
     _ => l.presenceUnexpected,
