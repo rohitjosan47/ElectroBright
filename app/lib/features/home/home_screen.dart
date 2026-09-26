@@ -127,7 +127,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  /// All Lights: connects the group while it is open, releases it after.
+  /// All Lights (from its card): connects the group while it is open,
+  /// releases it after.
   void _openAll() => unawaited(
     Navigator.of(context)
         .push(MaterialPageRoute<void>(builder: (_) => const AllLightsScreen())),
@@ -338,15 +339,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ],
                         ),
                       ),
-                      if (group) ...<Widget>[
-                        GlassIconButton(
-                          key: const ValueKey<String>('all-lights-button'),
-                          icon: Icons.grid_view_rounded,
-                          label: l.allLightsTitle,
-                          onPressed: _openAll,
-                        ),
-                        const SizedBox(width: Space.s),
-                      ],
                       GlassIconButton(
                         icon: Icons.tune_rounded,
                         label: l.settings,

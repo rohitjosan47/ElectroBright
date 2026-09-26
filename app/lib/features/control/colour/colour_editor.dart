@@ -26,6 +26,10 @@ typedef ColourChanged = void Function(
   ColourIntent? intent,
 });
 
+/// A temperature to offer as one tap on the temperature control (e.g.
+/// "Match W lights · 4000 K").
+typedef KelvinMarker = ({int kelvin, String label});
+
 /// Picks a colour the way this light can make it: a level (single white),
 /// warm-to-cool temperature (tunable white), the colour wheel (RGB), the
 /// wheel plus the white LED (RGBW), or wheel / tunable white (RGBCCT) —
@@ -41,6 +45,7 @@ class ColourEditor extends StatefulWidget {
     this.onFullRange,
     this.showChannels = true,
     this.enabled = true,
+    this.kelvinMarkers = const <KelvinMarker>[],
     super.key,
   });
 
@@ -60,6 +65,9 @@ class ColourEditor extends StatefulWidget {
 
   final bool showChannels;
   final bool enabled;
+
+  /// Temperatures a tap snaps to, shown under the temperature slider.
+  final List<KelvinMarker> kelvinMarkers;
 
   @override
   State<ColourEditor> createState() => _ColourEditorState();
@@ -103,7 +111,8 @@ class _ColourEditorState extends State<ColourEditor> {
       _tree = null;
     }
     if (widget.enabled != old.enabled ||
-        widget.showChannels != old.showChannels) {
+        widget.showChannels != old.showChannels ||
+        !_sameMarkers(widget.kelvinMarkers, old.kelvinMarkers)) {
       _tree = null;
     }
     if (widget.value != _encoded) {
@@ -114,6 +123,11 @@ class _ColourEditorState extends State<ColourEditor> {
       _tree = null;
     }
   }
+
+  static bool _sameMarkers(List<KelvinMarker> a, List<KelvinMarker> b) =>
+      a.length == b.length &&
+      <int>[for (int i = 0; i < a.length; i++) i]
+          .every((int i) => a[i] == b[i]);
 
   @override
   void didChangeDependencies() {
@@ -343,6 +357,29 @@ class _ColourEditorState extends State<ColourEditor> {
                 onChangeEnd: (_) => _end(),
               ),
             ),
+            if (widget.kelvinMarkers.isNotEmpty) ...<Widget>[
+              const SizedBox(height: Space.s),
+              Wrap(
+                spacing: Space.xs,
+                runSpacing: Space.xs,
+                children: <Widget>[
+                  for (final KelvinMarker m in widget.kelvinMarkers)
+                    ActionChip(
+                      key: ValueKey<String>('kelvin-marker-${m.kelvin}'),
+                      label: Text(m.label),
+                      onPressed: widget.enabled
+                          ? () => _apply(
+                              WhiteIntent(
+                                m.kelvin.toDouble().clamp(range.min, range.max),
+                                _whiteLevel,
+                              ),
+                              live: false,
+                            )
+                          : null,
+                    ),
+                ],
+              ),
+            ],
           ],
         );
       });

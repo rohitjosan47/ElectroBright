@@ -179,11 +179,11 @@ void main() {
 
     // All Lights: every light at once, then back to Home.
     await t.scrollUntilVisible(
-      find.byKey(const ValueKey<String>('all-lights-button')),
+      find.byKey(const ValueKey<String>('all-lights-card')),
       -300,
       scrollable: find.byType(Scrollable).first,
     );
-    await t.tap(find.byKey(const ValueKey<String>('all-lights-button')));
+    await t.tap(find.byKey(const ValueKey<String>('all-lights-card')));
     await waitFor(t, find.byType(AllLightsScreen));
     await waitFor(t, find.text('5 of 5 connected'), seconds: 20);
     final List<String> devices = <String>[
@@ -240,7 +240,11 @@ void main() {
     }
     await back();
     expect(find.byType(AllLightsScreen), findsNothing);
-    expect(find.text('Lights'), findsOneWidget);
+    // Back on Home, at its card.
+    expect(
+      find.byKey(const ValueKey<String>('all-lights-card')),
+      findsOneWidget,
+    );
 
     // The light with the original firmware leads to the update screen.
     await scrollTo(t, find.text('Update needed'));

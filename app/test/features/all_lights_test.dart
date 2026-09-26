@@ -181,9 +181,10 @@ void main() {
         .length;
     // Home keeps three lights connected.
     expect(ready(), 3);
+    // The card is the only way in.
     expect(
       find.byKey(const ValueKey<String>('all-lights-button')),
-      findsOneWidget,
+      findsNothing,
     );
     expect(find.text('3 of 5 connected'), findsOneWidget);
 

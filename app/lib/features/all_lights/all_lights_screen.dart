@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/providers.dart';
 import '../../core/color/colour_engine.dart';
 import '../../core/color/led_white_points.dart';
+import '../../core/color/light_surfaces.dart';
 import '../../core/color/light_tone.dart';
 import '../../core/model/channel_color.dart';
 import '../../core/model/channel_layout.dart';
@@ -17,15 +18,18 @@ import '../../core/protocol/eb/mode_catalog.dart';
 import '../../design/canvas/ambient_canvas.dart';
 import '../../design/components/fixture_type.dart';
 import '../../design/components/glass_controls.dart';
+import '../../design/controls/glass_slider.dart';
 import '../../design/glass/glass_surface.dart';
 import '../../design/tokens/tokens.dart';
 import '../../design/tone/tone_scope.dart';
 import '../../drivers/electrobright/eb_types.dart';
 import '../../l10n/app_localizations.dart';
 import '../../sessions/fixture_session.dart';
+import '../../sessions/group_capabilities.dart';
 import '../../sessions/group_session.dart';
 import '../../sessions/rituals.dart';
 import '../control/colour/colour_editor.dart';
+import '../control/control_screen.dart';
 import '../control/effects/effects_grid.dart';
 import '../control/effects/mode_presentation.dart';
 import '../control/shared/brightness_pill_slider.dart';
@@ -92,9 +96,30 @@ class _AllLightsScreenState extends ConsumerState<AllLightsScreen> {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
     final bool anyOn = ref.watch(groupAnyOnProvider);
-    final bool live = ref.watch(
-      groupStatusProvider.select((GroupStatus s) => s.ready > 0),
+    // The lights the group drives (not left out, not on their own
+    // settings), and how many of them are connected.
+    final ({int driven, int ready}) g = ref.watch(
+      groupStatusProvider.select(_drivenCounts),
     );
+    final bool live = g.ready > 0;
+    final ColourSurface? surface = ref.watch(
+      groupCapabilitiesProvider.select((GroupCapabilities c) => c.surface),
+    );
+    // Only single whites: no colour tab (and no tab switcher).
+    final List<_GroupTab> tabs = <_GroupTab>[
+      if (surface != null) _GroupTab.colour,
+      _GroupTab.effects,
+    ];
+    final _GroupTab tab = tabs.contains(_tab) ? _tab : tabs.first;
+    Widget panel(_GroupTab t) => switch (t) {
+      _GroupTab.colour => _GroupColourTab(group: group, enabled: live),
+      _GroupTab.effects => _GroupEffectsTab(
+        group: group,
+        enabled: live,
+        fg: fg,
+        run: _run,
+      ),
+    };
     return _GroupTone(
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -128,42 +153,42 @@ class _AllLightsScreenState extends ConsumerState<AllLightsScreen> {
               const SizedBox(height: Space.s),
               _StatusLine(budget: group.budget, fg: fg),
               const SizedBox(height: Space.s),
-              _GroupToolbar(group: group, enabled: live && anyOn, run: _run),
-              const SizedBox(height: Space.m),
-              RepaintBoundary(
-                child: _GroupBrightness(group: group, enabled: live, fg: fg),
-              ),
-              const SizedBox(height: Space.m),
-              GlassSegmented<_GroupTab>(
-                segments: <(_GroupTab, String)>[
-                  (_GroupTab.colour, l.tabColour),
-                  (_GroupTab.effects, l.tabEffects),
-                ],
-                selected: _tab,
-                thumbTier: GlassTier.chrome,
-                onChanged: (_GroupTab t) => setState(() => _tab = t),
-              ),
-              const SizedBox(height: Space.m),
-              TabSwitcher(
-                index: _tab.index,
-                child: KeyedSubtree(
-                  key: ValueKey<_GroupTab>(_tab),
-                  child: RepaintBoundary(
-                    child: switch (_tab) {
-                      _GroupTab.colour => _GroupColourTab(
-                        group: group,
-                        enabled: live,
-                      ),
-                      _GroupTab.effects => _GroupEffectsTab(
-                        group: group,
-                        enabled: live,
-                        fg: fg,
-                        run: _run,
-                      ),
-                    },
-                  ),
+              if (g.driven == 0)
+                _NoneFollowing(group: group, fg: fg)
+              else ...<Widget>[
+                _GroupToolbar(group: group, enabled: live && anyOn, run: _run),
+                const SizedBox(height: Space.m),
+                RepaintBoundary(
+                  child: _GroupBrightness(group: group, enabled: live, fg: fg),
                 ),
-              ),
+                const SizedBox(height: Space.m),
+                if (tabs.length == 1)
+                  RepaintBoundary(child: panel(tabs.single))
+                else ...<Widget>[
+                  GlassSegmented<_GroupTab>(
+                    segments: <(_GroupTab, String)>[
+                      (
+                        _GroupTab.colour,
+                        surface == ColourSurface.tunableWhite
+                            ? l.tabWhite
+                            : l.tabColour,
+                      ),
+                      (_GroupTab.effects, l.tabEffects),
+                    ],
+                    selected: tab,
+                    thumbTier: GlassTier.chrome,
+                    onChanged: (_GroupTab t) => setState(() => _tab = t),
+                  ),
+                  const SizedBox(height: Space.m),
+                  TabSwitcher(
+                    index: tabs.indexOf(tab),
+                    child: KeyedSubtree(
+                      key: ValueKey<_GroupTab>(tab),
+                      child: RepaintBoundary(child: panel(tab)),
+                    ),
+                  ),
+                ],
+              ],
               const SizedBox(height: Space.l),
               _GroupLights(group: group, fg: fg),
             ],
@@ -224,6 +249,30 @@ ChannelColor _groupColour(Common<ColourIntent> common) {
   };
 }
 
+/// How many lights the group drives, and how many of those are connected.
+({int driven, int ready}) _drivenCounts(GroupStatus s) => (
+  driven: s.members.where((GroupMember m) => !m.own).length,
+  ready: s.members
+      .where((GroupMember m) => !m.own && m.phase == LinkPhase.ready)
+      .length,
+);
+
+/// The colour editor's value: the lights' common colour as a light of the
+/// group's own surface ([layout]) makes it, else a neutral white.
+ChannelColor _editorValue(
+  Common<ColourIntent> common,
+  ChannelLayout layout,
+  LedWhitePoints whitePoints,
+) {
+  const WhiteIntent neutral = WhiteIntent(4000, 1);
+  ColourIntent i = common.value ?? neutral;
+  if (i is RawIntent && i.color.layout != layout) {
+    i = const ColourEngine().decode(i.color);
+  }
+  if (i is RawIntent && i.color.layout != layout) i = neutral;
+  return ColourEngine(whitePoints).encode(i, layout);
+}
+
 /// Up to four connected lights as small still orbs, fanned out, and how
 /// many more there are.
 class _GroupOrb extends ConsumerWidget {
@@ -238,7 +287,7 @@ class _GroupOrb extends ConsumerWidget {
     final GroupStatus st = ref.watch(groupStatusProvider);
     final List<String> ready = <String>[
       for (final GroupMember m in st.members)
-        if (m.phase == LinkPhase.ready) m.id,
+        if (m.phase == LinkPhase.ready && !m.own) m.id,
     ];
     final int n = math.min(ready.length, _shown);
     final int more = ready.length - n;
@@ -357,6 +406,7 @@ class _StatusLine extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
     final GroupStatus st = ref.watch(groupStatusProvider);
+    final ({int driven, int ready}) g = _drivenCounts(st);
     // Out of every saved light: one left out of the group is not connected
     // for it.
     final int saved = ref.watch(
@@ -372,10 +422,15 @@ class _StatusLine extends ConsumerWidget {
       child: Column(
         children: <Widget>[
           Text(
-            <String>[
-              l.groupConnected(st.ready, saved),
-              if (st.connecting > 0) l.groupConnecting(st.connecting),
-            ].join(' · '),
+            g.driven > 0 && g.ready == 0
+                ? <String>[
+                    l.noLightsConnected,
+                    if (st.connecting > 0) l.groupConnecting(st.connecting),
+                  ].join(' · ')
+                : <String>[
+                    l.groupConnected(g.ready, saved),
+                    if (st.connecting > 0) l.groupConnecting(st.connecting),
+                  ].join(' · '),
             key: const ValueKey<String>('group-status'),
             textAlign: TextAlign.center,
             style: style,
@@ -479,8 +534,8 @@ class _GroupBrightness extends ConsumerWidget {
   }
 }
 
-/// The colour for every light, picked as on an RGB+CCT light (colour wheel
-/// or white): each light makes it as well as it can.
+/// The colour for the group with exactly the controls a single light of
+/// the group's surface has; above it, which lights each control reaches.
 class _GroupColourTab extends ConsumerWidget {
   const _GroupColourTab({required this.group, required this.enabled});
   final GroupSession group;
@@ -488,23 +543,86 @@ class _GroupColourTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ChannelColor value = ref.watch(
-      groupColourProvider.select(_groupColour),
-    );
-    return GlassSurface(
-      padding: const EdgeInsets.all(Space.m),
-      child: ColourEditor(
-        value: value,
-        showChannels: false,
-        enabled: enabled,
-        onGestureStart: () => group.beginGesture(EbKeys.color),
-        onGestureEnd: () => group.endGesture(EbKeys.color),
-        onChanged: (
-          ChannelColor c, {
-          required bool live,
-          ColourIntent? intent,
-        }) => unawaited(group.setColour(intent ?? RawIntent(c), live: live)),
-      ),
+    final AppLocalizations l = AppLocalizations.of(context);
+    final GroupCapabilities caps = ref.watch(groupCapabilitiesProvider);
+    final ChannelLayout? layout = caps.surfaceLayout;
+    if (layout == null) return const SizedBox.shrink();
+    final Common<ColourIntent> common = ref.watch(groupColourProvider);
+    final LedWhitePoints wp = caps.whitePoints;
+    final ColourSurface surface = caps.surface!;
+    final int total = caps.lights.length;
+    final ColourIntent? shown = common.value;
+    final int limited = shown is WhiteIntent
+        ? caps.limitedCount(shown.kelvin)
+        : 0;
+    final List<String> notes = <String>[
+      if (surface != ColourSurface.tunableWhite &&
+          caps.colourAffected.length < total)
+        l.scopeColour(caps.colourAffected.length, total),
+      if (surface == ColourSurface.colourPlusWhite &&
+          caps.whiteLedAffected.length < total)
+        l.scopeWhiteLed(caps.whiteLedAffected.length, total),
+      if ((surface == ColourSurface.tunableWhite ||
+              surface == ColourSurface.colourPlusTunableWhite) &&
+          caps.temperatureAffected.length < total)
+        l.scopeTemperature(caps.temperatureAffected.length, total),
+      if (caps.fixedWhiteIds.isNotEmpty)
+        l.whitesKeepTheirWhite(caps.fixedWhiteIds.length),
+      if (limited > 0) l.lightsAtLimit(limited),
+    ];
+    final Color fg = ToneScope.darkOf(context)
+        ? Colors.white
+        : const Color(0xFF15171C);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (notes.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: Space.s),
+            child: Semantics(
+              container: true,
+              child: Column(
+                key: const ValueKey<String>('colour-scope'),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  for (final String n in notes)
+                    Text(
+                      n,
+                      style: TextStyle(
+                        color: fg.withValues(
+                          alpha: LightSurfaces.dim(
+                            0.7,
+                            dark: fg == Colors.white,
+                          ),
+                        ),
+                        fontSize: 12,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        GlassSurface(
+          padding: const EdgeInsets.all(Space.m),
+          child: ColourEditor(
+            value: _editorValue(common, layout, wp),
+            whitePoints: wp,
+            showChannels: false,
+            enabled: enabled,
+            kelvinMarkers: <KelvinMarker>[
+              for (final int k in caps.matchKelvins)
+                (kelvin: k, label: l.matchWhiteLights(k)),
+            ],
+            onGestureStart: () => group.beginGesture(EbKeys.color),
+            onGestureEnd: () => group.endGesture(EbKeys.color),
+            onChanged:
+                (ChannelColor c, {required bool live, ColourIntent? intent}) =>
+                    unawaited(
+                      group.setColour(intent ?? RawIntent(c), live: live),
+                    ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -536,7 +654,7 @@ class _GroupEffectsTab extends ConsumerWidget {
     final AppLocalizations l = AppLocalizations.of(context);
     final List<String> ready = <String>[
       for (final GroupMember m in ref.watch(groupStatusProvider).members)
-        if (m.phase == LinkPhase.ready) m.id,
+        if (m.phase == LinkPhase.ready && !m.own) m.id,
     ];
     final List<_LightMode> lights = <_LightMode>[
       for (final String id in ready)
@@ -624,8 +742,44 @@ class _GroupEffectsTab extends ConsumerWidget {
   }
 }
 
-/// Every saved light: its type, name, connection, Identify and whether it
-/// is in the group.
+/// No light follows the group: a short message and one way back.
+class _NoneFollowing extends ConsumerWidget {
+  const _NoneFollowing({required this.group, required this.fg});
+  final GroupSession group;
+  final Color fg;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppLocalizations l = AppLocalizations.of(context);
+    final bool anyOwn = ref.watch(
+      groupStatusProvider.select(
+        (GroupStatus s) => s.members.any((GroupMember m) => m.own),
+      ),
+    );
+    return GlassSurface(
+      key: const ValueKey<String>('group-none-following'),
+      padding: const EdgeInsets.all(Space.m),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Text(
+            l.groupNoneFollowing,
+            style: TextStyle(color: fg.withValues(alpha: 0.8)),
+          ),
+          const SizedBox(height: Space.m),
+          FilledButton(
+            onPressed: group.rejoinAll,
+            child: Text(anyOwn ? l.rejoinAll : l.includeLights),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Every saved light: its type, name, connection and state in the group,
+/// its level in the group, Identify, a way to its own screen, and whether it
+/// follows the group.
 class _GroupLights extends ConsumerWidget {
   const _GroupLights({required this.group, required this.fg});
   final GroupSession group;
@@ -635,18 +789,35 @@ class _GroupLights extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
     final List<Fixture> fixtures = ref.watch(fixturesProvider);
+    final bool anyOwn = ref.watch(
+      groupStatusProvider.select(
+        (GroupStatus s) => s.members.any((GroupMember m) => m.own),
+      ),
+    );
     return GlassSurface(
       padding: const EdgeInsets.all(Space.m),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Text(
-            l.groupLights,
-            style: TextStyle(
-              color: fg,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-            ),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  l.groupLights,
+                  style: TextStyle(
+                    color: fg,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (anyOwn)
+                TextButton(
+                  key: const ValueKey<String>('rejoin-all'),
+                  onPressed: group.rejoinAll,
+                  child: Text(l.rejoinAll),
+                ),
+            ],
           ),
           for (final Fixture f in fixtures)
             Padding(
@@ -664,7 +835,10 @@ class _GroupLights extends ConsumerWidget {
   }
 }
 
-class _GroupLightRow extends ConsumerWidget {
+/// What a row shows of the light's place in the group.
+typedef _RowState = ({bool included, bool own, double trim});
+
+class _GroupLightRow extends ConsumerStatefulWidget {
   const _GroupLightRow({
     required this.fixture,
     required this.group,
@@ -676,66 +850,182 @@ class _GroupLightRow extends ConsumerWidget {
   final Color fg;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_GroupLightRow> createState() => _GroupLightRowState();
+}
+
+class _GroupLightRowState extends ConsumerState<_GroupLightRow> {
+  /// Its level in the group is shown.
+  bool _open = false;
+
+  static String _percent(double t) => '${(t * 100).round()} %';
+
+  @override
+  Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
+    final Fixture fixture = widget.fixture;
+    final GroupSession group = widget.group;
+    final Color fg = widget.fg;
     final String id = fixture.id;
     final (LinkPhase, EbIncompatibility?) p = ref.watch(
       fixtureStatusProvider(id)
           .select((FixtureStatus s) => (s.phase, s.incompatibility)),
     );
-    final bool included = ref.watch(
-      groupStatusProvider.select(
-        (GroupStatus s) => s.members.any((GroupMember m) => m.id == id),
-      ),
+    final _RowState g = ref.watch(
+      groupStatusProvider.select((GroupStatus s) {
+        final GroupMember? m = s.members
+            .where((GroupMember m) => m.id == id)
+            .firstOrNull;
+        return (included: m != null, own: m?.own ?? false, trim: m?.trim ?? 1);
+      }),
     );
     final FixtureSession? session = ref.watch(fixtureSessionProvider(id));
     final bool ready = p.$1 == LinkPhase.ready;
-    return Row(
+    final bool following = g.included && !g.own;
+    final String presence = presenceOf(l, p.$1, p.$2);
+    final String state = following
+        ? presence
+        : '$presence · ${g.own ? l.groupOwnSettings : l.groupExcluded}';
+    final TextStyle small = TextStyle(
+      color: fg.withValues(alpha: 0.6),
+      fontSize: 12,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              FixtureTypeBadge(
-                layout: fixture.layout,
-                whitePoints: fixture.whitePoints,
-              ),
-              const SizedBox(height: Space.xxs),
-              Text(
-                fixture.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: fg, fontWeight: FontWeight.w600),
-              ),
-              Text(
-                presenceOf(l, p.$1, p.$2),
-                style: TextStyle(
-                  color: fg.withValues(alpha: 0.6),
-                  fontSize: 12,
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Semantics(
+                button: true,
+                expanded: _open,
+                label: fixture.name,
+                value: state,
+                hint: l.levelInGroup,
+                child: GestureDetector(
+                  key: ValueKey<String>('row-$id'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => setState(() => _open = !_open),
+                  child: ExcludeSemantics(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Row(
+                          children: <Widget>[
+                            // Shrinks only when the row is too narrow.
+                            Flexible(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: FixtureTypeBadge(
+                                  layout: fixture.layout,
+                                  whitePoints: fixture.whitePoints,
+                                ),
+                              ),
+                            ),
+                            if (!_open && g.trim < 1) ...<Widget>[
+                              const SizedBox(width: Space.xs),
+                              Container(
+                                key: ValueKey<String>('trim-chip-$id'),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: Space.xs,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(
+                                    Radii.small,
+                                  ),
+                                  color: fg.withValues(alpha: 0.08),
+                                ),
+                                child: Text(
+                                  l.trimChip((g.trim * 100).round()),
+                                  style: small.copyWith(fontSize: 11),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: Space.xxs),
+                        Text(
+                          fixture.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: fg,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(state, style: small),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-            ],
+            ),
+            GlassIconButton(
+              key: ValueKey<String>('identify-$id'),
+              icon: Icons.flare_rounded,
+              label: l.groupIdentify(fixture.name),
+              size: 36,
+              tier: GlassTier.panel,
+              onPressed: ready && session != null
+                  ? () => unawaited(session.identify())
+                  : null,
+            ),
+            const SizedBox(width: Space.xs),
+            GlassIconButton(
+              key: ValueKey<String>('open-$id'),
+              icon: Icons.chevron_right_rounded,
+              label: l.openLight(fixture.name),
+              size: 36,
+              tier: GlassTier.panel,
+              onPressed: () => unawaited(
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => ControlScreen(fixtureId: id),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: Space.xs),
+            Semantics(
+              label: l.groupIncludeLight(fixture.name),
+              child: Switch.adaptive(
+                key: ValueKey<String>('include-$id'),
+                value: following,
+                onChanged: (bool v) => v
+                    ? group.rejoin(id)
+                    : group.setExcluded(id, excluded: true),
+              ),
+            ),
+          ],
+        ),
+        if (_open)
+          Padding(
+            padding: const EdgeInsets.only(top: Space.xs),
+            child: GlassSlider(
+              key: ValueKey<String>('trim-$id'),
+              value: g.trim,
+              min: GroupSession.minTrim,
+              height: 36,
+              elevated: false,
+              semanticLabel: l.levelInGroupFor(fixture.name),
+              valueText: _percent,
+              leadingBuilder: (double v, double width) =>
+                  Text(l.levelInGroup, style: small.copyWith(color: fg)),
+              trailingBuilder: (double v, double width) => Text(
+                _percent(v),
+                style: small.copyWith(
+                  color: fg,
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
+                ),
+              ),
+              // Sent once, on release (it moves that light alone).
+              onChanged: (_) {},
+              onChangeEnd: (double v) => group.setTrim(id, v),
+            ),
           ),
-        ),
-        GlassIconButton(
-          key: ValueKey<String>('identify-$id'),
-          icon: Icons.flare_rounded,
-          label: l.groupIdentify(fixture.name),
-          size: 36,
-          tier: GlassTier.panel,
-          onPressed: ready && session != null
-              ? () => unawaited(session.identify())
-              : null,
-        ),
-        const SizedBox(width: Space.s),
-        Semantics(
-          label: l.groupIncludeLight(fixture.name),
-          child: Switch.adaptive(
-            key: ValueKey<String>('include-$id'),
-            value: included,
-            onChanged: (bool v) => group.setExcluded(id, excluded: !v),
-          ),
-        ),
       ],
     );
   }

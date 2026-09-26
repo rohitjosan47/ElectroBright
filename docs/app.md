@@ -56,16 +56,32 @@ On every type except W, **Channels** shows each LED's exact 0–255 value in its
 **Sound.** Turns the light's buzzer on or off.
 
 ## 3. All Lights
-With two or more saved lights, Home shows an **All Lights** card at the top (and a header button). It opens one control surface for every saved light, whatever its type, including several lights of the same type and firmware.
+With two or more saved lights, Home shows an **All Lights** card at the top: the only way in. It opens one control surface for the saved lights, whatever their types, including several lights of the same type and firmware.
 
-- **What it does:** power, brightness, colour, effects (with their speed and frequency) and the sleep timer, sent at the same moment to every light in the group.
-  - Colour is picked as on an RGB + CCT light (wheel, or white by temperature). Each light makes it as well as it can: a tunable-white or single-white light shows a colour as white at the colour's level.
-  - Effects list every mode at least one connected light has. A mode only some lights have shows "3/5" and goes only to those; the app then says "Applied to 3 of 5 lights".
-  - When the lights differ, the controls say so ("Mixed", "Timers differ") until you set them all.
+- **What it does:** power, brightness, colour, effects (with their speed and frequency) and the sleep timer, sent at the same moment to every light that follows the group.
+- **Adaptive controls:** the colour controls are those of a single light with the group's mix of LEDs, built the same way as a light's own screen:
+  - colour and tunable white give Colour | White;
+  - colour with an RGBW light gives the wheel and a White LED slider;
+  - colour only gives the wheel;
+  - tunable whites only give a **White** tab;
+  - single whites only give no colour tab: Effects are shown directly.
+- **Where each control goes:**
+  - A colour goes only to lights with colour LEDs.
+  - A temperature goes to tunable whites (each stops at its own warm and cool LEDs) and colour lights (which match it).
+  - Single-white lights keep their white and get only power, brightness, effects and the timer.
+  - A caption says when a control reaches part of the group ("Colour · 3 of 5 lights", "White LED · 1 of 5", "Temperature · 4 of 5 lights", "1 white light keeps its white", "1 light at its limit").
+  - With tunable and single-white lights together, **Match W lights · 4000 K** sets the tunable ones to the single whites' temperature.
+- **Effects:** every mode at least one connected light has. A mode only some lights have shows "3/5" and goes only to those; the app then says "Applied to 3 of 5 lights". When the lights differ, the controls say so ("Mixed", "Timers differ") until you set them all.
+- **Level in group (trim):** tap a light in the list to set its level in the group, from 5 to 100 %. It gets the group brightness times its level, never 0 while the group is on; the group at 0 turns every light off. A trimmed light doesn't make the brightness read "Mixed", and a collapsed row shows its level ("Level 50 %").
+- **Own settings:**
+  - A light that has followed a group command and is then changed on its own screen (colour, brightness, effect, power, preset) keeps its own settings. Group commands skip it until it rejoins.
+  - The timer, renaming, Identify and sound don't detach a light; neither do changes from another phone or a power cycle.
+  - In the list, the switch is on while a light follows. Off, the row says **Own settings** or **Excluded**; turning it on rejoins the light and catches it up. **Rejoin all** brings every light back.
+  - With no light following, the controls give way to a message and **Rejoin all** / **Include lights**. With none connected, the controls are off and the status says "No lights connected".
 - **Broadcast, not sync:** the same commands go to every light, but each light runs its own effect clock. Two lights running Rainbow are not in step.
 - **Connection limits:** while All Lights is open, the app connects the lights in the group, favourites first and then in Home's order, up to what this phone allows at once (8 on iOS, 5 on Android). Any others are reported as left out. Leaving the screen releases them after the normal idle grace (60 s).
-- **Catch-up:** a light that connects while the screen is open, or is switched back into the group, gets what the group was sent while the screen was open. The order is look, brightness, power, then the timer's remaining time (skipped if under 5 s). Nothing is replayed after you leave.
-- **Lights in this group:** each light's type, name and connection, **Flash it**, and a switch to leave it out of the group (remembered).
+- **Catch-up:** a light that connects while the screen is open, or rejoins, gets what the group was sent while the screen was open, as far as it applies to it. The order is look, brightness (at its level), power, then the timer's remaining time (skipped if under 5 s). Nothing is replayed after you leave.
+- **Lights in this group:** each light's type, name, connection and state in the group, its level, **Flash it**, a way to its own screen, and its switch. Excluded, own settings and levels are remembered.
 - **Why no presets:** presets live on each light (15 slots per light, in its own colours and channels), so there is no single preset every light can load.
 
 ## 4. Light settings

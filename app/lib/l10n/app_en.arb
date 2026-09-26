@@ -126,6 +126,94 @@
   },
   "timersDiffer": "Timers differ",
   "groupLights": "Lights in this group",
+  "matchWhiteLights": "Match W lights · {kelvin} K",
+  "@matchWhiteLights": {
+    "placeholders": {
+      "kelvin": {
+        "type": "int"
+      }
+    }
+  },
+  "scopeColour": "Colour · {count} of {total} lights",
+  "@scopeColour": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "scopeWhiteLed": "White LED · {count} of {total}",
+  "@scopeWhiteLed": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "scopeTemperature": "Temperature · {count} of {total} lights",
+  "@scopeTemperature": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "whitesKeepTheirWhite": "{count, plural, =1{1 white light keeps its white} other{{count} white lights keep their white}}",
+  "@whitesKeepTheirWhite": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "lightsAtLimit": "{count, plural, =1{1 light at its limit} other{{count} lights at their limit}}",
+  "@lightsAtLimit": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noLightsConnected": "No lights connected",
+  "groupExcluded": "Excluded",
+  "groupOwnSettings": "Own settings",
+  "levelInGroup": "Level in group",
+  "levelInGroupFor": "Level in group for {name}",
+  "@levelInGroupFor": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "trimChip": "Level {percent} %",
+  "@trimChip": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "rejoinAll": "Rejoin all",
+  "includeLights": "Include lights",
+  "groupNoneFollowing": "No light follows All Lights right now. Bring them back to set them together.",
+  "openLight": "Open {name}",
+  "@openLight": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "groupOrb": "Colours of {count} connected lights",
   "@groupOrb": {
     "placeholders": {

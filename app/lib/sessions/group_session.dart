@@ -6,6 +6,7 @@ import 'package:meta/meta.dart';
 
 import '../core/color/colour_engine.dart';
 import '../core/model/channel_color.dart';
+import '../core/model/channel_layout.dart';
 import '../core/model/fixture.dart';
 import '../core/model/light_capabilities.dart';
 import '../core/store/json_store.dart';
@@ -25,6 +26,7 @@ final class GroupMember {
     this.limitedOut = false,
     this.following = false,
     this.own = false,
+    this.trim = 1,
   });
   final String id;
   final LinkPhase phase;
@@ -39,6 +41,9 @@ final class GroupMember {
   /// until it rejoins.
   final bool own;
 
+  /// Its brightness trim in the group (0.05..1).
+  final double trim;
+
   @override
   bool operator ==(Object other) =>
       other is GroupMember &&
@@ -46,9 +51,10 @@ final class GroupMember {
       other.phase == phase &&
       other.limitedOut == limitedOut &&
       other.following == following &&
-      other.own == own;
+      other.own == own &&
+      other.trim == trim;
   @override
-  int get hashCode => Object.hash(id, phase, limitedOut, following, own);
+  int get hashCode => Object.hash(id, phase, limitedOut, following, own, trim);
   @override
   String toString() =>
       'GroupMember($id, ${phase.name}${limitedOut ? ', limited out' : ''}'
@@ -788,6 +794,7 @@ final class GroupSession {
             limitedOut: _limitedOut.contains(id),
             following: _following.contains(id),
             own: _own.contains(id),
+            trim: trimOf(id),
           ),
       ],
       excluded: <String>[
@@ -822,8 +829,11 @@ final class GroupSession {
     final List<EbDeviceState> states = <EbDeviceState>[
       for (final FixtureStatus st in ready) st.state!,
     ];
-    // Colour from the lights that have colour LEDs, if any do.
+    // Colour from the lights that have colour LEDs, else from the tunable
+    // whites; a single white keeps its own white and never counts.
     final bool anyColour = fixtures.any((Fixture f) => f.layout.hasColour);
+    bool shows(Fixture f) =>
+        anyColour ? f.layout.hasColour : f.layout.white == WhiteKind.tunable;
     return GroupLook(
       brightness: commonMaster(<(int, double)>[
         for (int i = 0; i < states.length; i++)
@@ -835,8 +845,7 @@ final class GroupSession {
       mode: Common<int>.from(states.map((EbDeviceState s) => s.scene.mode)),
       colour: Common<ColourIntent>.from(<ColourIntent>[
         for (int i = 0; i < ready.length; i++)
-          if (!anyColour || fixtures[i].layout.hasColour)
-            _shownIntent(ready[i], fixtures[i]),
+          if (shows(fixtures[i])) _shownIntent(ready[i], fixtures[i]),
       ]),
       timerDeadline: _commonDeadline(
         states.map((EbDeviceState s) => s.timerDeadline).toList(),
