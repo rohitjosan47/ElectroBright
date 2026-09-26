@@ -126,7 +126,30 @@
   },
   "timersDiffer": "Timers differ",
   "groupLights": "Lights in this group",
-  "groupInclude": "Include in All Lights",
+  "groupOrb": "Colours of {count} connected lights",
+  "@groupOrb": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "groupIdentify": "Flash {name}",
+  "@groupIdentify": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "groupIncludeLight": "Include {name} in All Lights",
+  "@groupIncludeLight": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "defaultLightName": "{type} light",
   "@defaultLightName": {
     "placeholders": {

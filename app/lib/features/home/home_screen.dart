@@ -20,7 +20,9 @@ import '../../sessions/fixture_registry.dart';
 import '../../sessions/fixture_session.dart';
 import '../../sessions/rituals.dart';
 import '../add_fixture/add_light_screen.dart';
+import '../all_lights/all_lights_screen.dart';
 import '../control/control_screen.dart';
+import 'all_lights_card.dart';
 import 'light_tile.dart';
 import '../diagnostics/ble_lab.dart';
 import '../firmware_update/firmware_update_screen.dart';
@@ -124,6 +126,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
     );
   }
+
+  /// All Lights: connects the group while it is open, releases it after.
+  void _openAll() => unawaited(
+    Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => const AllLightsScreen())),
+  );
 
   Future<void> _more(Fixture f) async {
     final AppLocalizations l = AppLocalizations.of(context);
@@ -266,6 +274,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final bool dark = ToneScope.darkOf(context);
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
     final bool bigText = MediaQuery.textScalerOf(context).scale(1) > 1.4;
+    // All Lights once there is more than one light.
+    final bool group = app != null && fixtures.length >= 2;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -328,6 +338,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ],
                         ),
                       ),
+                      if (group) ...<Widget>[
+                        GlassIconButton(
+                          key: const ValueKey<String>('all-lights-button'),
+                          icon: Icons.grid_view_rounded,
+                          label: l.allLightsTitle,
+                          onPressed: _openAll,
+                        ),
+                        const SizedBox(width: Space.s),
+                      ],
                       GlassIconButton(
                         icon: Icons.tune_rounded,
                         label: l.settings,
@@ -348,6 +367,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     l.homeEmpty,
                     style: TextStyle(color: fg.withValues(alpha: 0.7)),
                   ),
+                ),
+              ),
+            if (group)
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(
+                  Space.gutter,
+                  Space.gutter,
+                  Space.gutter,
+                  0,
+                ),
+                sliver: SliverToBoxAdapter(
+                  child: AllLightsCard(onOpen: _openAll),
                 ),
               ),
             SliverPadding(

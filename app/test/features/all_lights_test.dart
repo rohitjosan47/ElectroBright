@@ -5,6 +5,7 @@ import 'package:electrobright/core/color/hsv.dart';
 import 'package:electrobright/core/model/channel_color.dart';
 import 'package:electrobright/features/all_lights/all_lights_screen.dart';
 import 'package:electrobright/features/control/colour/colour_editor.dart';
+import 'package:electrobright/sessions/fixture_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -165,6 +166,39 @@ void main() {
     await pick(t, const HsvIntent(Hsv(120, 1, 1)));
     expect(d.twin('Living room').color.values, <int>[0, 255, 0, 0]);
     expect(d.twin('Reading lamp').color, before);
+    await DemoApp.shutDown(t);
+  });
+  testWidgets('Home opens All Lights; leaving it releases its connections '
+      'after the idle grace', (WidgetTester t) async {
+    t.view.physicalSize = const Size(393, 2600);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    final DemoApp d = await DemoApp.start(t, lights: DemoApp.groupLights);
+    await DemoApp.settle(t, 3);
+    int ready() => all
+        .where((String n) => d.session(n).status.phase == LinkPhase.ready)
+        .length;
+    // Home keeps three lights connected.
+    expect(ready(), 3);
+    expect(
+      find.byKey(const ValueKey<String>('all-lights-button')),
+      findsOneWidget,
+    );
+    expect(find.text('3 of 5 connected'), findsOneWidget);
+
+    await t.tap(find.byKey(const ValueKey<String>('all-lights-card')));
+    await DemoApp.settle(t, 5);
+    expect(find.byType(AllLightsScreen), findsOneWidget);
+    expect(ready(), 5);
+    await t.tap(find.byIcon(Icons.chevron_left_rounded).first);
+    await DemoApp.settle(t, 65);
+    // The link teardown runs on real async work.
+    await t.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await DemoApp.settle(t, 1);
+    expect(find.byType(AllLightsScreen), findsNothing);
+    expect(ready(), 3);
     await DemoApp.shutDown(t);
   });
 }

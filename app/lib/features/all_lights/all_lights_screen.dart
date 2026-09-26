@@ -243,44 +243,48 @@ class _GroupOrb extends ConsumerWidget {
     final int n = math.min(ready.length, _shown);
     final int more = ready.length - n;
     final double width = n == 0 ? _size : _size + (n - 1) * _step;
-    return SizedBox(
-      height: _size + 16,
-      width: width + (more > 0 ? 36 : 0),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          if (n == 0)
-            const Positioned(left: 0, top: 8, child: _MiniOrb(id: null)),
-          for (int i = 0; i < n; i++)
-            Positioned(
-              left: i * _step,
-              // A shallow arc: the middle orbs sit a little higher.
-              top: 8 - 8 * math.sin(math.pi * (i + 0.5) / n),
-              child: _MiniOrb(id: ready[i]),
-            ),
-          if (more > 0)
-            Positioned(
-              right: 0,
-              bottom: 0,
-              child: GlassSurface(
-                radius: Radii.small,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Space.xs,
-                  vertical: 2,
-                ),
-                child: Text(
-                  '+$more',
-                  style: TextStyle(
-                    color: ToneScope.darkOf(context)
-                        ? Colors.white
-                        : const Color(0xFF15171C),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+    return Semantics(
+      image: true,
+      label: AppLocalizations.of(context).groupOrb(ready.length),
+      child: SizedBox(
+        height: _size + 16,
+        width: width + (more > 0 ? 36 : 0),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            if (n == 0)
+              const Positioned(left: 0, top: 8, child: _MiniOrb(id: null)),
+            for (int i = 0; i < n; i++)
+              Positioned(
+                left: i * _step,
+                // A shallow arc: the middle orbs sit a little higher.
+                top: 8 - 8 * math.sin(math.pi * (i + 0.5) / n),
+                child: _MiniOrb(id: ready[i]),
+              ),
+            if (more > 0)
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: GlassSurface(
+                  radius: Radii.small,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: Space.xs,
+                    vertical: 2,
+                  ),
+                  child: Text(
+                    '+$more',
+                    style: TextStyle(
+                      color: ToneScope.darkOf(context)
+                          ? Colors.white
+                          : const Color(0xFF15171C),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -357,24 +361,28 @@ class _StatusLine extends ConsumerWidget {
       color: fg.withValues(alpha: 0.7),
       fontSize: 13,
     );
-    return Column(
-      children: <Widget>[
-        Text(
-          <String>[
-            l.groupConnected(st.ready, st.total),
-            if (st.connecting > 0) l.groupConnecting(st.connecting),
-          ].join(' · '),
-          key: const ValueKey<String>('group-status'),
-          textAlign: TextAlign.center,
-          style: style,
-        ),
-        if (st.limitedOut > 0)
+    return Semantics(
+      liveRegion: true,
+      container: true,
+      child: Column(
+        children: <Widget>[
           Text(
-            l.groupLimited(budget),
+            <String>[
+              l.groupConnected(st.ready, st.total),
+              if (st.connecting > 0) l.groupConnecting(st.connecting),
+            ].join(' · '),
+            key: const ValueKey<String>('group-status'),
             textAlign: TextAlign.center,
             style: style,
           ),
-      ],
+          if (st.limitedOut > 0)
+            Text(
+              l.groupLimited(budget),
+              textAlign: TextAlign.center,
+              style: style,
+            ),
+        ],
+      ),
     );
   }
 }
@@ -707,7 +715,7 @@ class _GroupLightRow extends ConsumerWidget {
         GlassIconButton(
           key: ValueKey<String>('identify-$id'),
           icon: Icons.flare_rounded,
-          label: l.addIdentify,
+          label: l.groupIdentify(fixture.name),
           size: 36,
           tier: GlassTier.panel,
           onPressed: ready && session != null
@@ -716,7 +724,7 @@ class _GroupLightRow extends ConsumerWidget {
         ),
         const SizedBox(width: Space.s),
         Semantics(
-          label: l.groupInclude,
+          label: l.groupIncludeLight(fixture.name),
           child: Switch.adaptive(
             key: ValueKey<String>('include-$id'),
             value: included,

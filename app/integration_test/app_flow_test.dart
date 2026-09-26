@@ -1,6 +1,6 @@
 // End-to-end on a simulator or device with the demo lights: onboarding,
 // adding one light of every type through the real add flow, and each
-// type's controls checked against its firmware twin.
+// type's controls checked against its firmware twin, then All Lights.
 //
 //   flutter test integration_test -d <simulator id>
 import 'package:electrobright/app.dart';
@@ -10,7 +10,9 @@ import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/core/store/json_store.dart';
 import 'package:electrobright/design/components/glass_controls.dart';
 import 'package:electrobright/design/controls/glass_slider.dart';
+import 'package:electrobright/design/controls/hue_wheel.dart';
 import 'package:electrobright/features/add_fixture/add_light_screen.dart';
+import 'package:electrobright/features/all_lights/all_lights_screen.dart';
 import 'package:electrobright/features/control/control_screen.dart';
 import 'package:electrobright/features/firmware_update/firmware_update_screen.dart';
 import 'package:electrobright/sim/eb_device_model.dart';
@@ -174,6 +176,71 @@ void main() {
     final EbScene bedroom = twin('demo-rgbcct').scene;
     expect(bedroom.color.values, <int>[0, 0, 0, 0, 255]);
     await back();
+
+    // All Lights: every light at once, then back to Home.
+    await t.scrollUntilVisible(
+      find.byKey(const ValueKey<String>('all-lights-button')),
+      -300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await t.tap(find.byKey(const ValueKey<String>('all-lights-button')));
+    await waitFor(t, find.byType(AllLightsScreen));
+    await waitFor(t, find.text('5 of 5 connected'), seconds: 20);
+    final List<String> devices = <String>[
+      for (final (String _, String _, String id) in lights) id,
+    ];
+    // Brightness: one drag sets every light.
+    await t.drag(
+      find.byKey(const ValueKey<String>('brightness')),
+      const Offset(-80, 0),
+    );
+    await wait(t);
+    final int level = twin(devices.first).scene.brightness;
+    expect(level, lessThan(255));
+    for (final String id in devices) {
+      expect(twin(id).scene.brightness, level, reason: id);
+    }
+    // Colour: a hue on the wheel's ring reaches both colour lights alike.
+    if (find.byType(HueWheel).evaluate().isEmpty) {
+      await t.tap(find.text('Colour').last);
+      await wait(t, 800);
+    }
+    final Rect wheel = t.getRect(find.byType(HueWheel));
+    await t.tapAt(wheel.center + Offset(wheel.width / 2 - 14, 0));
+    await wait(t);
+    final List<int> rgb = twin('demo-rgb').scene.color.values;
+    expect(
+      rgb.reduce((int a, int b) => a > b ? a : b) -
+          rgb.reduce((int a, int b) => a < b ? a : b),
+      greaterThan(100),
+    );
+    expect(twin('demo-rgbw').scene.color.values.take(3), rgb);
+    // An effect every light has.
+    await t.tap(find.text('Effects').first);
+    await wait(t, 800);
+    await t.tap(find.byKey(const ValueKey<String>('mode-3')));
+    await wait(t);
+    for (final String id in devices) {
+      expect(twin(id).scene.mode, 3, reason: id);
+    }
+    // Sleep timer on every light, then cancelled.
+    await t.tap(find.byKey(const ValueKey<String>('timer-button')));
+    await wait(t, 800);
+    await t.tap(find.byKey(const ValueKey<String>('timer-start')));
+    await wait(t);
+    for (final String id in devices) {
+      expect(twin(id).timerActive, isTrue, reason: id);
+    }
+    await t.tap(find.byKey(const ValueKey<String>('timer-button')));
+    await wait(t, 800);
+    await t.tap(find.byKey(const ValueKey<String>('timer-cancel')));
+    await wait(t);
+    for (final String id in devices) {
+      expect(twin(id).timerActive, isFalse, reason: id);
+    }
+    await back();
+    expect(find.byType(AllLightsScreen), findsNothing);
+    expect(find.text('Lights'), findsOneWidget);
 
     // The light with the original firmware leads to the update screen.
     await scrollTo(t, find.text('Update needed'));

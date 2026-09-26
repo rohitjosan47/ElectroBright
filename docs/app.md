@@ -55,7 +55,20 @@ On every type except W, **Channels** shows each LED's exact 0–255 value in its
 
 **Sound.** Turns the light's buzzer on or off.
 
-## 3. Light settings
+## 3. All Lights
+With two or more saved lights, Home shows an **All Lights** card at the top (and a header button). It opens one control surface for every saved light, whatever its type, including several lights of the same type and firmware.
+
+- **What it does:** power, brightness, colour, effects (with their speed and frequency) and the sleep timer, sent at the same moment to every light in the group.
+  - Colour is picked as on an RGB + CCT light (wheel, or white by temperature). Each light makes it as well as it can: a tunable-white or single-white light shows a colour as white at the colour's level.
+  - Effects list every mode at least one connected light has. A mode only some lights have shows "3/5" and goes only to those; the app then says "Applied to 3 of 5 lights".
+  - When the lights differ, the controls say so ("Mixed", "Timers differ") until you set them all.
+- **Broadcast, not sync:** the same commands go to every light, but each light runs its own effect clock. Two lights running Rainbow are not in step.
+- **Connection limits:** while All Lights is open, the app connects the lights in the group, favourites first and then in Home's order, up to what this phone allows at once (8 on iOS, 5 on Android). Any others are reported as left out. Leaving the screen releases them after the normal idle grace (60 s).
+- **Catch-up:** a light that connects while the screen is open, or is switched back into the group, gets what the group was sent while the screen was open. The order is look, brightness, power, then the timer's remaining time (skipped if under 5 s). Nothing is replayed after you leave.
+- **Lights in this group:** each light's type, name and connection, **Flash it**, and a switch to leave it out of the group (remembered).
+- **Why no presets:** presets live on each light (15 slots per light, in its own colours and channels), so there is no single preset every light can load.
+
+## 4. Light settings
 - **Name**, **Favourite**, and **Type** (read from the firmware).
 - **What this light can do** shows:
   - its channels in wire order;
@@ -66,7 +79,7 @@ On every type except W, **Channels** shows each LED's exact 0–255 value in its
 - **Channel test** lights each LED on its own for 1.2 s, then restores the look. If the link drops during the test, the look is restored when the light returns within 60 s.
 - **Sound**, **Factory reset** (the confirmation shows the type's factory look; it also clears the preset names) and **Forget**.
 
-## 4. How it stays in sync
+## 5. How it stays in sync
 - **Handshake:** INFO names the layout, CAPS confirms it (`LAYOUT`, `MODES`), and then STATUS, MODE_SETTINGS and PRESET_LIST are read.
   - Lights that can't be controlled are shown as such, never retried in a loop: the original firmware ("Firmware update needed"), an unknown layout ("Needs a newer app version") or malformed replies.
 - **What goes on the wire:**
@@ -75,7 +88,7 @@ On every type except W, **Channels** shows each LED's exact 0–255 value in its
   - Changes are applied optimistically and confirmed or rolled back.
 - **Nothing is sent for a mode the light doesn't have:** it fails locally with `MODE_UNSUPPORTED`.
 
-## 5. Code layout (`app/lib`)
+## 6. Code layout (`app/lib`)
 
 | Folder | Contents |
 |---|---|
@@ -84,12 +97,12 @@ On every type except W, **Channels** shows each LED's exact 0–255 value in its
 | `core/color` | Colour engine (HSV / Kelvin / raw per layout), LED white points, display colour |
 | `core/store` | Atomic JSON store and the one-time import of the old app's data |
 | `drivers/electrobright` | Session: handshake, command lane, stream lane, reconciliation |
-| `sessions` | Connection manager, discovery, per-light session, registry, identify / channel test |
+| `sessions` | Connection manager, discovery, per-light session, registry, All Lights group, identify / channel test |
 | `sim` | Firmware twin and simulated Bluetooth (demo lights and tests) |
 | `design` | Tokens, theme, glass, controls, haptics, gallery |
-| `features` | Onboarding, Home, add light, control screen, light settings, firmware update, diagnostics |
+| `features` | Onboarding, Home, add light, control screen, All Lights, light settings, firmware update, diagnostics |
 
-## 6. Run and test
+## 7. Run and test
 ```bash
 cd app
 flutter run                                  # simulator (demo lights) or a connected phone

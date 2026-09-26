@@ -3,6 +3,7 @@
 // BLE scan held, rebuilds and repaints, status emits and store writes per
 // scenario. The numbers are written to build/perf/idle_activity.txt; the
 // assertions pin the behaviour each scenario must keep.
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -13,6 +14,7 @@ import 'package:electrobright/core/protocol/eb/mode_catalog.dart';
 import 'package:electrobright/core/store/json_store.dart';
 import 'package:electrobright/design/controls/glass_slider.dart';
 import 'package:electrobright/design/controls/hue_wheel.dart';
+import 'package:electrobright/features/all_lights/all_lights_screen.dart';
 import 'package:electrobright/features/control/control_screen.dart';
 import 'package:electrobright/features/control/timer_sheet.dart';
 import 'package:electrobright/features/home/home_screen.dart';
@@ -360,6 +362,33 @@ void main() {
       light: 'Living room',
     );
     expect(shown.countdownBuildsPerSecond, 1);
+    await DemoApp.shutDown(t);
+  }, timeout: const Timeout(Duration(minutes: 8)));
+
+  testWidgets('All Lights idle', (WidgetTester t) async {
+    final DemoApp d = await start(t);
+    unawaited(
+      Navigator.of(
+        t.element(find.byType(HomeScreen)),
+      ).push(MaterialPageRoute<void>(builder: (_) => const AllLightsScreen())),
+    );
+    await DemoApp.settle(t, 5);
+    quiet(d);
+    await DemoApp.settle(t, 1);
+    // Static orbs, no timer: nothing moves.
+    final Activity colour = await measure(t, d, 'All Lights, idle, Colour tab');
+    expect(colour.tickers, 0);
+    expect(colour.framesPerSecond, 0);
+    expect(colour.scan, 'none');
+    // The effect tiles step like the control screen's, nothing more.
+    await tapTab(t, 'Effects');
+    final Activity effects = await measure(
+      t,
+      d,
+      'All Lights, Effects tab, lights on',
+    );
+    expect(effects.tickers, 0);
+    expect(effects.framesPerSecond, inInclusiveRange(20, 30));
     await DemoApp.shutDown(t);
   }, timeout: const Timeout(Duration(minutes: 8)));
 

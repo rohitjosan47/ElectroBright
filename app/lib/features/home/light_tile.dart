@@ -56,17 +56,7 @@ class LightTile extends ConsumerWidget {
     final bool dark = ToneScope.darkOf(context);
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
 
-    final DisplayColor? dc = scene == null
-        ? null
-        : DisplayColor.ofScene(
-            scene,
-            sleeping: sleeping,
-            whitePoints: f.whitePoints,
-            steady: ref.watch(steadyLevelsProvider(fixtureId)),
-          );
-    final Color orb = dc == null || dc.off
-        ? fg.withValues(alpha: 0.12)
-        : Color(ColorScience.toArgb(dc.color));
+    final ({Color color, bool glow}) orb = tileColour(ref, f, state, fg);
     final String modeName = scene == null
         ? ''
         : EbModeCatalog.byId(scene.mode).name;
@@ -90,7 +80,7 @@ class LightTile extends ConsumerWidget {
             children: <Widget>[
               Row(
                 children: <Widget>[
-                  _Orb(color: orb, glow: dc != null && !dc.off),
+                  TileOrb(color: orb.color, glow: orb.glow),
                   const Spacer(),
                   GlassIconButton(
                     icon: Icons.power_settings_new_rounded,
@@ -170,16 +160,45 @@ class LightTile extends ConsumerWidget {
   }
 }
 
-class _Orb extends StatelessWidget {
-  const _Orb({required this.color, required this.glow});
+/// A light's colour as Home shows it: its look at full intensity, glowing;
+/// a faint disc while it is off or its state is unknown.
+({Color color, bool glow}) tileColour(
+  WidgetRef ref,
+  Fixture f,
+  EbDeviceState? state,
+  Color fg,
+) {
+  final EbScene? scene = state?.scene;
+  final DisplayColor? dc = scene == null
+      ? null
+      : DisplayColor.ofScene(
+          scene,
+          sleeping: state!.sleeping,
+          whitePoints: f.whitePoints,
+          steady: ref.watch(steadyLevelsProvider(f.id)),
+        );
+  return dc == null || dc.off
+      ? (color: fg.withValues(alpha: 0.12), glow: false)
+      : (color: Color(ColorScience.toArgb(dc.color)), glow: true);
+}
+
+/// The round colour swatch of a light on Home.
+class TileOrb extends StatelessWidget {
+  const TileOrb({
+    required this.color,
+    required this.glow,
+    this.size = 44,
+    super.key,
+  });
   final Color color;
   final bool glow;
+  final double size;
 
   @override
   Widget build(BuildContext context) => AnimatedContainer(
     duration: Motion.medium,
-    width: 44,
-    height: 44,
+    width: size,
+    height: size,
     decoration: BoxDecoration(
       shape: BoxShape.circle,
       gradient: RadialGradient(
