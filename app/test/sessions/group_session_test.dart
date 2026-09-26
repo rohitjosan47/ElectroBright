@@ -1,16 +1,19 @@
+import 'dart:async';
+
 import 'package:electrobright/core/color/colour_engine.dart';
 import 'package:electrobright/core/color/hsv.dart';
 import 'package:electrobright/core/model/channel_color.dart';
-import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/model/fixture.dart';
 import 'package:electrobright/core/protocol/eb/eb_fixture_catalog.dart';
 import 'package:electrobright/core/store/json_store.dart';
 import 'package:electrobright/core/util/scheduler.dart';
+import 'package:electrobright/drivers/electrobright/eb_session.dart';
 import 'package:electrobright/sessions/connection_manager.dart';
 import 'package:electrobright/sessions/discovery.dart';
 import 'package:electrobright/sessions/fixture_registry.dart';
 import 'package:electrobright/sessions/fixture_session.dart';
 import 'package:electrobright/sessions/group_session.dart';
+import 'package:electrobright/sessions/rituals.dart';
 import 'package:electrobright/sim/eb_device_model.dart';
 import 'package:electrobright/sim/sim_central.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -129,40 +132,41 @@ void main() {
     expect(group.status.ready, 5);
   }
 
-  test(
-    'a colour reaches every light; white-only lights follow as white',
-    () async {
-      await build();
-      await activateAll();
-      const HsvIntent red = HsvIntent(Hsv(0, 1, 0.5));
-      final GroupResult r = await settle(group.setColour(red));
-      expect(r, const GroupResult(ok: 5));
+  test('a colour reaches the colour lights only; a white reaches the '
+      'tunable ones too, each clamped to its own range', () async {
+    await build();
+    await activateAll();
+    final ChannelColor cctBefore = twin(cct).scene.color;
+    final ChannelColor wBefore = twin(w).scene.color;
+    const HsvIntent red = HsvIntent(Hsv(0, 1, 0.5));
+    expect(
+      await settle(group.setColour(red)),
+      const GroupResult(ok: 3, skipped: 2),
+    );
+    ChannelColor encoded(String id, ColourIntent i) =>
+        ColourEngine(registry.byId(id)!.whitePoints)
+            .encode(i, registry.byId(id)!.layout);
+    for (final String id in <String>[rgb, a, b]) {
+      expect(twin(id).scene.color, encoded(id, red), reason: id);
+      expect(session(id).status.colourPick?.intent, red, reason: id);
+    }
+    // No colour on the white-only lights.
+    expect(twin(cct).scene.color, cctBefore);
+    expect(twin(w).scene.color, wBefore);
+    expect(group.look.colour, const Common<ColourIntent>.of(red));
 
-      ChannelColor encoded(String id, ColourIntent i) =>
-          ColourEngine(registry.byId(id)!.whitePoints)
-              .encode(i, registry.byId(id)!.layout);
-      for (final String id in <String>[rgb, a, b]) {
-        expect(twin(id).scene.color, encoded(id, red), reason: id);
-        expect(twin(id).scene.color[1], 0, reason: id);
-        expect(session(id).status.colourPick?.intent, red, reason: id);
-      }
-      // White at the colour's level on the lights without colour LEDs.
-      for (final String id in <String>[cct, w]) {
-        expect(
-          twin(id).scene.color,
-          encoded(id, const WhiteIntent(4000, 0.5)),
-          reason: id,
-        );
-        expect(
-          session(id).status.colourPick?.intent,
-          isA<WhiteIntent>().having((WhiteIntent i) => i.level, 'level', 0.5),
-          reason: id,
-        );
-      }
-      expect(twin(w).scene.color, ChannelColor(ChannelLayout.w, <int>[128]));
-      expect(group.look.colour, const Common<ColourIntent>.of(red));
-    },
-  );
+    // A temperature beyond the tunable light's warm LED: it stops there;
+    // the colour lights match it; the single white is untouched.
+    const WhiteIntent candle = WhiteIntent(2000, 1);
+    expect(
+      await settle(group.setColour(candle)),
+      const GroupResult(ok: 4, skipped: 1),
+    );
+    final int wwK = registry.byId(cct)!.whitePoints.wwK;
+    expect(twin(cct).scene.color, encoded(cct, WhiteIntent(wwK.toDouble(), 1)));
+    expect(twin(rgb).scene.color, encoded(rgb, candle));
+    expect(twin(w).scene.color, wBefore);
+  });
 
   test('an effect goes only to the lights whose firmware has it', () async {
     await build();
@@ -227,7 +231,10 @@ void main() {
 
     final ChannelColor before = twin(b).scene.color;
     const HsvIntent green = HsvIntent(Hsv(120, 1, 1));
-    expect(await settle(group.setColour(green)), const GroupResult(ok: 4));
+    expect(
+      await settle(group.setColour(green)),
+      const GroupResult(ok: 2, skipped: 2),
+    );
     expect(twin(a).scene.color[1], 255);
     expect(twin(b).scene.color, before);
 
@@ -330,5 +337,189 @@ void main() {
       group.status.members.map((GroupMember m) => m.id),
       isNot(contains(b)),
     );
+  });
+
+  test('a light\'s brightness is the master at its trim, never 0 while '
+      'the master is on', () {
+    expect(GroupSession.trimmed(200, 1), 200);
+    expect(GroupSession.trimmed(200, 0.5), 100);
+    expect(GroupSession.trimmed(0, 0.5), 0);
+    for (int m = 1; m <= 255; m++) {
+      for (final double t in <double>[0.05, 0.3, 0.7, 1]) {
+        expect(GroupSession.trimmed(m, t), greaterThan(0), reason: '$m $t');
+      }
+    }
+  });
+
+  test('trimmed lights read as one master, not "Mixed"', () {
+    for (int m = 0; m <= 255; m++) {
+      final List<double> trims = <double>[1, 0.5, 0.05];
+      final Common<int> c = GroupSession.commonMaster(<(int, double)>[
+        for (final double t in trims) (GroupSession.trimmed(m, t), t),
+      ]);
+      expect(c, Common<int>.of(m), reason: '$m');
+    }
+    // Only trimmed lights: some master explains them all.
+    for (int m = 1; m <= 255; m++) {
+      final List<(int, double)> l = <(int, double)>[
+        (GroupSession.trimmed(m, 0.7), 0.7),
+        (GroupSession.trimmed(m, 0.3), 0.3),
+      ];
+      final Common<int> c = GroupSession.commonMaster(l);
+      expect(c.mixed, isFalse, reason: '$m');
+      for (final (int b, double t) in l) {
+        expect(GroupSession.trimmed(c.value!, t), b, reason: '$m');
+      }
+    }
+    expect(
+      GroupSession.commonMaster(<(int, double)>[(100, 1), (80, 1)]),
+      const Common<int>.mixed(),
+    );
+  });
+
+  test('trims apply per light; master 0 turns every light off', () async {
+    await build();
+    await activateAll();
+    group.setTrim(a, 0.5);
+    await settle(group.setBrightness(200));
+    expect(twin(a).scene.brightness, 100);
+    for (final String id in <String>[rgb, b, cct, w]) {
+      expect(twin(id).scene.brightness, 200, reason: id);
+    }
+    expect(group.look.brightness, const Common<int>.of(200));
+    // A new trim reaches that light alone, at once.
+    group.setTrim(a, 0.25);
+    await run(const Duration(seconds: 1));
+    expect(twin(a).scene.brightness, 50);
+    expect(twin(b).scene.brightness, 200);
+    expect(group.trimOf(a), 0.25);
+    expect(group.look.brightness, const Common<int>.of(200));
+    await settle(group.setBrightness(0));
+    for (final String id in lights.keys) {
+      expect(twin(id).sleeping, isTrue, reason: id);
+    }
+  });
+
+  test('a user change on a following light detaches it; group and system '
+      'changes, timer, rename and identify don\'t', () async {
+    await build();
+    await activateAll();
+    await settle(group.setBrightness(180));
+    for (final String id in lights.keys) {
+      expect(group.isFollowing(id), isTrue, reason: id);
+    }
+    // Not the user on the light's own controls: still following.
+    session(a).setColor(twin(a).scene.color, origin: CommandOrigin.group);
+    unawaited(session(b).setMode(3, origin: CommandOrigin.system));
+    unawaited(session(rgb).setTimer(600));
+    registry.update(registry.byId(cct)!.copyWith(name: 'Pantry'));
+    unawaited(session(w).identify());
+    await run(const Duration(seconds: 3));
+    for (final String id in lights.keys) {
+      expect(group.isOwn(id), isFalse, reason: id);
+    }
+
+    // The user, on each light's own controls: colour, brightness, mode,
+    // power, preset.
+    final Future<EbPresetResult> saved = session(w).presetSave(0);
+    await run(const Duration(seconds: 2));
+    await saved;
+    expect(group.isOwn(w), isFalse, reason: 'saving a preset is no change');
+    session(a).setColor(twin(a).scene.color);
+    session(rgb).setBrightness(50);
+    unawaited(session(b).setMode(4));
+    unawaited(session(cct).setPower(on: false));
+    unawaited(session(w).presetLoad(0));
+    await run(const Duration(seconds: 2));
+    for (final String id in lights.keys) {
+      expect(group.isOwn(id), isTrue, reason: id);
+      expect(group.isFollowing(id), isFalse, reason: id);
+    }
+    expect(
+      group.status.members.every((GroupMember m) => m.own && !m.following),
+      isTrue,
+    );
+  });
+
+  test('a light that never got a group command is not detached; group '
+      'commands skip own lights; rejoin catches up', () async {
+    await build();
+    await activateAll();
+    session(a).setBrightness(90);
+    await run(const Duration(seconds: 1));
+    expect(group.isOwn(a), isFalse);
+
+    await settle(group.setMode(rainbow));
+    expect(group.isFollowing(a), isTrue);
+    // All Lights closed: a change on the light's own screen still counts.
+    group.deactivate();
+    unawaited(session(a).setMode(3));
+    await run(const Duration(seconds: 1));
+    expect(group.isOwn(a), isTrue);
+
+    group.activate();
+    await run(const Duration(seconds: 2));
+    await settle(group.setMode(2));
+    expect(twin(a).scene.mode, 3, reason: 'own lights are skipped');
+    expect(twin(b).scene.mode, 2);
+
+    group.rejoin(a);
+    await run(const Duration(seconds: 2));
+    expect(group.isOwn(a), isFalse);
+    expect(group.isFollowing(a), isTrue);
+    expect(twin(a).scene.mode, 2, reason: 'caught up');
+
+    // rejoinAll: every light back, excluded ones too, and caught up.
+    unawaited(session(b).setMode(5));
+    group.setExcluded(rgb, excluded: true);
+    await run(const Duration(seconds: 1));
+    expect(group.isOwn(b), isTrue);
+    group.rejoinAll();
+    await run(const Duration(seconds: 2));
+    for (final String id in lights.keys) {
+      expect(group.isOwn(id) || group.isExcluded(id), isFalse, reason: id);
+      expect(group.isFollowing(id), isTrue, reason: id);
+    }
+    expect(twin(b).scene.mode, 2);
+    expect(twin(rgb).scene.mode, 2);
+  });
+
+  test('own, following, excluded and trims survive a restart; a forgotten '
+      'light leaves every list', () async {
+    await build();
+    await activateAll();
+    await settle(group.setBrightness(150));
+    session(a).setBrightness(40);
+    group.setExcluded(w, excluded: true);
+    group.setTrim(b, 0.4);
+    await run(const Duration(seconds: 1));
+
+    group.dispose();
+    group = GroupSession(
+      registry: registry,
+      connections: manager,
+      store: store,
+      scheduler: clock,
+    );
+    expect(group.isOwn(a), isTrue);
+    expect(group.isFollowing(b), isTrue);
+    expect(group.isExcluded(w), isTrue);
+    expect(group.trimOf(b), 0.4);
+
+    for (final String id in <String>[a, b, w]) {
+      await registry.forget(id);
+    }
+    await _pump();
+    for (final String key in <String>[
+      GroupSession.excludedKey,
+      GroupSession.followingKey,
+      GroupSession.ownKey,
+    ]) {
+      final List<Object?> ids = store.read(key)! as List<Object?>;
+      for (final String id in <String>[a, b, w]) {
+        expect(ids, isNot(contains(id)), reason: '$key $id');
+      }
+    }
+    expect(store.read(GroupSession.trimKey), isEmpty);
   });
 }

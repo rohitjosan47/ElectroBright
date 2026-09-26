@@ -155,6 +155,18 @@ final class ColourPick {
   String toString() => 'ColourPick#$seq($intent)';
 }
 
+/// Who asked for a change to a light's look.
+enum CommandOrigin {
+  /// The user, on this light's own controls.
+  user,
+
+  /// All Lights.
+  group,
+
+  /// The app itself: identify, channel test, catch-up, resync.
+  system,
+}
+
 /// One saved light: its (optional) live driver session plus the last-known
 /// state and short-lived offline changes. Owned by the ConnectionManager.
 final class FixtureSession {
@@ -188,6 +200,9 @@ final class FixtureSession {
       StreamController<FixtureStatus>.broadcast();
   final StreamController<EbEvent> _events =
       StreamController<EbEvent>.broadcast();
+  final StreamController<String> _userLook = StreamController<String>.broadcast(
+    sync: true,
+  );
   EbSession? _session;
   StreamSubscription<EbView>? _viewSub;
   StreamSubscription<EbEvent>? _eventSub;
@@ -202,6 +217,18 @@ final class FixtureSession {
   FixtureStatus get status => _status;
   Stream<FixtureStatus> get statuses => _statuses.stream;
   Stream<EbEvent> get events => _events.stream;
+
+  /// The setting ([EbKeys]) of each look change the user makes on this
+  /// light's own controls (not All Lights, not the app's own writes), as it
+  /// is made, also while the light is reconnecting.
+  Stream<String> get userLookChanges => _userLook.stream;
+
+  void _byUser(CommandOrigin origin, String key) {
+    if (origin == CommandOrigin.user && !_userLook.isClosed) {
+      _userLook.add(key);
+    }
+  }
+
   EbSession? get session => _session;
 
   /// Shows [state] (saved from an earlier connection) until the light is
@@ -316,6 +343,7 @@ final class FixtureSession {
     // Listeners get the done event; closing has nothing to wait for.
     unawaited(_statuses.close());
     unawaited(_events.close());
+    unawaited(_userLook.close());
   }
 
   void _set(FixtureStatus s) {
@@ -432,19 +460,26 @@ final class FixtureSession {
 
   /// [intent]: what the user picked (the colour editor), shown exactly
   /// until the light reports a colour of its own.
-  void setColor(ChannelColor c, {bool live = false, ColourIntent? intent}) =>
-      unawaited(
-        _intent(EbKeys.color, (EbSession s) {
-          if (c.layout != s.layout) {
-            return Future<EbResult>.value(wrongLayout);
-          }
-          final int? seq = s.setColor(c, live: live);
-          if (seq != null) {
-            _pick = intent == null ? null : ColourPick(seq, intent);
-          }
-          return Future<EbResult>.value(EbResult.ok);
-        }),
-      );
+  void setColor(
+    ChannelColor c, {
+    bool live = false,
+    ColourIntent? intent,
+    CommandOrigin origin = CommandOrigin.user,
+  }) {
+    _byUser(origin, EbKeys.color);
+    unawaited(
+      _intent(EbKeys.color, (EbSession s) {
+        if (c.layout != s.layout) {
+          return Future<EbResult>.value(wrongLayout);
+        }
+        final int? seq = s.setColor(c, live: live);
+        if (seq != null) {
+          _pick = intent == null ? null : ColourPick(seq, intent);
+        }
+        return Future<EbResult>.value(EbResult.ok);
+      }),
+    );
+  }
 
   /// Colour and brightness in one frame (see [EbSession.setLook]).
   /// [keepOffline]: how long the change waits for a dropped link.
@@ -453,20 +488,29 @@ final class FixtureSession {
     int? brightness,
     bool live = false,
     Duration keepOffline = offlineWindow,
-  }) => unawaited(
-    _intent(EbKeys.color, (EbSession s) {
-      if (color != null && color.layout != s.layout) {
-        return Future<EbResult>.value(wrongLayout);
-      }
-      s.setLook(color: color, brightness: brightness, live: live);
-      return Future<EbResult>.value(EbResult.ok);
-    }, keep: keepOffline),
-  );
+    CommandOrigin origin = CommandOrigin.user,
+  }) {
+    _byUser(origin, color != null ? EbKeys.color : EbKeys.brightness);
+    unawaited(
+      _intent(EbKeys.color, (EbSession s) {
+        if (color != null && color.layout != s.layout) {
+          return Future<EbResult>.value(wrongLayout);
+        }
+        s.setLook(color: color, brightness: brightness, live: live);
+        return Future<EbResult>.value(EbResult.ok);
+      }, keep: keepOffline),
+    );
+  }
 
   /// Not connected, the change is kept and shown for [offlineWindow], and
   /// sent if the light is back in time (a release at 0 then turns it off).
   /// Otherwise the control glides back to the light's value.
-  void setBrightness(int b, {bool live = false}) {
+  void setBrightness(
+    int b, {
+    bool live = false,
+    CommandOrigin origin = CommandOrigin.user,
+  }) {
+    _byUser(origin, EbKeys.brightness);
     final bool offline = !_live && _reconnecting;
     unawaited(
       _intent(EbKeys.brightness, (EbSession s) {
@@ -487,25 +531,73 @@ final class FixtureSession {
   Future<EbResult> setPower({
     required bool on,
     Duration keepOffline = offlineWindow,
-  }) => _intent(
-    EbKeys.power,
-    (EbSession s) => s.setPower(on: on),
-    keep: keepOffline,
-  );
-  Future<EbResult> setMode(int mode, {Duration keepOffline = offlineWindow}) =>
-      _intent(EbKeys.mode, (EbSession s) => s.setMode(mode), keep: keepOffline);
-  Future<EbResult> setSpeed(int mode, int v) =>
-      _intent(EbKeys.speed(mode), (EbSession s) => s.setSpeed(mode, v));
-  Future<EbResult> setFrequency(int mode, int v) =>
-      _intent(EbKeys.frequency(mode), (EbSession s) => s.setFrequency(mode, v));
-  Future<EbResult> setColorMode(EbColorModeKind k, int v) =>
-      _intent(EbKeys.colorMode(k), (EbSession s) => s.setColorMode(k, v));
-  Future<EbResult> setPoliceColor(EbPoliceSlot slot, ChannelColor c) => _intent(
-    EbKeys.police(slot),
-    (EbSession s) => c.layout != s.layout
-        ? Future<EbResult>.value(wrongLayout)
-        : s.setPoliceColor(slot, c),
-  );
+    CommandOrigin origin = CommandOrigin.user,
+  }) {
+    _byUser(origin, EbKeys.power);
+    return _intent(
+      EbKeys.power,
+      (EbSession s) => s.setPower(on: on),
+      keep: keepOffline,
+    );
+  }
+
+  Future<EbResult> setMode(
+    int mode, {
+    Duration keepOffline = offlineWindow,
+    CommandOrigin origin = CommandOrigin.user,
+  }) {
+    _byUser(origin, EbKeys.mode);
+    return _intent(
+      EbKeys.mode,
+      (EbSession s) => s.setMode(mode),
+      keep: keepOffline,
+    );
+  }
+
+  Future<EbResult> setSpeed(
+    int mode,
+    int v, {
+    CommandOrigin origin = CommandOrigin.user,
+  }) {
+    _byUser(origin, EbKeys.speed(mode));
+    return _intent(EbKeys.speed(mode), (EbSession s) => s.setSpeed(mode, v));
+  }
+
+  Future<EbResult> setFrequency(
+    int mode,
+    int v, {
+    CommandOrigin origin = CommandOrigin.user,
+  }) {
+    _byUser(origin, EbKeys.frequency(mode));
+    return _intent(
+      EbKeys.frequency(mode),
+      (EbSession s) => s.setFrequency(mode, v),
+    );
+  }
+
+  Future<EbResult> setColorMode(
+    EbColorModeKind k,
+    int v, {
+    CommandOrigin origin = CommandOrigin.user,
+  }) {
+    _byUser(origin, EbKeys.colorMode(k));
+    return _intent(EbKeys.colorMode(k), (EbSession s) => s.setColorMode(k, v));
+  }
+
+  Future<EbResult> setPoliceColor(
+    EbPoliceSlot slot,
+    ChannelColor c, {
+    CommandOrigin origin = CommandOrigin.user,
+  }) {
+    _byUser(origin, EbKeys.police(slot));
+    return _intent(
+      EbKeys.police(slot),
+      (EbSession s) => c.layout != s.layout
+          ? Future<EbResult>.value(wrongLayout)
+          : s.setPoliceColor(slot, c),
+    );
+  }
+
   Future<EbResult> setSound({required bool on}) =>
       _intent(EbKeys.sound, (EbSession s) => s.setSound(on: on));
 
@@ -521,8 +613,15 @@ final class FixtureSession {
       _session?.presetSave(slot) ?? Future<EbPresetResult>.value(_noPreset);
 
   /// Loads [slot]; the result carries the complete loaded scene.
-  Future<EbPresetResult> presetLoad(int slot) =>
-      _session?.presetLoad(slot) ?? Future<EbPresetResult>.value(_noPreset);
+  Future<EbPresetResult> presetLoad(
+    int slot, {
+    CommandOrigin origin = CommandOrigin.user,
+  }) {
+    final EbSession? s = _session;
+    if (s == null) return Future<EbPresetResult>.value(_noPreset);
+    _byUser(origin, 'preset');
+    return s.presetLoad(slot);
+  }
 
   Future<EbResult> presetDelete(int slot) =>
       _session?.presetDelete(slot) ??

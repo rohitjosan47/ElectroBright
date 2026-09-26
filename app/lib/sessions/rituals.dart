@@ -47,9 +47,16 @@ extension FixtureRituals on FixtureSession {
       setLook(
         brightness: brightness > 0 ? brightness : 255,
         keepOffline: restoreWindow,
+        origin: CommandOrigin.system,
       );
       if (wasAsleep) {
-        unawaited(setPower(on: false, keepOffline: restoreWindow));
+        unawaited(
+          setPower(
+            on: false,
+            keepOffline: restoreWindow,
+            origin: CommandOrigin.system,
+          ),
+        );
       }
     }
   }
@@ -90,12 +97,25 @@ extension FixtureRituals on FixtureSession {
         color: before.color,
         brightness: before.brightness,
         keepOffline: restoreWindow,
+        origin: CommandOrigin.system,
       );
       if (before.mode != EbModeCatalog.solid) {
-        unawaited(setMode(before.mode, keepOffline: restoreWindow));
+        unawaited(
+          setMode(
+            before.mode,
+            keepOffline: restoreWindow,
+            origin: CommandOrigin.system,
+          ),
+        );
       }
       if (wasAsleep) {
-        unawaited(setPower(on: false, keepOffline: restoreWindow));
+        unawaited(
+          setPower(
+            on: false,
+            keepOffline: restoreWindow,
+            origin: CommandOrigin.system,
+          ),
+        );
       }
     }
   }

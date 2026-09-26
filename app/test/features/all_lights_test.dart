@@ -71,10 +71,11 @@ void main() {
     await DemoApp.shutDown(t);
   });
 
-  testWidgets('a colour reaches the colour lights; whites follow in white', (
-    WidgetTester t,
-  ) async {
+  testWidgets('a colour reaches the colour lights; the white lights keep '
+      'theirs', (WidgetTester t) async {
     final DemoApp d = await open(t);
+    final ChannelColor kitchen = d.twin('Kitchen').color;
+    final ChannelColor hallway = d.twin('Hallway').color;
     const HsvIntent red = HsvIntent(Hsv(0, 1, 1));
     await pick(t, red);
     expect(d.twin('Desk strip').color[0], 255);
@@ -83,8 +84,8 @@ void main() {
       expect(d.twin(n).color.values, <int>[255, 0, 0, 0], reason: n);
       expect(d.session(n).status.colourPick?.intent, red, reason: n);
     }
-    expect(d.session('Kitchen').status.colourPick?.intent, isA<WhiteIntent>());
-    expect(d.twin('Hallway').color.values, <int>[255]);
+    expect(d.twin('Kitchen').color, kitchen);
+    expect(d.twin('Hallway').color, hallway);
     await DemoApp.shutDown(t);
   });
 

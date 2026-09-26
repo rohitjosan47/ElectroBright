@@ -16,6 +16,7 @@ import '../sessions/discovery.dart';
 import '../sessions/fixture_registry.dart';
 import '../drivers/electrobright/eb_types.dart';
 import '../sessions/fixture_session.dart';
+import '../sessions/group_capabilities.dart';
 import '../sessions/group_session.dart';
 import 'app_session.dart';
 
@@ -252,6 +253,14 @@ final class GroupStatusNotifier extends Notifier<GroupStatus> {
     return g.status;
   }
 }
+
+/// The group's colour controls and which lights each one reaches.
+final Provider<GroupCapabilities> groupCapabilitiesProvider =
+    Provider<GroupCapabilities>(
+      (Ref ref) => ref.watch(
+        groupStatusProvider.select((GroupStatus s) => s.capabilities),
+      ),
+    );
 
 /// What the group's ready lights show together; read through the providers
 /// below, so each control hears only of what it shows.
