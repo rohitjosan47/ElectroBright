@@ -601,6 +601,13 @@ class _EffectsTab extends ConsumerWidget {
     steady: ref.watch(steadyLevelsProvider(fixture.id)),
     session: session,
     enabled: enabled,
+    // The effects move while the light is on and connected.
+    animate: ref.watch(
+      fixtureStatusProvider(fixture.id).select(
+        (FixtureStatus s) =>
+            s.isReady && !s.state!.sleeping && s.state!.scene.brightness > 0,
+      ),
+    ),
   );
 }
 

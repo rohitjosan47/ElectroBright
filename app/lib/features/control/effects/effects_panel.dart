@@ -36,6 +36,7 @@ class EffectsPanel extends StatelessWidget {
     required this.session,
     required this.enabled,
     this.steady,
+    this.animate = true,
     super.key,
   });
 
@@ -47,6 +48,10 @@ class EffectsPanel extends StatelessWidget {
 
   /// The light's colour kept steady at low channel values (for the glyphs).
   final SteadyLevels? steady;
+
+  /// The effects move only while the light is on and connected; otherwise
+  /// they show their still frames.
+  final bool animate;
 
   @override
   Widget build(BuildContext context) {
@@ -79,6 +84,7 @@ class EffectsPanel extends StatelessWidget {
             selected: scene.mode == solid.id,
             color: colour,
             fg: fg,
+            animate: animate,
             onTap: () => select(solid.id),
           ),
           const SizedBox(height: Space.m),
@@ -99,6 +105,7 @@ class EffectsPanel extends StatelessWidget {
                   spec: m,
                   selected: m.id == scene.mode,
                   color: colour,
+                  animate: animate,
                   onTap: () => select(m.id),
                 ),
           ],
@@ -195,6 +202,7 @@ class _SolidRow extends StatelessWidget {
     required this.selected,
     required this.color,
     required this.fg,
+    required this.animate,
     required this.onTap,
     super.key,
   });
@@ -203,6 +211,7 @@ class _SolidRow extends StatelessWidget {
   final bool selected;
   final Color color;
   final Color fg;
+  final bool animate;
   final VoidCallback onTap;
 
   @override
@@ -235,9 +244,9 @@ class _SolidRow extends StatelessWidget {
                   glyph: spec.glyph,
                   color: color,
                   palette: <Color>[for (final int c in spec.gradient) Color(c)],
-                  // Every effect moves, as the tiles do (paused off-screen,
-                  // in the background and under Reduce Motion).
-                  animate: true,
+                  // As the tiles do (paused off-screen, in the background,
+                  // under Reduce Motion and while the light is off).
+                  animate: animate,
                 ),
               ),
               const SizedBox(width: Space.s),

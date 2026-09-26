@@ -284,15 +284,35 @@ void main() {
         'control off, $tab',
         light: 'Living room',
       );
-      // Baseline: with the light off only the Effects tiles animate (B).
-      if (tab == 'Effects') {
-        expect(a.tickers, 0);
-        expect(a.paintsPerFrame, greaterThan(0));
-        expect(a.framesPerSecond, inInclusiveRange(20, 30));
-      } else {
-        expect(a.tickers, 0);
-      }
+      // With the light off nothing moves, the effect tiles included: they
+      // show their still frames (B).
+      expect(a.tickers, 0);
+      expect(a.framesPerSecond, 0);
     }
+    // On again, the tiles move; gone out of range, they're still again.
+    await d.session('Living room').setPower(on: true);
+    await tapTab(t, 'Effects');
+    final Activity on = await measure(
+      t,
+      d,
+      'control on again, Effects',
+      light: 'Living room',
+    );
+    expect(on.framesPerSecond, inInclusiveRange(20, 30));
+    d.radio.setAvailable(DemoApp.lights['Living room']!.$1, available: false);
+    // The link teardown runs on real async work.
+    await t.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await DemoApp.settle(t, 3);
+    expect(d.session('Living room').status.isReady, isFalse);
+    final Activity gone = await measure(
+      t,
+      d,
+      'control disconnected, Effects',
+      light: 'Living room',
+    );
+    expect(gone.framesPerSecond, 0);
     await DemoApp.shutDown(t);
   }, timeout: const Timeout(Duration(minutes: 8)));
 
