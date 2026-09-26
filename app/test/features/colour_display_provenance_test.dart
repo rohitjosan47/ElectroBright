@@ -336,7 +336,9 @@ void main() {
     await rest();
     final LinearRgb red = orb(t);
     d.session(room).setColor(ChannelColor.rgbw(0, 0, 255, 0));
-    await t.pump();
+    // The frame that builds the change starts the glide; one frame later
+    // it is on its way.
+    await t.pump(const Duration(milliseconds: 16));
     await t.pump(const Duration(milliseconds: 16));
     final LinearRgb between = orb(t);
     await rest();

@@ -200,9 +200,15 @@ void main() {
         'control on, Solid, $tab',
         light: 'Living room',
       );
-      // Baseline: the static Solid orb ticks at the display rate (item 1),
-      // and Home's add-flow scan runs under the control screen (item 3).
-      expect(a.framesPerSecond, greaterThan(100));
+      // The static Solid orb doesn't tick (item 1); only the Effects tiles
+      // do. Baseline: Home's add-flow scan runs under the control screen
+      // (item 3).
+      if (tab == 'Effects') {
+        expect(a.tickers, 12);
+      } else {
+        expect(a.tickers, 0);
+        expect(a.framesPerSecond, 0);
+      }
       expect(a.scan, 'addFlow');
     }
     await DemoApp.shutDown(t);
@@ -234,7 +240,7 @@ void main() {
       );
       // Baseline: with the light off only the Effects tiles tick (B).
       if (tab == 'Effects') {
-        expect(a.tickers, 13);
+        expect(a.tickers, 12);
         expect(a.framesPerSecond, greaterThan(100));
       } else {
         expect(a.tickers, 0);
@@ -258,10 +264,11 @@ void main() {
       'timer sheet open',
       light: 'Living room',
     );
-    // Baseline: two countdowns, each on its own clock (K); the orb keeps
-    // ticking behind the sheet (C).
+    // Baseline: two countdowns, each on its own clock (K). The Solid orb
+    // behind the sheet is still (item 1): only the countdowns draw.
     expect(sheet.countdownBuildsPerSecond, 2);
-    expect(sheet.framesPerSecond, greaterThan(100));
+    expect(sheet.tickers, 0);
+    expect(sheet.framesPerSecond, lessThanOrEqualTo(2));
     Navigator.of(t.element(find.byType(ControlScreen))).pop();
     await DemoApp.settle(t, 1);
     await t.tap(find.byIcon(Icons.tune_rounded));

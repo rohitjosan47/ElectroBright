@@ -41,6 +41,9 @@ class ModeGlyph extends StatefulWidget {
     _ => 1.30,
   };
 
+  /// Whether the glyph changes over time (Solid is the same on every frame).
+  static bool moves(EbModeGlyph glyph) => glyph != EbModeGlyph.solid;
+
   @override
   State<ModeGlyph> createState() => _ModeGlyphState();
 }
@@ -71,7 +74,10 @@ class _ModeGlyphState extends State<ModeGlyph>
     final bool run =
         widget.animate &&
         !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
-    if (run && !_ticker.isActive) {
+    if (run && !ModeGlyph.moves(widget.glyph)) {
+      // Nothing to animate: every frame would be identical, so no ticker.
+      if (_ticker.isActive) _ticker.stop();
+    } else if (run && !_ticker.isActive) {
       _last = Duration.zero;
       _ticker.start();
     } else if (!run) {
