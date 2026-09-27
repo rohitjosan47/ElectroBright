@@ -14,6 +14,11 @@ import 'fixture_session.dart';
 extension FixtureRituals on FixtureSession {
   static const Duration restoreWindow = Duration(seconds: 60);
 
+  /// Identify's blinks and their timing.
+  static const int identifyFlashes = 2;
+  static const Duration identifyOn = Duration(milliseconds: 150);
+  static const Duration identifyOff = Duration(milliseconds: 150);
+
   Future<void> _wait(Duration d) {
     final Completer<void> done = Completer<void>();
     scheduler.after(d, done.complete);
@@ -25,7 +30,8 @@ extension FixtureRituals on FixtureSession {
       s.phase != EbPhase.closed &&
       status.phase == LinkPhase.ready;
 
-  /// Blinks the light three times, then restores its look (and sleep).
+  /// Blinks the light twice (150 ms on, 150 ms off), then restores its look
+  /// (and sleep).
   Future<void> identify() async {
     final EbSession? s = session;
     if (s == null || !_live(s)) return;
@@ -35,12 +41,12 @@ extension FixtureRituals on FixtureSession {
     if (wasAsleep) await s.setPower(on: true);
     s.beginGesture(EbKeys.brightness);
     try {
-      for (int i = 0; i < 3 && _live(s); i++) {
+      for (int i = 0; i < identifyFlashes && _live(s); i++) {
         s.setBrightness(255, live: true);
-        await _wait(const Duration(milliseconds: 260));
+        await _wait(identifyOn);
         if (!_live(s)) break;
         s.setBrightness(0, live: true);
-        await _wait(const Duration(milliseconds: 220));
+        await _wait(identifyOff);
       }
     } finally {
       if (identical(session, s)) s.endGesture(EbKeys.brightness);

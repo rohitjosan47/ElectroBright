@@ -167,7 +167,8 @@ void main() {
         await setUp(r);
         await r.run(r.session.setPower(on: false));
         final Future<void> t = r.session.identify();
-        await r.wait(const Duration(milliseconds: 150));
+        // Mid first flash (150 ms on).
+        await r.wait(const Duration(milliseconds: 75));
         final Map<String, Object?> lit = await r.link.deviceState();
         expect(lit['sleeping'], 0, reason: 'woken for the show');
         expect((lit['scene']! as Map<String, Object?>)['brightness'], 255);

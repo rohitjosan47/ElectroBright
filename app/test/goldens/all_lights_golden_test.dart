@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:electrobright/app/providers.dart';
 import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/features/all_lights/all_lights_screen.dart';
+import 'package:electrobright/sessions/group_capabilities.dart';
 import 'package:electrobright/sessions/group_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,31 +14,41 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../support/demo_app.dart';
 
-/// All Lights in both themes: five lights with four connected (the single
-/// white out of range) on its Colour and Effects tabs; the panel for four
-/// mixes of types; and the list with a trimmed, an own-settings and an
-/// excluded light.
+/// The group screen in both themes: the colour group of three lights with
+/// two connected (one RGBW light out of range) on its Colour and Effects
+/// tabs; the panel for four mixes of types; and the list with a trimmed, an
+/// own-settings and an excluded light.
 void main() {
-  const Map<String, Map<String, (String, ChannelLayout)>> mixes =
-      <String, Map<String, (String, ChannelLayout)>>{
-        'w_only': <String, (String, ChannelLayout)>{
-          'Hallway': ('demo-w', ChannelLayout.w),
-          'Porch': ('demo-w-2', ChannelLayout.w),
-        },
-        'cct_w': <String, (String, ChannelLayout)>{
-          'Kitchen': ('demo-cct', ChannelLayout.cct),
-          'Hallway': ('demo-w', ChannelLayout.w),
-        },
-        'rgb_w': <String, (String, ChannelLayout)>{
-          'Desk strip': ('demo-rgb', ChannelLayout.rgb),
-          'Hallway': ('demo-w', ChannelLayout.w),
-        },
-        'all_types': DemoApp.lights,
+  const Map<String, (GroupKind, Map<String, (String, ChannelLayout)>)> mixes =
+      <String, (GroupKind, Map<String, (String, ChannelLayout)>)>{
+        'w_only': (
+          GroupKind.white,
+          <String, (String, ChannelLayout)>{
+            'Hallway': ('demo-w', ChannelLayout.w),
+            'Porch': ('demo-w-2', ChannelLayout.w),
+          },
+        ),
+        'cct_w': (
+          GroupKind.white,
+          <String, (String, ChannelLayout)>{
+            'Kitchen': ('demo-cct', ChannelLayout.cct),
+            'Hallway': ('demo-w', ChannelLayout.w),
+          },
+        ),
+        'rgb_rgbw': (
+          GroupKind.colour,
+          <String, (String, ChannelLayout)>{
+            'Desk strip': ('demo-rgb', ChannelLayout.rgb),
+            'Living room': ('demo-rgbw', ChannelLayout.rgbw),
+          },
+        ),
+        'all_types': (GroupKind.colour, DemoApp.lights),
       };
 
   Future<DemoApp> open(
     WidgetTester t,
     bool dark,
+    GroupKind kind,
     Map<String, (String, ChannelLayout)> lights, {
     void Function(DemoApp d)? before,
   }) async {
@@ -56,7 +67,9 @@ void main() {
       t
           .state<NavigatorState>(find.byType(Navigator).first)
           .push(
-            MaterialPageRoute<void>(builder: (_) => const AllLightsScreen()),
+            MaterialPageRoute<void>(
+              builder: (_) => AllLightsScreen(kind: kind),
+            ),
           ),
     );
     await DemoApp.settle(t, 5);
@@ -70,9 +83,10 @@ void main() {
         await open(
           t,
           dark,
+          GroupKind.colour,
           DemoApp.groupLights,
           before: (DemoApp d) =>
-              d.radio.setAvailable('demo-w', available: false),
+              d.radio.setAvailable('demo-rgbw-2', available: false),
         );
         if (tab == 'effects') {
           await t.tap(find.text('Effects'));
@@ -87,10 +101,14 @@ void main() {
       });
     }
 
-    for (final MapEntry<String, Map<String, (String, ChannelLayout)>> mix
+    for (final MapEntry<
+          String,
+          (GroupKind, Map<String, (String, ChannelLayout)>)
+        >
+        mix
         in mixes.entries) {
       testWidgets('all lights ${mix.key} $theme', (WidgetTester t) async {
-        await open(t, dark, mix.value);
+        await open(t, dark, mix.value.$1, mix.value.$2);
         await t.pump(const Duration(milliseconds: 600));
         await expectLater(
           find.byType(AllLightsScreen),
@@ -101,19 +119,24 @@ void main() {
     }
 
     testWidgets('all lights list $theme', (WidgetTester t) async {
-      final DemoApp d = await open(t, dark, DemoApp.groupLights);
+      final DemoApp d = await open(
+        t,
+        dark,
+        GroupKind.colour,
+        DemoApp.groupLights,
+      );
       final GroupSession group = ProviderScope.containerOf(
         t.element(find.byType(AllLightsScreen)),
-      ).read(groupSessionProvider)!;
+      ).read(groupSessionProvider(GroupKind.colour))!;
       await group.setBrightness(200);
       await DemoApp.settle(t, 1);
       group.setTrim(d.id('Living room'), 0.5);
       // Changed on its own screen: own settings.
       d.session('Desk strip').setBrightness(90);
-      group.setExcluded(d.id('Kitchen'), excluded: true);
+      group.setExcluded(d.id('Reading lamp'), excluded: true);
       await DemoApp.settle(t, 2);
       await t.scrollUntilVisible(
-        find.byKey(ValueKey<String>('group-light-${d.id('Hallway')}')),
+        find.byKey(ValueKey<String>('group-light-${d.id('Reading lamp')}')),
         200,
         scrollable: find
             .descendant(

@@ -23,6 +23,8 @@ import '../add_fixture/add_light_screen.dart';
 import '../all_lights/all_lights_screen.dart';
 import '../control/control_screen.dart';
 import 'all_lights_card.dart';
+import '../../sessions/group_capabilities.dart';
+import '../../sessions/group_session.dart';
 import 'light_tile.dart';
 import '../diagnostics/ble_lab.dart';
 import '../firmware_update/firmware_update_screen.dart';
@@ -127,11 +129,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  /// All Lights (from its card): connects the group while it is open,
+  /// A group (from its card): connects the group while it is open,
   /// releases it after.
-  void _openAll() => unawaited(
-    Navigator.of(context)
-        .push(MaterialPageRoute<void>(builder: (_) => const AllLightsScreen())),
+  void _openGroup(GroupKind kind) => unawaited(
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => AllLightsScreen(kind: kind)),
+    ),
   );
 
   Future<void> _more(Fixture f) async {
@@ -276,7 +279,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
     final bool bigText = MediaQuery.textScalerOf(context).scale(1) > 1.4;
     // All Lights once there is more than one light.
-    final bool group = app != null && fixtures.length >= 2;
+    final List<GroupKind> groups = <GroupKind>[
+      if (app != null)
+        for (final GroupKind k in GroupKind.values)
+          if (ref.watch(
+            groupStatusProvider(k).select((GroupStatus s) => s.exists),
+          ))
+            k,
+    ];
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -361,7 +371,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ),
               ),
-            if (group)
+            for (final GroupKind kind in groups)
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(
                   Space.gutter,
@@ -370,7 +380,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   0,
                 ),
                 sliver: SliverToBoxAdapter(
-                  child: AllLightsCard(onOpen: _openAll),
+                  child: AllLightsCard(
+                    kind: kind,
+                    onOpen: () => _openGroup(kind),
+                  ),
                 ),
               ),
             SliverPadding(

@@ -177,17 +177,19 @@ void main() {
     expect(bedroom.color.values, <int>[0, 0, 0, 0, 255]);
     await back();
 
-    // All Lights: every light at once, then back to Home.
+    // The colour group: its lights at once, then back to Home.
     await t.scrollUntilVisible(
-      find.byKey(const ValueKey<String>('all-lights-card')),
+      find.byKey(const ValueKey<String>('group-card-colour')),
       -300,
       scrollable: find.byType(Scrollable).first,
     );
-    await t.tap(find.byKey(const ValueKey<String>('all-lights-card')));
+    await t.tap(find.byKey(const ValueKey<String>('group-card-colour')));
     await waitFor(t, find.byType(AllLightsScreen));
-    await waitFor(t, find.text('5 of 5 connected'), seconds: 20);
-    final List<String> devices = <String>[
-      for (final (String _, String _, String id) in lights) id,
+    await waitFor(t, find.text('3 of 3 connected'), seconds: 20);
+    const List<String> devices = <String>[
+      'demo-rgb',
+      'demo-rgbcct',
+      'demo-rgbw',
     ];
     // Brightness: one drag sets every light.
     await t.drag(
@@ -242,7 +244,7 @@ void main() {
     expect(find.byType(AllLightsScreen), findsNothing);
     // Back on Home, at its card.
     expect(
-      find.byKey(const ValueKey<String>('all-lights-card')),
+      find.byKey(const ValueKey<String>('group-card-colour')),
       findsOneWidget,
     );
 

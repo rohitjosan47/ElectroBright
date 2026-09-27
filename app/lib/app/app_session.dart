@@ -18,7 +18,7 @@ final class AppSession {
     required this.store,
     required this.ble,
     required this.registry,
-    required this.group,
+    required this.groups,
   });
 
   final bool demo;
@@ -26,8 +26,8 @@ final class AppSession {
   final BleStack ble;
   final FixtureRegistry registry;
 
-  /// All Lights (created and disposed with the session).
-  final GroupSession group;
+  /// The colour and white groups (created and disposed with the session).
+  final GroupSessions groups;
 }
 
 /// The app's main store (settings, and the real lights), opened in main().
@@ -59,7 +59,7 @@ final class _Runtime {
     final AppSession? s = session;
     session = null;
     if (s == null) return;
-    s.group.dispose();
+    s.groups.dispose();
     unawaited(
       s.registry.saveAll().whenComplete(() async {
         await s.registry.dispose();
@@ -121,7 +121,7 @@ final class AppController extends Notifier<AppSession?> {
     final AppSession? old = state;
     if (old != null) {
       state = _runtime.session = null;
-      old.group.dispose();
+      old.groups.dispose();
       await old.registry.saveAll();
       await old.registry.dispose();
     }
@@ -154,7 +154,7 @@ final class AppController extends Notifier<AppSession?> {
       store: store,
       ble: ble,
       registry: registry,
-      group: GroupSession(
+      groups: GroupSessions(
         registry: registry,
         connections: ble.connections,
         store: store,

@@ -126,36 +126,6 @@
   },
   "timersDiffer": "Timers differ",
   "groupLights": "Lights in this group",
-  "matchWhiteLights": "Match W lights · {kelvin} K",
-  "@matchWhiteLights": {
-    "placeholders": {
-      "kelvin": {
-        "type": "int"
-      }
-    }
-  },
-  "scopeColour": "Colour · {count} of {total} lights",
-  "@scopeColour": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      },
-      "total": {
-        "type": "int"
-      }
-    }
-  },
-  "scopeWhiteLed": "White LED · {count} of {total}",
-  "@scopeWhiteLed": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      },
-      "total": {
-        "type": "int"
-      }
-    }
-  },
   "scopeTemperature": "Temperature · {count} of {total} lights",
   "@scopeTemperature": {
     "placeholders": {

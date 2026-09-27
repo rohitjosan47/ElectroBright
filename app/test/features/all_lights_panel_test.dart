@@ -31,21 +31,16 @@ void main() {
         'Kitchen': ('demo-cct', ChannelLayout.cct),
         'Hallway': ('demo-w', ChannelLayout.w),
       };
-  const Map<String, (String, ChannelLayout)> rgbW =
-      <String, (String, ChannelLayout)>{
-        'Desk strip': ('demo-rgb', ChannelLayout.rgb),
-        'Hallway': ('demo-w', ChannelLayout.w),
-      };
-  const Map<String, (String, ChannelLayout)> rgbRgbwW =
+  const Map<String, (String, ChannelLayout)> rgbRgbw =
       <String, (String, ChannelLayout)>{
         'Desk strip': ('demo-rgb', ChannelLayout.rgb),
         'Living room': ('demo-rgbw', ChannelLayout.rgbw),
-        'Hallway': ('demo-w', ChannelLayout.w),
       };
 
   Future<DemoApp> open(
     WidgetTester t,
-    Map<String, (String, ChannelLayout)> lights, {
+    Map<String, (String, ChannelLayout)> lights,
+    GroupKind kind, {
     bool connect = true,
   }) async {
     t.view.physicalSize = const Size(393, 2600);
@@ -67,7 +62,9 @@ void main() {
       t
           .state<NavigatorState>(find.byType(Navigator).first)
           .push(
-            MaterialPageRoute<void>(builder: (_) => const AllLightsScreen()),
+            MaterialPageRoute<void>(
+              builder: (_) => AllLightsScreen(kind: kind),
+            ),
           ),
     );
     await DemoApp.settle(t, 5);
@@ -77,8 +74,11 @@ void main() {
 
   ProviderContainer container(WidgetTester t) =>
       ProviderScope.containerOf(t.element(find.byType(AllLightsScreen)));
-  GroupSession groupOf(WidgetTester t) =>
-      container(t).read(groupSessionProvider)!;
+  GroupSession groupOf(WidgetTester t) => container(t).read(
+    groupSessionProvider(
+      t.widget<AllLightsScreen>(find.byType(AllLightsScreen)).kind,
+    ),
+  )!;
 
   Finder slider(String label) => find.byWidgetPredicate(
     (Widget w) => w is GlassSlider && w.semanticLabel == label,
@@ -90,7 +90,7 @@ void main() {
   testWidgets('only single whites: no colour tab and no tab switcher', (
     WidgetTester t,
   ) async {
-    await open(t, wOnly);
+    await open(t, wOnly, GroupKind.white);
     expect(find.text('2 of 2 connected'), findsOneWidget);
     expect(tabs, findsNothing);
     expect(find.byType(ColourEditor), findsNothing);
@@ -98,9 +98,9 @@ void main() {
     await DemoApp.shutDown(t);
   });
 
-  testWidgets('tunable + single white: a White tab, temperature and a match '
-      'marker for the single white', (WidgetTester t) async {
-    final DemoApp d = await open(t, cctW);
+  testWidgets('tunable + single white: a White tab and a temperature for '
+      'the tunable light only', (WidgetTester t) async {
+    final DemoApp d = await open(t, cctW, GroupKind.white);
     expect(
       find.descendant(of: tabs, matching: find.text('White')),
       findsOneWidget,
@@ -110,11 +110,17 @@ void main() {
     expect(find.text('Temperature · 1 of 2 lights'), findsOneWidget);
     expect(find.text('1 white light keeps its white'), findsOneWidget);
     final ChannelColor hallway = d.twin('Hallway').color;
-    await t.tap(find.text('Match W lights · 4000 K'));
+    const WhiteIntent white = WhiteIntent(4000, 1);
+    t
+        .widget<ColourEditor>(find.byType(ColourEditor))
+        .onChanged(
+          const ColourEngine().encode(white, ChannelLayout.cct),
+          live: false,
+          intent: white,
+        );
     await DemoApp.settle(t, 1);
     final ColourIntent pick = d.session('Kitchen').status.colourPick!.intent;
-    expect(pick, isA<WhiteIntent>());
-    expect((pick as WhiteIntent).kelvin, 4000);
+    expect(pick, white);
     expect(
       d.twin('Kitchen').color,
       ColourEngine(d.app.registry.byId(d.id('Kitchen'))!.whitePoints)
@@ -124,10 +130,10 @@ void main() {
     await DemoApp.shutDown(t);
   });
 
-  testWidgets('colour + single white: the wheel alone, for one of two', (
+  testWidgets('colour group: the wheel alone, for every light', (
     WidgetTester t,
   ) async {
-    await open(t, rgbW);
+    await open(t, rgbRgbw, GroupKind.colour);
     expect(
       find.descendant(of: tabs, matching: find.text('Colour')),
       findsOneWidget,
@@ -135,58 +141,34 @@ void main() {
     expect(find.byType(HueWheel), findsOneWidget);
     expect(slider('White LED'), findsNothing);
     expect(slider('Colour temperature'), findsNothing);
-    expect(find.text('Colour · 1 of 2 lights'), findsOneWidget);
-    expect(find.text('1 white light keeps its white'), findsOneWidget);
-    expect(find.textContaining('Match W lights'), findsNothing);
+    expect(find.byKey(const ValueKey<String>('colour-scope')), findsNothing);
     await DemoApp.shutDown(t);
   });
 
-  testWidgets('RGB + RGBW + W: the wheel and the white LED, each scoped', (
-    WidgetTester t,
-  ) async {
-    await open(t, rgbRgbwW);
-    expect(find.byType(HueWheel), findsOneWidget);
-    expect(slider('White LED'), findsOneWidget);
-    expect(find.text('Colour · 2 of 3 lights'), findsOneWidget);
-    expect(find.text('White LED · 1 of 3'), findsOneWidget);
-    expect(find.text('1 white light keeps its white'), findsOneWidget);
-    await DemoApp.shutDown(t);
-  });
-
-  testWidgets('all five types: colour and white, scopes, marker and the '
-      'lights at their limit', (WidgetTester t) async {
-    await open(t, DemoApp.lights);
-    expect(find.text('Colour · 3 of 5 lights'), findsOneWidget);
-    expect(find.text('Temperature · 4 of 5 lights'), findsOneWidget);
-    expect(find.text('1 white light keeps its white'), findsOneWidget);
-    // A temperature below the tunable lights' warm LEDs.
-    final ColourEditor editor = t.widget<ColourEditor>(
-      find.byType(ColourEditor),
-    );
+  testWidgets('all five types: the white group shows the lights at their '
+      'limit', (WidgetTester t) async {
+    await open(t, DemoApp.lights, GroupKind.white);
+    expect(find.text('Temperature · 1 of 2 lights'), findsOneWidget);
+    // A temperature below the tunable light's warm LEDs.
     const WhiteIntent candle = WhiteIntent(2000, 1);
-    editor.onChanged(
-      const ColourEngine().encode(candle, ChannelLayout.rgbcct),
-      live: false,
-      intent: candle,
-    );
+    t
+        .widget<ColourEditor>(find.byType(ColourEditor))
+        .onChanged(
+          const ColourEngine().encode(candle, ChannelLayout.cct),
+          live: false,
+          intent: candle,
+        );
     await DemoApp.settle(t, 1);
-    final GroupCapabilities caps = container(t).read(groupCapabilitiesProvider);
-    final int n = caps.limitedCount(2000);
-    expect(n, greaterThan(0));
-    expect(
-      find.text(n == 1 ? '1 light at its limit' : '$n lights at their limit'),
-      findsOneWidget,
-    );
-    // The white side, with the single white's temperature to match.
-    expect(slider('Colour temperature'), findsOneWidget);
-    expect(find.text('Match W lights · 4000 K'), findsOneWidget);
+    final GroupCapabilities caps = container(t)
+        .read(groupCapabilitiesProvider(GroupKind.white));
+    expect(caps.limitedCount(2000), 1);
     await DemoApp.shutDown(t);
   });
 
   testWidgets('a light\'s level in the group changes only that light', (
     WidgetTester t,
   ) async {
-    final DemoApp d = await open(t, DemoApp.groupLights);
+    final DemoApp d = await open(t, DemoApp.groupLights, GroupKind.colour);
     final int twinBefore = d.twin('Reading lamp').brightness;
     final Finder row = find.byKey(
       ValueKey<String>('row-${d.id('Living room')}'),
@@ -217,7 +199,7 @@ void main() {
 
   testWidgets('a change on the light\'s own screen: "Own settings", skipped '
       'by the group, back with Rejoin all', (WidgetTester t) async {
-    final DemoApp d = await open(t, DemoApp.groupLights);
+    final DemoApp d = await open(t, DemoApp.groupLights, GroupKind.colour);
     final GroupSession group = groupOf(t);
     await group.setBrightness(200);
     await DemoApp.settle(t, 1);
@@ -255,7 +237,7 @@ void main() {
   testWidgets('no light following: a message and one way back', (
     WidgetTester t,
   ) async {
-    final DemoApp d = await open(t, cctW);
+    final DemoApp d = await open(t, cctW, GroupKind.white);
     final GroupSession group = groupOf(t);
     for (final String n in cctW.keys) {
       group.setExcluded(d.id(n), excluded: true);
@@ -279,7 +261,7 @@ void main() {
   testWidgets('no light connected: controls off, and it says so', (
     WidgetTester t,
   ) async {
-    await open(t, rgbW, connect: false);
+    await open(t, rgbRgbw, GroupKind.colour, connect: false);
     expect(find.textContaining('No lights connected'), findsOneWidget);
     expect(
       t

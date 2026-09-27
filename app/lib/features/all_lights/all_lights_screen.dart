@@ -46,7 +46,8 @@ typedef _Run = void Function(Future<GroupResult> command);
 /// All Lights: the same settings sent at the same moment to every light in
 /// the group (each light keeps its own effect clock).
 class AllLightsScreen extends ConsumerStatefulWidget {
-  const AllLightsScreen({super.key});
+  const AllLightsScreen({required this.kind, super.key});
+  final GroupKind kind;
 
   @override
   ConsumerState<AllLightsScreen> createState() => _AllLightsScreenState();
@@ -59,7 +60,7 @@ class _AllLightsScreenState extends ConsumerState<AllLightsScreen> {
   @override
   void initState() {
     super.initState();
-    _group = ref.read(groupSessionProvider)?..activate();
+    _group = ref.read(groupSessionProvider(widget.kind))?..activate();
   }
 
   @override
@@ -95,15 +96,16 @@ class _AllLightsScreenState extends ConsumerState<AllLightsScreen> {
     if (group == null) return const Scaffold();
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
-    final bool anyOn = ref.watch(groupAnyOnProvider);
+    final bool anyOn = ref.watch(groupAnyOnProvider(group.kind));
     // The lights the group drives (not left out, not on their own
     // settings), and how many of them are connected.
     final ({int driven, int ready}) g = ref.watch(
-      groupStatusProvider.select(_drivenCounts),
+      groupStatusProvider(group.kind).select(_drivenCounts),
     );
     final bool live = g.ready > 0;
     final ColourSurface? surface = ref.watch(
-      groupCapabilitiesProvider.select((GroupCapabilities c) => c.surface),
+      groupCapabilitiesProvider(group.kind)
+          .select((GroupCapabilities c) => c.surface),
     );
     // Only single whites: no colour tab (and no tab switcher).
     final List<_GroupTab> tabs = <_GroupTab>[
@@ -121,6 +123,7 @@ class _AllLightsScreenState extends ConsumerState<AllLightsScreen> {
       ),
     };
     return _GroupTone(
+      kind: group.kind,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: AmbientCanvas(
@@ -149,9 +152,11 @@ class _AllLightsScreenState extends ConsumerState<AllLightsScreen> {
                 onPower: live ? () => _run(group.setPower(on: !anyOn)) : null,
               ),
               const SizedBox(height: Space.m),
-              const Center(child: RepaintBoundary(child: _GroupOrb())),
+              Center(
+                child: RepaintBoundary(child: _GroupOrb(kind: group.kind)),
+              ),
               const SizedBox(height: Space.s),
-              _StatusLine(budget: group.budget, fg: fg),
+              _StatusLine(kind: group.kind, budget: group.budget, fg: fg),
               const SizedBox(height: Space.s),
               if (g.driven == 0)
                 _NoneFollowing(group: group, fg: fg)
@@ -202,20 +207,20 @@ class _AllLightsScreenState extends ConsumerState<AllLightsScreen> {
 /// The screen's palette, from the lights' common colour (or effect) and
 /// whether any of them is on.
 class _GroupTone extends ConsumerWidget {
-  const _GroupTone({required this.child});
+  const _GroupTone({required this.kind, required this.child});
+  final GroupKind kind;
   final Widget child;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ChannelColor colour = ref.watch(
-      groupColourProvider.select(_groupColour),
+      groupColourProvider(kind).select(_groupColour),
     );
     final int mode = ref.watch(
-      groupModeProvider.select(
-        (Common<int> m) => m.value ?? EbModeCatalog.solid,
-      ),
+      groupModeProvider(kind)
+          .select((Common<int> m) => m.value ?? EbModeCatalog.solid),
     );
-    final bool anyOn = ref.watch(groupAnyOnProvider);
+    final bool anyOn = ref.watch(groupAnyOnProvider(kind));
     return ToneScope(
       tone: LightTone.derive(
         DisplayColor.ofScene(
@@ -276,7 +281,8 @@ ChannelColor _editorValue(
 /// Up to four connected lights as small still orbs, fanned out, and how
 /// many more there are.
 class _GroupOrb extends ConsumerWidget {
-  const _GroupOrb();
+  const _GroupOrb({required this.kind});
+  final GroupKind kind;
 
   static const int _shown = 4;
   static const double _size = 64;
@@ -284,7 +290,7 @@ class _GroupOrb extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final GroupStatus st = ref.watch(groupStatusProvider);
+    final GroupStatus st = ref.watch(groupStatusProvider(kind));
     final List<String> ready = <String>[
       for (final GroupMember m in st.members)
         if (m.phase == LinkPhase.ready && !m.own) m.id,
@@ -398,20 +404,23 @@ class _MiniOrb extends ConsumerWidget {
 /// "4 of 5 connected · 1 connecting", and the connection budget when it
 /// leaves lights out.
 class _StatusLine extends ConsumerWidget {
-  const _StatusLine({required this.budget, required this.fg});
+  const _StatusLine({
+    required this.kind,
+    required this.budget,
+    required this.fg,
+  });
+  final GroupKind kind;
   final int budget;
   final Color fg;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
-    final GroupStatus st = ref.watch(groupStatusProvider);
+    final GroupStatus st = ref.watch(groupStatusProvider(kind));
     final ({int driven, int ready}) g = _drivenCounts(st);
-    // Out of every saved light: one left out of the group is not connected
-    // for it.
-    final int saved = ref.watch(
-      fixturesProvider.select((List<Fixture> l) => l.length),
-    );
+    // Out of every light of the group: one left out is not connected for
+    // it.
+    final int saved = st.members.length + st.excluded.length;
     final TextStyle style = TextStyle(
       color: fg.withValues(alpha: 0.7),
       fontSize: 13,
@@ -462,7 +471,7 @@ class _GroupToolbar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
     final bool differ = ref.watch(
-      groupTimerProvider.select((Common<Duration> c) => c.mixed),
+      groupTimerProvider(group.kind).select((Common<Duration> c) => c.mixed),
     );
     Future<String?> send(int seconds) async {
       final GroupResult r = await group.setTimer(seconds);
@@ -472,7 +481,7 @@ class _GroupToolbar extends ConsumerWidget {
     }
 
     return TimerCountdown(
-      deadline: groupTimerDeadlineProvider,
+      deadline: groupTimerDeadlineProvider(group.kind),
       builder: (BuildContext context, Duration? left) => Column(
         children: <Widget>[
           GlassIconButton(
@@ -484,8 +493,8 @@ class _GroupToolbar extends ConsumerWidget {
                 ? () => unawaited(
                     showSleepTimerSheet(
                       context,
-                      deadline: groupTimerDeadlineProvider,
-                      spanKey: GroupSession.timerSpanKey,
+                      deadline: groupTimerDeadlineProvider(group.kind),
+                      spanKey: group.timerSpanKey,
                       onStart: (Duration d) => send(d.inSeconds),
                       onCancel: () => send(0),
                     ),
@@ -515,8 +524,8 @@ class _GroupBrightness extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final Common<int> b = ref.watch(groupBrightnessProvider);
-    final bool anyOn = ref.watch(groupAnyOnProvider);
+    final Common<int> b = ref.watch(groupBrightnessProvider(group.kind));
+    final bool anyOn = ref.watch(groupAnyOnProvider(group.kind));
     return BrightnessPillSlider(
       // Mixed: the fill rests half way (no light's value).
       value: b.mixed ? 0.5 : (anyOn ? (b.value ?? 0) / 255 : 0),
@@ -544,10 +553,14 @@ class _GroupColourTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
-    final GroupCapabilities caps = ref.watch(groupCapabilitiesProvider);
+    final GroupCapabilities caps = ref.watch(
+      groupCapabilitiesProvider(group.kind),
+    );
     final ChannelLayout? layout = caps.surfaceLayout;
     if (layout == null) return const SizedBox.shrink();
-    final Common<ColourIntent> common = ref.watch(groupColourProvider);
+    final Common<ColourIntent> common = ref.watch(
+      groupColourProvider(group.kind),
+    );
     final LedWhitePoints wp = caps.whitePoints;
     final ColourSurface surface = caps.surface!;
     final int total = caps.lights.length;
@@ -556,18 +569,10 @@ class _GroupColourTab extends ConsumerWidget {
         ? caps.limitedCount(shown.kelvin)
         : 0;
     final List<String> notes = <String>[
-      if (surface != ColourSurface.tunableWhite &&
-          caps.colourAffected.length < total)
-        l.scopeColour(caps.colourAffected.length, total),
-      if (surface == ColourSurface.colourPlusWhite &&
-          caps.whiteLedAffected.length < total)
-        l.scopeWhiteLed(caps.whiteLedAffected.length, total),
-      if ((surface == ColourSurface.tunableWhite ||
-              surface == ColourSurface.colourPlusTunableWhite) &&
-          caps.temperatureAffected.length < total)
-        l.scopeTemperature(caps.temperatureAffected.length, total),
-      if (caps.fixedWhiteIds.isNotEmpty)
-        l.whitesKeepTheirWhite(caps.fixedWhiteIds.length),
+      if (surface == ColourSurface.tunableWhite &&
+          caps.tunableIds.length < total)
+        l.scopeTemperature(caps.tunableIds.length, total),
+      if (caps.hasFixedWhite) l.whitesKeepTheirWhite(caps.fixedWhiteIds.length),
       if (limited > 0) l.lightsAtLimit(limited),
     ];
     final Color fg = ToneScope.darkOf(context)
@@ -609,17 +614,18 @@ class _GroupColourTab extends ConsumerWidget {
             whitePoints: wp,
             showChannels: false,
             enabled: enabled,
-            kelvinMarkers: <KelvinMarker>[
-              for (final int k in caps.matchKelvins)
-                (kelvin: k, label: l.matchWhiteLights(k)),
-            ],
             onGestureStart: () => group.beginGesture(EbKeys.color),
             onGestureEnd: () => group.endGesture(EbKeys.color),
             onChanged:
                 (ChannelColor c, {required bool live, ColourIntent? intent}) =>
-                    unawaited(
-                      group.setColour(intent ?? RawIntent(c), live: live),
-                    ),
+                    unawaited(switch (intent) {
+                      final HsvIntent i => group.setColour(i, live: live),
+                      WhiteIntent(:final double kelvin) => group.setTemperature(
+                        kelvin,
+                        live: live,
+                      ),
+                      _ => Future<GroupResult>.value(const GroupResult()),
+                    }),
           ),
         ),
       ],
@@ -653,7 +659,8 @@ class _GroupEffectsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
     final List<String> ready = <String>[
-      for (final GroupMember m in ref.watch(groupStatusProvider).members)
+      for (final GroupMember m
+          in ref.watch(groupStatusProvider(group.kind)).members)
         if (m.phase == LinkPhase.ready && !m.own) m.id,
     ];
     final List<_LightMode> lights = <_LightMode>[
@@ -703,7 +710,7 @@ class _GroupEffectsTab extends ConsumerWidget {
         ? null
         : having(selected.id).firstOrNull;
     final Color colour = swatchOf(
-      ref.watch(groupColourProvider.select(_groupColour)),
+      ref.watch(groupColourProvider(group.kind).select(_groupColour)),
       const LedWhitePoints(),
     );
     return Column(
@@ -715,7 +722,7 @@ class _GroupEffectsTab extends ConsumerWidget {
           color: colour,
           badges: badges,
           // They move while the lights are on and connected.
-          animate: enabled && ref.watch(groupAnyOnProvider),
+          animate: enabled && ref.watch(groupAnyOnProvider(group.kind)),
           onSelect: (int mode) {
             if (enabled) run(group.setMode(mode));
           },
@@ -752,9 +759,8 @@ class _NoneFollowing extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
     final bool anyOwn = ref.watch(
-      groupStatusProvider.select(
-        (GroupStatus s) => s.members.any((GroupMember m) => m.own),
-      ),
+      groupStatusProvider(group.kind)
+          .select((GroupStatus s) => s.members.any((GroupMember m) => m.own)),
     );
     return GlassSurface(
       key: const ValueKey<String>('group-none-following'),
@@ -788,11 +794,18 @@ class _GroupLights extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
-    final List<Fixture> fixtures = ref.watch(fixturesProvider);
-    final bool anyOwn = ref.watch(
-      groupStatusProvider.select(
-        (GroupStatus s) => s.members.any((GroupMember m) => m.own),
+    // The group's lights only (a light is in one group).
+    final List<Fixture> fixtures = ref.watch(
+      fixturesProvider.select(
+        (List<Fixture> all) => <Fixture>[
+          for (final Fixture f in all)
+            if (GroupKind.of(f.layout) == group.kind) f,
+        ],
       ),
+    );
+    final bool anyOwn = ref.watch(
+      groupStatusProvider(group.kind)
+          .select((GroupStatus s) => s.members.any((GroupMember m) => m.own)),
     );
     return GlassSurface(
       padding: const EdgeInsets.all(Space.m),
@@ -871,7 +884,7 @@ class _GroupLightRowState extends ConsumerState<_GroupLightRow> {
           .select((FixtureStatus s) => (s.phase, s.incompatibility)),
     );
     final _RowState g = ref.watch(
-      groupStatusProvider.select((GroupStatus s) {
+      groupStatusProvider(widget.group.kind).select((GroupStatus s) {
         final GroupMember? m = s.members
             .where((GroupMember m) => m.id == id)
             .firstOrNull;

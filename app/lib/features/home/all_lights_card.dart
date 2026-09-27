@@ -8,6 +8,7 @@ import '../../design/tokens/tokens.dart';
 import '../../design/tone/tone_scope.dart';
 import '../../l10n/app_localizations.dart';
 import '../../sessions/fixture_session.dart';
+import '../../sessions/group_capabilities.dart';
 import '../../sessions/group_session.dart';
 import 'light_tile.dart';
 
@@ -15,7 +16,8 @@ import 'light_tile.dart';
 /// lights and how many are connected. It connects nothing: the count is the
 /// group's while All Lights is open, else what the lights already report.
 class AllLightsCard extends ConsumerWidget {
-  const AllLightsCard({required this.onOpen, super.key});
+  const AllLightsCard({required this.kind, required this.onOpen, super.key});
+  final GroupKind kind;
   final VoidCallback onOpen;
 
   static const int _swatches = 4;
@@ -23,7 +25,7 @@ class AllLightsCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
-    final GroupStatus st = ref.watch(groupStatusProvider);
+    final GroupStatus st = ref.watch(groupStatusProvider(kind));
     final List<String> ids = <String>[
       for (final GroupMember m in st.members) m.id,
     ];
@@ -37,10 +39,8 @@ class AllLightsCard extends ConsumerWidget {
                 ),
               )
               .length;
-    // Out of every saved light, as on the All Lights screen.
-    final int saved = ref.watch(
-      fixturesProvider.select((List<Fixture> l) => l.length),
-    );
+    // Out of every light of the group, left-out ones included.
+    final int saved = st.members.length + st.excluded.length;
     final String status = l.groupConnected(ready, saved);
     final Color fg = ToneScope.darkOf(context)
         ? Colors.white
@@ -51,7 +51,7 @@ class AllLightsCard extends ConsumerWidget {
       label: l.allLightsTitle,
       value: status,
       child: GestureDetector(
-        key: const ValueKey<String>('all-lights-card'),
+        key: ValueKey<String>('group-card-${kind.name}'),
         onTap: onOpen,
         child: GlassSurface(
           radius: Radii.large,

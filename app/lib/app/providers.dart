@@ -232,20 +232,32 @@ final class NearbyNotifier extends Notifier<List<NearbyLight>> {
   }
 }
 
-/// All Lights (null when BLE is not running).
-final Provider<GroupSession?> groupSessionProvider = Provider<GroupSession?>(
-  (Ref ref) => ref.watch(appSessionProvider)?.group,
+/// The two automatic groups (null when BLE is not running).
+final Provider<GroupSessions?> groupSessionsProvider = Provider<GroupSessions?>(
+  (Ref ref) => ref.watch(appSessionProvider)?.groups,
 );
 
-/// The group's members and counts.
-final NotifierProvider<GroupStatusNotifier, GroupStatus> groupStatusProvider =
-    NotifierProvider<GroupStatusNotifier, GroupStatus>(GroupStatusNotifier.new);
+/// One group (null when BLE is not running).
+final ProviderFamily<GroupSession?, GroupKind> groupSessionProvider =
+    Provider.family<GroupSession?, GroupKind>(
+      (Ref ref, GroupKind kind) => ref.watch(groupSessionsProvider)?.of(kind),
+    );
+
+/// A group's members, counts and presets.
+final NotifierProviderFamily<GroupStatusNotifier, GroupStatus, GroupKind>
+groupStatusProvider =
+    NotifierProvider.family<GroupStatusNotifier, GroupStatus, GroupKind>(
+      GroupStatusNotifier.new,
+    );
 
 final class GroupStatusNotifier extends Notifier<GroupStatus> {
+  GroupStatusNotifier(this.kind);
+  final GroupKind kind;
+
   @override
   GroupStatus build() {
-    final GroupSession? g = ref.watch(groupSessionProvider);
-    if (g == null) return const GroupStatus();
+    final GroupSession? g = ref.watch(groupSessionProvider(kind));
+    if (g == null) return GroupStatus(kind);
     final StreamSubscription<GroupStatus> sub = g.statuses.listen(
       (GroupStatus s) => state = s,
     );
@@ -254,23 +266,29 @@ final class GroupStatusNotifier extends Notifier<GroupStatus> {
   }
 }
 
-/// The group's colour controls and which lights each one reaches.
-final Provider<GroupCapabilities> groupCapabilitiesProvider =
-    Provider<GroupCapabilities>(
-      (Ref ref) => ref.watch(
-        groupStatusProvider.select((GroupStatus s) => s.capabilities),
+/// A group's controls and which lights each one reaches.
+final ProviderFamily<GroupCapabilities, GroupKind> groupCapabilitiesProvider =
+    Provider.family<GroupCapabilities, GroupKind>(
+      (Ref ref, GroupKind kind) => ref.watch(
+        groupStatusProvider(kind).select((GroupStatus s) => s.capabilities),
       ),
     );
 
-/// What the group's ready lights show together; read through the providers
+/// What a group's ready lights show together; read through the providers
 /// below, so each control hears only of what it shows.
-final NotifierProvider<_GroupLookNotifier, GroupLook> _groupLookProvider =
-    NotifierProvider<_GroupLookNotifier, GroupLook>(_GroupLookNotifier.new);
+final NotifierProviderFamily<_GroupLookNotifier, GroupLook, GroupKind>
+_groupLookProvider =
+    NotifierProvider.family<_GroupLookNotifier, GroupLook, GroupKind>(
+      _GroupLookNotifier.new,
+    );
 
 final class _GroupLookNotifier extends Notifier<GroupLook> {
+  _GroupLookNotifier(this.kind);
+  final GroupKind kind;
+
   @override
   GroupLook build() {
-    final GroupSession? g = ref.watch(groupSessionProvider);
+    final GroupSession? g = ref.watch(groupSessionProvider(kind));
     if (g == null) return const GroupLook();
     final StreamSubscription<GroupLook> sub = g.looks.listen(
       (GroupLook l) => state = l,
@@ -281,37 +299,45 @@ final class _GroupLookNotifier extends Notifier<GroupLook> {
 }
 
 /// The ready lights' common brightness, or mixed.
-final Provider<Common<int>> groupBrightnessProvider = Provider<Common<int>>(
-  (Ref ref) =>
-      ref.watch(_groupLookProvider.select((GroupLook l) => l.brightness)),
-);
-
-/// Whether any ready light is on.
-final Provider<bool> groupAnyOnProvider = Provider<bool>(
-  (Ref ref) => ref.watch(_groupLookProvider.select((GroupLook l) => l.anyOn)),
-);
-
-/// The ready lights' common mode, or mixed.
-final Provider<Common<int>> groupModeProvider = Provider<Common<int>>(
-  (Ref ref) => ref.watch(_groupLookProvider.select((GroupLook l) => l.mode)),
-);
-
-/// The ready lights' common colour, or mixed.
-final Provider<Common<ColourIntent>> groupColourProvider =
-    Provider<Common<ColourIntent>>(
-      (Ref ref) =>
-          ref.watch(_groupLookProvider.select((GroupLook l) => l.colour)),
-    );
-
-/// The ready lights' common sleep-timer deadline (within 2 s), mixed or none.
-final Provider<Common<Duration>> groupTimerProvider =
-    Provider<Common<Duration>>(
-      (Ref ref) => ref.watch(
-        _groupLookProvider.select((GroupLook l) => l.timerDeadline),
+final ProviderFamily<Common<int>, GroupKind> groupBrightnessProvider =
+    Provider.family<Common<int>, GroupKind>(
+      (Ref ref, GroupKind kind) => ref.watch(
+        _groupLookProvider(kind).select((GroupLook l) => l.brightness),
       ),
     );
 
-/// The group's sleep-timer deadline when every light shares one.
-final Provider<Duration?> groupTimerDeadlineProvider = Provider<Duration?>(
-  (Ref ref) => ref.watch(groupTimerProvider).value,
-);
+/// Whether any ready light is on.
+final ProviderFamily<bool, GroupKind> groupAnyOnProvider =
+    Provider.family<bool, GroupKind>(
+      (Ref ref, GroupKind kind) =>
+          ref.watch(_groupLookProvider(kind).select((GroupLook l) => l.anyOn)),
+    );
+
+/// The ready lights' common mode, or mixed.
+final ProviderFamily<Common<int>, GroupKind> groupModeProvider =
+    Provider.family<Common<int>, GroupKind>(
+      (Ref ref, GroupKind kind) =>
+          ref.watch(_groupLookProvider(kind).select((GroupLook l) => l.mode)),
+    );
+
+/// The ready lights' common colour (colour group) or temperature (white
+/// group), or mixed.
+final ProviderFamily<Common<ColourIntent>, GroupKind> groupColourProvider =
+    Provider.family<Common<ColourIntent>, GroupKind>(
+      (Ref ref, GroupKind kind) =>
+          ref.watch(_groupLookProvider(kind).select((GroupLook l) => l.colour)),
+    );
+
+/// The ready lights' common sleep-timer deadline (within 2 s), mixed or none.
+final ProviderFamily<Common<Duration>, GroupKind> groupTimerProvider =
+    Provider.family<Common<Duration>, GroupKind>(
+      (Ref ref, GroupKind kind) => ref.watch(
+        _groupLookProvider(kind).select((GroupLook l) => l.timerDeadline),
+      ),
+    );
+
+/// A group's sleep-timer deadline when every light shares one.
+final ProviderFamily<Duration?, GroupKind> groupTimerDeadlineProvider =
+    Provider.family<Duration?, GroupKind>(
+      (Ref ref, GroupKind kind) => ref.watch(groupTimerProvider(kind)).value,
+    );

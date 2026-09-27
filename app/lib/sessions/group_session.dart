@@ -16,6 +16,7 @@ import 'connection_manager.dart';
 import 'fixture_registry.dart';
 import 'fixture_session.dart';
 import 'group_capabilities.dart';
+import 'group_presets.dart';
 
 /// One member of the group as the UI lists it.
 @immutable
@@ -64,22 +65,39 @@ final class GroupMember {
 /// Where the group's lights are: each member plus the counts.
 @immutable
 final class GroupStatus {
-  const GroupStatus({
+  const GroupStatus(
+    this.kind, {
+    this.exists = false,
     this.active = false,
     this.members = const <GroupMember>[],
     this.excluded = const <String>[],
-    this.capabilities = const GroupCapabilities.none(),
+    this._capabilities,
+    this.presets = const <GroupPreset?>[],
+    this.activePreset,
   });
+
+  final GroupKind kind;
+
+  /// The group has 2 or more lights (left-out ones included).
+  final bool exists;
   final bool active;
 
-  /// Every saved light not left out, in Home's order (own ones included).
+  /// The group's lights not left out, in Home's order (own ones included).
   final List<GroupMember> members;
 
   /// Lights left out of the group, in Home's order.
   final List<String> excluded;
 
-  /// The group's colour controls, from the lights it drives.
-  final GroupCapabilities capabilities;
+  /// The group's controls, from the lights it drives.
+  GroupCapabilities get capabilities =>
+      _capabilities ?? GroupCapabilities.none(kind);
+  final GroupCapabilities? _capabilities;
+
+  /// The group's preset slots ([GroupPresets.slots]; null = empty).
+  final List<GroupPreset?> presets;
+
+  /// The slot last applied, until the next group command.
+  final int? activePreset;
 
   int get total => members.length;
   int get ready => _count((GroupMember m) => m.phase == LinkPhase.ready);
@@ -102,16 +120,24 @@ final class GroupStatus {
   @override
   bool operator ==(Object other) =>
       other is GroupStatus &&
+      other.kind == kind &&
+      other.exists == exists &&
       other.active == active &&
       const ListEquality<GroupMember>().equals(other.members, members) &&
       const ListEquality<String>().equals(other.excluded, excluded) &&
-      other.capabilities == capabilities;
+      other.capabilities == capabilities &&
+      const ListEquality<GroupPreset?>().equals(other.presets, presets) &&
+      other.activePreset == activePreset;
   @override
   int get hashCode => Object.hash(
+    kind,
+    exists,
     active,
     Object.hashAll(members),
     Object.hashAll(excluded),
     capabilities,
+    Object.hashAll(presets),
+    activePreset,
   );
 }
 
@@ -208,13 +234,33 @@ final class GroupResult {
   String toString() => 'GroupResult(ok $ok, failed $failed, skipped $skipped)';
 }
 
-/// The last look sent to the group: a colour, or a mode with its settings.
+/// How a preset save went: [saved] of the [total] lights the group drives
+/// (the others were not ready or not following).
+@immutable
+final class GroupSaveResult {
+  const GroupSaveResult(this.saved, this.total);
+  final int saved;
+  final int total;
+
+  @override
+  bool operator ==(Object other) =>
+      other is GroupSaveResult && other.saved == saved && other.total == total;
+  @override
+  int get hashCode => Object.hash(saved, total);
+  @override
+  String toString() => 'GroupSaveResult($saved of $total)';
+}
+
+/// The last look sent to the group: a colour, a mode with its settings, or
+/// a preset (a look per light).
 sealed class _Look {
   const _Look();
 }
 
 final class _ColourLook extends _Look {
   const _ColourLook(this.intent);
+
+  /// A colour (colour group) or a white at full level (white group).
   final ColourIntent intent;
 }
 
@@ -225,29 +271,129 @@ final class _ModeLook extends _Look {
   final int? frequency;
 }
 
-/// All Lights: one control surface sending the same commands at the same
-/// moment to every saved light (of any type) that is not excluded. It
-/// broadcasts; each light runs its own effect clock.
+final class _PresetLook extends _Look {
+  const _PresetLook(this.preset);
+  final GroupPreset preset;
+}
+
+/// The per-light group keys, shared by both groups: a light is in one group
+/// only, so they stay unambiguous.
+final class _GroupMemory {
+  _GroupMemory(this._store) {
+    excluded = _readIds(GroupSession.excludedKey);
+    following = _readIds(GroupSession.followingKey);
+    own = _readIds(GroupSession.ownKey);
+    trim = <String, double>{
+      if (_store.read(GroupSession.trimKey) case final Map<String, Object?> m)
+        for (final MapEntry<String, Object?> e in m.entries)
+          if (e.value case final num t)
+            e.key: GroupSession._clampTrim(t.toDouble()),
+    };
+  }
+
+  final JsonStore _store;
+  late Set<String> excluded;
+  late Set<String> following;
+  late Set<String> own;
+  late Map<String, double> trim;
+
+  Set<String> _readIds(String key) => <String>{
+    ...switch (_store.read(key)) {
+      final List<Object?> l => l.whereType<String>(),
+      _ => const <String>[],
+    },
+  };
+
+  /// Forgets the lights not in [ids].
+  void prune(Set<String> ids) {
+    if (!<String>[
+      ...excluded,
+      ...following,
+      ...own,
+      ...trim.keys,
+    ].any((String id) => !ids.contains(id))) {
+      return;
+    }
+    excluded = excluded.where(ids.contains).toSet();
+    following = following.where(ids.contains).toSet();
+    own = own.where(ids.contains).toSet();
+    trim.removeWhere((String id, _) => !ids.contains(id));
+    save();
+  }
+
+  void save() {
+    _store.write(GroupSession.excludedKey, excluded.toList()..sort());
+    _store.write(GroupSession.followingKey, following.toList()..sort());
+    _store.write(GroupSession.ownKey, own.toList()..sort());
+    _store.write(GroupSession.trimKey, <String, Object?>{
+      for (final String id in trim.keys.toList()..sort()) id: trim[id],
+    });
+  }
+}
+
+/// The two automatic groups, created and disposed together. Only one is
+/// active at a time: activating one deactivates the other.
+final class GroupSessions {
+  GroupSessions({
+    required FixtureRegistry registry,
+    required ConnectionManager connections,
+    required JsonStore store,
+    required Scheduler scheduler,
+  }) {
+    final _GroupMemory memory = _GroupMemory(store);
+    _all = <GroupKind, GroupSession>{
+      for (final GroupKind kind in GroupKind.values)
+        kind: GroupSession._(
+          kind,
+          registry: registry,
+          connections: connections,
+          store: store,
+          scheduler: scheduler,
+          memory: memory,
+          onActivate: _activated,
+        ),
+    };
+  }
+
+  late final Map<GroupKind, GroupSession> _all;
+
+  GroupSession of(GroupKind kind) => _all[kind]!;
+  GroupSession get colour => of(GroupKind.colour);
+  GroupSession get white => of(GroupKind.white);
+
+  void _activated(GroupSession active) {
+    for (final GroupSession g in _all.values) {
+      if (!identical(g, active)) g.deactivate();
+    }
+  }
+
+  void dispose() {
+    for (final GroupSession g in _all.values) {
+      g.dispose();
+    }
+  }
+}
+
+/// One automatic group: the saved lights of its [kind] (a group exists with
+/// 2 or more), one control surface sending the same commands at the same
+/// moment to every one not left out. It broadcasts; each light runs its own
+/// effect clock.
 final class GroupSession {
-  GroupSession({
+  GroupSession._(
+    this.kind, {
     required this._registry,
     required this._connections,
     required this._store,
     required this._scheduler,
+    required this._memory,
+    required this._onActivate,
   }) {
-    _excluded = _readIds(excludedKey);
-    _following = _readIds(followingKey);
-    _own = _readIds(ownKey);
-    _trim = <String, double>{
-      if (_store.read(trimKey) case final Map<String, Object?> m)
-        for (final MapEntry<String, Object?> e in m.entries)
-          if (e.value case final num t) e.key: _clampTrim(t.toDouble()),
-    };
+    _presets = GroupPresets.read(_store, kind);
     _regSub = _registry.changes.listen((_) => _onFixtures());
     _onFixtures();
   }
 
-  /// Fixture ids left out of the group (persisted).
+  /// Fixture ids left out of their group (persisted).
   static const String excludedKey = 'group.excluded';
 
   /// Lights a group command (or catch-up) reached since they last joined
@@ -263,18 +409,20 @@ final class GroupSession {
 
   static const double minTrim = 0.05;
 
+  /// A group needs this many lights of its kind.
+  static const int minLights = 2;
+
   /// A timer with less left than this is not sent to a late light.
   static const Duration minCatchUpTimer = Duration(seconds: 5);
 
+  final GroupKind kind;
   final FixtureRegistry _registry;
   final ConnectionManager _connections;
   final JsonStore _store;
   final Scheduler _scheduler;
+  final _GroupMemory _memory;
+  final void Function(GroupSession) _onActivate;
 
-  late Set<String> _excluded;
-  late Set<String> _following;
-  late Set<String> _own;
-  late Map<String, double> _trim;
   late final StreamSubscription<List<Fixture>> _regSub;
   final Map<String, StreamSubscription<FixtureStatus>> _subs =
       <String, StreamSubscription<FixtureStatus>>{};
@@ -285,6 +433,8 @@ final class GroupSession {
   Set<String> _limitedOut = const <String>{};
   bool _active = false;
   bool _disposed = false;
+  late List<GroupPreset?> _presets;
+  int? _activePreset;
 
   // What the user sent in this activation (never persisted).
   _Look? _look;
@@ -294,7 +444,7 @@ final class GroupSession {
   /// Set: a timer was sent; its deadline, or null when it was cancelled.
   (Duration?,)? _timer;
 
-  GroupStatus _status = const GroupStatus();
+  late GroupStatus _status = GroupStatus(kind);
   GroupLook _groupLook = const GroupLook();
   final StreamController<GroupStatus> _statuses =
       StreamController<GroupStatus>.broadcast();
@@ -303,36 +453,50 @@ final class GroupSession {
 
   bool get active => _active;
 
+  /// Whether the group has enough lights to exist.
+  bool get exists => _lights.length >= minLights;
+
   /// Lights this phone connects at once (the group's budget).
   int get budget => _connections.policy.maxConnections;
 
   /// Whose timer span the sleep-timer sheet keeps for the group.
-  static const String timerSpanKey = 'all-lights';
+  String get timerSpanKey => 'group-${kind.name}';
   GroupStatus get status => _status;
   Stream<GroupStatus> get statuses => _statuses.stream;
   GroupLook get look => _groupLook;
   Stream<GroupLook> get looks => _looks.stream;
 
-  /// Member ids in Home's order.
-  List<String> get members => <String>[
+  /// Every saved light of the group's kind, in Home's order.
+  List<Fixture> get _lights => <Fixture>[
     for (final Fixture f in _registry.fixtures)
-      if (!_excluded.contains(f.id)) f.id,
+      if (GroupKind.of(f.layout) == kind) f,
   ];
 
-  bool isExcluded(String id) => _excluded.contains(id);
-  bool isFollowing(String id) => _following.contains(id);
-  bool isOwn(String id) => _own.contains(id);
+  bool _isMine(String id) => switch (_registry.byId(id)) {
+    final Fixture f => GroupKind.of(f.layout) == kind,
+    null => false,
+  };
+
+  /// Member ids (not left out) in Home's order.
+  List<String> get members => <String>[
+    for (final Fixture f in _lights)
+      if (!_memory.excluded.contains(f.id)) f.id,
+  ];
+
+  bool isExcluded(String id) => _memory.excluded.contains(id);
+  bool isFollowing(String id) => _memory.following.contains(id);
+  bool isOwn(String id) => _memory.own.contains(id);
 
   /// The light's brightness trim (0.05..1).
-  double trimOf(String id) => _trim[id] ?? 1;
+  double trimOf(String id) => _memory.trim[id] ?? 1;
 
   /// Leaves a light out of the group, or takes it back in ([rejoin]).
   void setExcluded(String id, {required bool excluded}) {
-    if (_registry.byId(id) == null) return;
+    if (!_isMine(id)) return;
     if (!excluded) return rejoin(id);
-    if (!_excluded.add(id)) return;
-    _following.remove(id);
-    _save();
+    if (!_memory.excluded.add(id)) return;
+    _memory.following.remove(id);
+    _memory.save();
     if (_active) _allocate();
     _emit();
   }
@@ -343,20 +507,17 @@ final class GroupSession {
   /// catch-up reaches it.
   void rejoin(String id) => _rejoin(<String>[id]);
 
-  /// [rejoin] for every light.
-  void rejoinAll() =>
-      _rejoin(<String>[for (final Fixture f in _registry.fixtures) f.id]);
+  /// [rejoin] for every light of the group.
+  void rejoinAll() => _rejoin(<String>[for (final Fixture f in _lights) f.id]);
 
   void _rejoin(List<String> ids) {
-    final List<String> known = ids
-        .where((String id) => _registry.byId(id) != null)
-        .toList();
+    final List<String> known = ids.where(_isMine).toList();
     if (known.isEmpty) return;
     for (final String id in known) {
-      _own.remove(id);
-      _excluded.remove(id);
+      _memory.own.remove(id);
+      _memory.excluded.remove(id);
     }
-    _save();
+    _memory.save();
     if (_active) {
       _allocate();
       for (final String id in known) {
@@ -366,18 +527,19 @@ final class GroupSession {
     _emit();
   }
 
-  /// Sets a light's brightness trim; it applies to that light at once.
+  /// Sets a light's brightness trim; it applies to that light at once (as a
+  /// group change: it never detaches the light).
   void setTrim(String id, double trim) {
-    if (_registry.byId(id) == null) return;
+    if (!_isMine(id)) return;
     final double t = _clampTrim(trim);
     final double old = trimOf(id);
     if (t == old) return;
     if (t == 1) {
-      _trim.remove(id);
+      _memory.trim.remove(id);
     } else {
-      _trim[id] = t;
+      _memory.trim[id] = t;
     }
-    _save();
+    _memory.save();
     final FixtureSession? s = _connections.session(id);
     final EbDeviceState? st = s?.status.state;
     if (s != null &&
@@ -386,7 +548,7 @@ final class GroupSession {
         _ready.contains(id) &&
         _drives(id)) {
       final int master =
-          _brightness ?? math.min(255, (st.scene.brightness / old).round());
+          _masterFor(id) ?? math.min(255, (st.scene.brightness / old).round());
       s.setBrightness(trimmed(master, t), origin: CommandOrigin.group);
     }
     _emit();
@@ -423,17 +585,12 @@ final class GroupSession {
     return const Common<int>.mixed();
   }
 
-  Set<String> _readIds(String key) => <String>{
-    ...switch (_store.read(key)) {
-      final List<Object?> l => l.whereType<String>(),
-      _ => const <String>[],
-    },
-  };
-
   /// Connects the members (favourites first, then Home's order) up to the
-  /// connection budget; the rest are reported as limited out.
+  /// connection budget; the rest are reported as limited out. The other
+  /// group is deactivated. Does nothing while the group doesn't exist.
   void activate() {
-    if (_active || _disposed) return;
+    if (_active || _disposed || !exists) return;
+    _onActivate(this);
     _active = true;
     _allocate();
     _emit();
@@ -449,6 +606,7 @@ final class GroupSession {
     _brightness = null;
     _power = null;
     _timer = null;
+    _activePreset = null;
     _emit();
   }
 
@@ -472,6 +630,7 @@ final class GroupSession {
   // ---- commands --------------------------------------------------------------------
 
   Future<GroupResult> setPower({required bool on}) {
+    _command();
     _power = on;
     // Turning off cancels the sleep timers.
     if (!on) _timer = null;
@@ -483,14 +642,16 @@ final class GroupSession {
   /// [v] is the master: each light gets it at its trim. Each keeps its own
   /// off-at-zero handling (a release at 0 turns it off).
   Future<GroupResult> setBrightness(int v, {bool live = false}) {
+    _command();
     _brightness = v;
-    return _sendNow(
-      (FixtureSession s, _) => s.setBrightness(
+    return _send((FixtureSession s, _) {
+      s.setBrightness(
         trimmed(v, trimOf(s.fixture.id)),
         live: live,
         origin: CommandOrigin.group,
-      ),
-    );
+      );
+      return Future<EbResult>.value(EbResult.ok);
+    });
   }
 
   void beginGesture(String key) {
@@ -505,18 +666,41 @@ final class GroupSession {
     }
   }
 
-  /// Encoded per light for its layout and LEDs: a colour goes to the lights
-  /// with colour LEDs, a white to those and the tunable ones; the others
-  /// are skipped.
-  Future<GroupResult> setColour(ColourIntent intent, {bool live = false}) {
+  /// The colour group's colour, on every light with its white LEDs off
+  /// (RGBW's W and RGBCCT's CW/WW at 0), so all of them match. The white
+  /// group has no colour: nothing is sent.
+  Future<GroupResult> setColour(HsvIntent pick, {bool live = false}) =>
+      _sendLook(GroupCapabilities.colourPick(pick), live: live);
+
+  /// The white group's colour temperature at full level, on its CCT lights
+  /// only, each clamped to its own range; W lights are skipped. The colour
+  /// group has no temperature: nothing is sent.
+  Future<GroupResult> setTemperature(double kelvin, {bool live = false}) =>
+      _sendLook(WhiteIntent(kelvin, 1.0), live: live);
+
+  Future<GroupResult> _sendLook(ColourIntent intent, {required bool live}) {
+    if (!_takesColour(intent)) {
+      return Future<GroupResult>.value(const GroupResult());
+    }
+    _command();
     _look = _ColourLook(intent);
-    return _send((FixtureSession s, _) {
-      _sendColour(s, intent, live: live, origin: CommandOrigin.group);
-      return Future<EbResult>.value(EbResult.ok);
-    }, supported: (FixtureSession s, _) => _applies(intent, s));
+    return _send(
+      (FixtureSession s, _) {
+        _sendColour(s, _colourFor(s.fixture, intent)!, live: live);
+        return Future<EbResult>.value(EbResult.ok);
+      },
+      supported: (FixtureSession s, _) => _colourFor(s.fixture, intent) != null,
+    );
   }
 
+  bool _takesColour(ColourIntent intent) => switch (intent) {
+    HsvIntent() => kind == GroupKind.colour,
+    WhiteIntent() => kind == GroupKind.white,
+    RawIntent() => false,
+  };
+
   Future<GroupResult> setMode(int mode) {
+    _command();
     _look = _ModeLook(mode);
     return _send(
       (FixtureSession s, _) => s.setMode(mode, origin: CommandOrigin.group),
@@ -525,6 +709,7 @@ final class GroupSession {
   }
 
   Future<GroupResult> setSpeed(int mode, int v) {
+    _command();
     final _Look? l = _look;
     if (l is _ModeLook && l.mode == mode) {
       _look = _ModeLook(mode, speed: v, frequency: l.frequency);
@@ -536,6 +721,7 @@ final class GroupSession {
   }
 
   Future<GroupResult> setFrequency(int mode, int v) {
+    _command();
     final _Look? l = _look;
     if (l is _ModeLook && l.mode == mode) {
       _look = _ModeLook(mode, speed: l.speed, frequency: v);
@@ -547,7 +733,7 @@ final class GroupSession {
     );
   }
 
-  /// Sleep timer on every ready light; 0 cancels.
+  /// Sleep timer on every ready light; 0 cancels. Never part of a preset.
   Future<GroupResult> setTimer(int seconds) {
     _timer = (
       seconds > 0 ? _scheduler.now + Duration(seconds: seconds) : null,
@@ -558,14 +744,176 @@ final class GroupSession {
     );
   }
 
+  /// A look command: the applied preset is no longer the group's look.
+  void _command() {
+    if (_activePreset == null) return;
+    _activePreset = null;
+    _emit();
+  }
+
+  // ---- presets -----------------------------------------------------------------------
+
+  /// The group's preset slots ([GroupPresets.slots]; null = empty).
+  List<GroupPreset?> get presets => _presets;
+
+  /// The slot last applied, until the next group command.
+  int? get activePreset => _activePreset;
+
+  /// Saves (or overwrites) [slot] with the look of every ready light that
+  /// follows the group, and the group's master. Lights not ready are left
+  /// out; with none to save the slot is unchanged.
+  GroupSaveResult savePreset(int slot, String name) {
+    _checkSlot(slot);
+    final List<String> driven = members.where(_drives).toList();
+    final List<(String, EbDeviceState, GroupPresetLight)> saved =
+        <(String, EbDeviceState, GroupPresetLight)>[
+          for (final String id in driven)
+            if (_ready.contains(id) && _memory.following.contains(id))
+              if (_connections.session(id) case final FixtureSession s)
+                if (s.status.state case final EbDeviceState st)
+                  (id, st, _presetLightOf(s.status, st)),
+        ];
+    if (saved.isEmpty) return GroupSaveResult(0, driven.length);
+    final List<(int, double)> levels = <(int, double)>[
+      for (final (String id, EbDeviceState st, _) in saved)
+        (st.scene.brightness, trimOf(id)),
+    ];
+    final int master =
+        commonMaster(levels).value ??
+        _brightness ??
+        levels
+            .map(((int, double) l) => (l.$1 / l.$2).round())
+            .max
+            .clamp(0, 255);
+    _setPreset(
+      slot,
+      GroupPreset(
+        name: name,
+        master: master,
+        lights: <String, GroupPresetLight>{
+          for (final (String id, _, GroupPresetLight l) in saved) id: l,
+        },
+      ),
+    );
+    return GroupSaveResult(saved.length, driven.length);
+  }
+
+  void renamePreset(int slot, String name) {
+    _checkSlot(slot);
+    final GroupPreset? p = _presets[slot];
+    if (p == null || p.name == name) return;
+    _setPreset(slot, p.renamed(name));
+  }
+
+  void deletePreset(int slot) {
+    _checkSlot(slot);
+    if (_presets[slot] == null) return;
+    if (_activePreset == slot) _activePreset = null;
+    _setPreset(slot, null);
+  }
+
+  /// A group command: each ready light the group drives that is in the
+  /// preset gets its colour, then its mode with speed and frequency, then
+  /// the master at its current trim, then its power. Lights not in it are
+  /// untouched; lights not ready get it when they connect.
+  Future<GroupResult> applyPreset(int slot) {
+    _checkSlot(slot);
+    final GroupPreset? p = _presets[slot];
+    if (p == null) return Future<GroupResult>.value(const GroupResult());
+    _look = _PresetLook(p);
+    _brightness = null;
+    _power = null;
+    _activePreset = slot;
+    _emit();
+    return _send((FixtureSession s, LightCapabilities c) {
+      final String id = s.fixture.id;
+      return _sendPresetLight(
+        s,
+        c,
+        p.lights[id]!,
+        brightness: trimmed(p.master, trimOf(id)),
+        on: p.lights[id]!.on,
+        origin: CommandOrigin.group,
+      );
+    }, supported: (FixtureSession s, _) => p.lights.containsKey(s.fixture.id));
+  }
+
+  void _checkSlot(int slot) =>
+      RangeError.checkValueInInterval(slot, 0, GroupPresets.slots - 1, 'slot');
+
+  void _setPreset(int slot, GroupPreset? p) {
+    _presets = List<GroupPreset?>.unmodifiable(
+      List<GroupPreset?>.of(_presets)..[slot] = p,
+    );
+    GroupPresets.write(_store, kind, _presets);
+    _emit();
+  }
+
+  /// What a light shows, as a preset keeps it.
+  static GroupPresetLight _presetLightOf(FixtureStatus st, EbDeviceState s) =>
+      GroupPresetLight(
+        on: !s.sleeping && s.scene.brightness > 0,
+        colour: s.scene.color,
+        pick: switch (_pickOf(st)) {
+          final ColourIntent i when i is! RawIntent => i,
+          _ => null,
+        },
+        mode: s.scene.mode,
+        speed: s.scene.speed,
+        frequency: s.scene.frequency,
+      );
+
+  /// A preset light's look, in order: colour, mode with its settings,
+  /// brightness, power. A single white takes no colour; one the layout or
+  /// firmware can't take is skipped.
+  Future<EbResult> _sendPresetLight(
+    FixtureSession s,
+    LightCapabilities caps,
+    GroupPresetLight l, {
+    required int? brightness,
+    required bool? on,
+    required CommandOrigin origin,
+  }) async {
+    final Fixture f = s.fixture;
+    final List<Future<EbResult>> sent = <Future<EbResult>>[];
+    if (l.colour.layout == f.layout && f.layout != ChannelLayout.w) {
+      s.setColor(l.colour, intent: l.pick, origin: origin);
+    }
+    if (caps.supportsMode(l.mode)) {
+      sent
+        ..add(s.setMode(l.mode, origin: origin))
+        ..add(s.setSpeed(l.mode, l.speed, origin: origin))
+        ..add(s.setFrequency(l.mode, l.frequency, origin: origin));
+    }
+    if (brightness != null) s.setBrightness(brightness, origin: origin);
+    if (on != null) sent.add(s.setPower(on: on, origin: origin));
+    final List<EbResult> results = await Future.wait(sent);
+    return results.firstWhere(
+      (EbResult r) => !r.isSuccess,
+      orElse: () => EbResult.ok,
+    );
+  }
+
   // ---- sending -----------------------------------------------------------------------
 
   /// The group drives this light: in the group and not on its own settings.
-  bool _drives(String id) => !_excluded.contains(id) && !_own.contains(id);
+  bool _drives(String id) =>
+      !_memory.excluded.contains(id) && !_memory.own.contains(id);
+
+  /// The master a light gets now: the last one sent, else the applied
+  /// preset's (for its lights only).
+  int? _masterFor(String id) =>
+      _brightness ??
+      switch (_look) {
+        _PresetLook(:final GroupPreset preset)
+            when preset.lights.containsKey(id) =>
+          preset.master,
+        _ => null,
+      };
 
   Iterable<FixtureSession> get _readySessions sync* {
     for (final String id in members) {
-      if (!_ready.contains(id) || _own.contains(id)) continue;
+      if (!_ready.contains(id) || _memory.own.contains(id)) continue;
       final FixtureSession? s = _connections.session(id);
       if (s != null) yield s;
     }
@@ -590,10 +938,10 @@ final class GroupSession {
         continue;
       }
       sent.add(action(s, c));
-      followed |= _following.add(s.fixture.id);
+      followed |= _memory.following.add(s.fixture.id);
     }
     if (followed) {
-      _save();
+      _memory.save();
       _emit();
     }
     final List<EbResult> results = await Future.wait(sent);
@@ -601,20 +949,20 @@ final class GroupSession {
     return GroupResult(ok: ok, failed: results.length - ok, skipped: skipped);
   }
 
-  /// [_send] for changes that have no reply of their own (streamed).
-  Future<GroupResult> _sendNow(
-    void Function(FixtureSession s, LightCapabilities c) action,
-  ) => _send((FixtureSession s, LightCapabilities c) {
-    action(s, c);
-    return Future<EbResult>.value(EbResult.ok);
-  });
-
   static GroupLight _groupLight(Fixture f) =>
-      GroupLight(f.id, f.layout, f.whitePoints);
+      GroupLight(f.id, f.layout, f.whitePoints, f.capabilities);
 
-  /// Whether [intent] applies to the light at all.
-  static bool _applies(ColourIntent intent, FixtureSession s) =>
-      GroupCapabilities.intentFor(intent, _groupLight(s.fixture)) != null;
+  /// The group's [intent] as light [f] takes it, or null when it has no
+  /// such LEDs: colours go to colour lights, temperatures to CCT lights.
+  static ColourIntent? _colourFor(Fixture f, ColourIntent intent) =>
+      switch (intent) {
+        HsvIntent() => f.layout.hasColour ? intent : null,
+        WhiteIntent(:final double kelvin) => GroupCapabilities.temperatureFor(
+          kelvin,
+          _groupLight(f),
+        ),
+        RawIntent() => null,
+      };
 
   /// As the colour editor sends it: the encoding for this light, with the
   /// intent as the pick (so the light's own screen shows exactly it).
@@ -622,26 +970,23 @@ final class GroupSession {
     FixtureSession s,
     ColourIntent intent, {
     required bool live,
-    required CommandOrigin origin,
+    CommandOrigin origin = CommandOrigin.group,
   }) {
     final Fixture f = s.fixture;
-    final ColourIntent? own = GroupCapabilities.intentFor(
-      intent,
-      _groupLight(f),
-    );
-    if (own == null) return;
-    final ChannelColor c = ColourEngine(f.whitePoints).encode(own, f.layout);
-    s.setColor(c, live: live, intent: own, origin: origin);
+    final ChannelColor c = ColourEngine(f.whitePoints).encode(intent, f.layout);
+    s.setColor(c, live: live, intent: intent, origin: origin);
   }
 
   // ---- membership and connections ----------------------------------------------------
 
   void _onFixtures() {
     if (_disposed) return;
-    final Set<String> ids = <String>{
+    final Set<String> all = <String>{
       for (final Fixture f in _registry.fixtures) f.id,
     };
-    // Forgotten lights: out of the group's list, their connection released.
+    final Set<String> ids = <String>{for (final Fixture f in _lights) f.id};
+    // Forgotten lights (or ones now of the other kind): out of the group's
+    // list, their connection released.
     for (final String id in _subs.keys.toList()) {
       if (ids.contains(id)) continue;
       unawaited(_subs.remove(id)!.cancel());
@@ -649,18 +994,14 @@ final class GroupSession {
       _ready.remove(id);
       _wants.remove(id)?.release();
     }
-    // Every group key forgets lights that are gone.
-    if (<String>[
-      ..._excluded,
-      ..._following,
-      ..._own,
-      ..._trim.keys,
-    ].any((String id) => !ids.contains(id))) {
-      _excluded = _excluded.where(ids.contains).toSet();
-      _following = _following.where(ids.contains).toSet();
-      _own = _own.where(ids.contains).toSet();
-      _trim.removeWhere((String id, _) => !ids.contains(id));
-      _save();
+    // Every group key and preset forgets lights that are gone.
+    _memory.prune(all);
+    final List<GroupPreset?> kept = <GroupPreset?>[
+      for (final GroupPreset? p in _presets) p?.keeping(all),
+    ];
+    if (!const ListEquality<GroupPreset?>().equals(kept, _presets)) {
+      _presets = List<GroupPreset?>.unmodifiable(kept);
+      GroupPresets.write(_store, kind, _presets);
     }
     for (final String id in ids) {
       if (_subs.containsKey(id)) continue;
@@ -670,6 +1011,7 @@ final class GroupSession {
       _subs[id] = s.statuses.listen((FixtureStatus st) => _onStatus(id, st));
       _userSubs[id] = s.userLookChanges.listen((_) => _onUserLook(id));
     }
+    if (_active && !exists) return deactivate();
     if (_active) _allocate();
     _emit();
   }
@@ -683,19 +1025,19 @@ final class GroupSession {
   }
 
   /// The user changed a following light's look on its own controls: it
-  /// keeps its own settings until it rejoins (also with All Lights closed).
+  /// keeps its own settings until it rejoins (also with the group closed).
   void _onUserLook(String id) {
-    if (!_following.remove(id)) return;
-    _own.add(id);
-    _save();
+    if (!_memory.following.remove(id)) return;
+    _memory.own.add(id);
+    _memory.save();
     _emit();
   }
 
   /// Wants for the first members up to the budget, favourites first.
   void _allocate() {
     final List<Fixture> ordered = <Fixture>[
-      for (final Fixture f in _registry.fixtures)
-        if (!_excluded.contains(f.id)) f,
+      for (final Fixture f in _lights)
+        if (!_memory.excluded.contains(f.id)) f,
     ];
     mergeSort(
       ordered,
@@ -724,17 +1066,43 @@ final class GroupSession {
   }
 
   /// A light the group drives that became ready (or rejoined) gets what the
-  /// group was sent, as far as it applies to it: look, brightness (at its
-  /// trim), power, then the timer's remaining time. It follows the group.
+  /// group was sent, as far as it applies to it: look (its own from an
+  /// applied preset), brightness (at its trim), power, then the timer's
+  /// remaining time. It follows the group.
   void _catchUp(String id) {
     final FixtureSession? s = _connections.session(id);
     if (s == null) return;
     final LightCapabilities caps = _capabilities(s);
     const CommandOrigin origin = CommandOrigin.system;
     bool sent = false;
+    final int? b = _masterFor(id);
+    final bool inPreset = switch (_look) {
+      _PresetLook(:final GroupPreset preset) => preset.lights.containsKey(id),
+      _ => false,
+    };
     switch (_look) {
-      case _ColourLook(:final ColourIntent intent) when _applies(intent, s):
-        _sendColour(s, intent, live: false, origin: origin);
+      case _PresetLook(:final GroupPreset preset)
+          when preset.lights.containsKey(id):
+        final GroupPresetLight l = preset.lights[id]!;
+        unawaited(
+          _sendPresetLight(
+            s,
+            caps,
+            l,
+            brightness: b == null ? null : trimmed(b, trimOf(id)),
+            on: _power ?? l.on,
+            origin: origin,
+          ),
+        );
+        sent = true;
+      case _ColourLook(:final ColourIntent intent)
+          when _colourFor(s.fixture, intent) != null:
+        _sendColour(
+          s,
+          _colourFor(s.fixture, intent)!,
+          live: false,
+          origin: origin,
+        );
         sent = true;
       case _ModeLook(:final int mode, :final int? speed, :final int? frequency)
           when caps.supportsMode(mode):
@@ -744,18 +1112,20 @@ final class GroupSession {
           unawaited(s.setFrequency(mode, frequency, origin: origin));
         }
         sent = true;
-      case _ColourLook() || _ModeLook() || null:
+      case _PresetLook() || _ColourLook() || _ModeLook() || null:
         break;
     }
-    final int? b = _brightness;
-    if (b != null) {
-      s.setBrightness(trimmed(b, trimOf(id)), origin: origin);
-      sent = true;
-    }
-    final bool? on = _power;
-    if (on != null) {
-      unawaited(s.setPower(on: on, origin: origin));
-      sent = true;
+    // A preset light got its brightness and power with its look.
+    if (!inPreset) {
+      if (b != null) {
+        s.setBrightness(trimmed(b, trimOf(id)), origin: origin);
+        sent = true;
+      }
+      final bool? on = _power;
+      if (on != null) {
+        unawaited(s.setPower(on: on, origin: origin));
+        sent = true;
+      }
     }
     final (Duration?,)? timer = _timer;
     if (timer != null && caps.hasTimer) {
@@ -768,25 +1138,19 @@ final class GroupSession {
       }
       sent = true;
     }
-    if (sent && _following.add(id)) _save();
-  }
-
-  void _save() {
-    _store.write(excludedKey, _excluded.toList()..sort());
-    _store.write(followingKey, _following.toList()..sort());
-    _store.write(ownKey, _own.toList()..sort());
-    _store.write(trimKey, <String, Object?>{
-      for (final String id in _trim.keys.toList()..sort()) id: _trim[id],
-    });
+    if (sent && _memory.following.add(id)) _memory.save();
   }
 
   // ---- what the UI shows -------------------------------------------------------------
 
   void _emit() {
     if (_disposed) return;
+    final List<Fixture> lights = _lights;
     final List<String> ids = members;
     final List<String> driven = ids.where(_drives).toList();
     final GroupStatus status = GroupStatus(
+      kind,
+      exists: lights.length >= minLights,
       active: _active,
       members: <GroupMember>[
         for (final String id in ids)
@@ -794,19 +1158,21 @@ final class GroupSession {
             id,
             _connections.session(id)?.status.phase ?? LinkPhase.idle,
             limitedOut: _limitedOut.contains(id),
-            following: _following.contains(id),
-            own: _own.contains(id),
+            following: _memory.following.contains(id),
+            own: _memory.own.contains(id),
             trim: trimOf(id),
           ),
       ],
       excluded: <String>[
-        for (final Fixture f in _registry.fixtures)
-          if (_excluded.contains(f.id)) f.id,
+        for (final Fixture f in lights)
+          if (_memory.excluded.contains(f.id)) f.id,
       ],
-      capabilities: GroupCapabilities(<GroupLight>[
+      capabilities: GroupCapabilities(kind, <GroupLight>[
         for (final String id in driven)
           if (_registry.byId(id) case final Fixture f) _groupLight(f),
       ]),
+      presets: _presets,
+      activePreset: _activePreset,
     );
     if (status != _status) {
       _status = status;
@@ -831,11 +1197,11 @@ final class GroupSession {
     final List<EbDeviceState> states = <EbDeviceState>[
       for (final FixtureStatus st in ready) st.state!,
     ];
-    // Colour from the lights that have colour LEDs, else from the tunable
-    // whites; a single white keeps its own white and never counts.
-    final bool anyColour = fixtures.any((Fixture f) => f.layout.hasColour);
-    bool shows(Fixture f) =>
-        anyColour ? f.layout.hasColour : f.layout.white == WhiteKind.tunable;
+    // The colour group's colour; the white group's temperature from its CCT
+    // lights (a single white keeps its own white and never counts).
+    bool shows(Fixture f) => kind == GroupKind.colour
+        ? f.layout.hasColour
+        : f.layout == ChannelLayout.cct;
     return GroupLook(
       brightness: commonMaster(<(int, double)>[
         for (int i = 0; i < states.length; i++)
@@ -855,19 +1221,22 @@ final class GroupSession {
     );
   }
 
-  /// The colour a light shows as an intent: the pick while the light's
-  /// colour is the change that sent it, else read from its channels.
-  static ColourIntent _shownIntent(FixtureStatus st, Fixture f) {
+  /// The pick while the light's colour is the change that sent it.
+  static ColourIntent? _pickOf(FixtureStatus st) {
     final EbColorOrigin? origin = st.view?.colorOrigin;
     final ColourPick? pick = st.colourPick;
-    if (origin != null &&
-        origin.byUser &&
-        pick != null &&
-        pick.seq == origin.seq) {
-      return pick.intent;
-    }
-    return ColourEngine(f.whitePoints).decode(st.state!.scene.color);
+    return origin != null &&
+            origin.byUser &&
+            pick != null &&
+            pick.seq == origin.seq
+        ? pick.intent
+        : null;
   }
+
+  /// The colour a light shows as an intent: the pick while the light's
+  /// colour is the change that sent it, else read from its channels.
+  static ColourIntent _shownIntent(FixtureStatus st, Fixture f) =>
+      _pickOf(st) ?? ColourEngine(f.whitePoints).decode(st.state!.scene.color);
 
   /// Timers firing within 2 s of each other count as one (the earliest).
   static Common<Duration> _commonDeadline(List<Duration?> deadlines) {

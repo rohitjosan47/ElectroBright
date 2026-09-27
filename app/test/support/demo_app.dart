@@ -122,6 +122,9 @@ final class DemoApp {
       200,
       scrollable: find.byType(Scrollable).first,
     );
+    // Built past the fold (lazy lists build ahead): bring it on screen.
+    await t.ensureVisible(find.text(name));
+    await t.pump();
     await t.tap(find.text(name));
     await settle(t);
     expect(find.byType(ControlScreen), findsOneWidget);
@@ -132,8 +135,7 @@ final class DemoApp {
     );
   }
 
-  FixtureSession session(String name) =>
-      app.ble.connections.session(id(name))!;
+  FixtureSession session(String name) => app.ble.connections.session(id(name))!;
 
   /// The simulated light (the firmware twin).
   EbDeviceModel model(String name) => services.demoLights!.fixtures

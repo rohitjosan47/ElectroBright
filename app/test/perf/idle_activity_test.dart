@@ -15,6 +15,7 @@ import 'package:electrobright/core/store/json_store.dart';
 import 'package:electrobright/design/controls/glass_slider.dart';
 import 'package:electrobright/design/controls/hue_wheel.dart';
 import 'package:electrobright/features/all_lights/all_lights_screen.dart';
+import 'package:electrobright/sessions/group_capabilities.dart';
 import 'package:electrobright/features/control/control_screen.dart';
 import 'package:electrobright/features/control/timer_sheet.dart';
 import 'package:electrobright/features/home/home_screen.dart';
@@ -368,9 +369,11 @@ void main() {
   testWidgets('All Lights idle', (WidgetTester t) async {
     final DemoApp d = await start(t);
     unawaited(
-      Navigator.of(
-        t.element(find.byType(HomeScreen)),
-      ).push(MaterialPageRoute<void>(builder: (_) => const AllLightsScreen())),
+      Navigator.of(t.element(find.byType(HomeScreen))).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const AllLightsScreen(kind: GroupKind.colour),
+        ),
+      ),
     );
     await DemoApp.settle(t, 5);
     quiet(d);

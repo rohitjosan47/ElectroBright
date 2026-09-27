@@ -6,33 +6,40 @@ import 'package:electrobright/core/model/channel_color.dart';
 import 'package:electrobright/features/all_lights/all_lights_screen.dart';
 import 'package:electrobright/features/control/colour/colour_editor.dart';
 import 'package:electrobright/sessions/fixture_session.dart';
+import 'package:electrobright/sessions/group_capabilities.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/demo_app.dart';
 
-/// All Lights with an RGB, two identical RGBW lights, a tunable white and a
-/// single white (simulated).
+/// The groups with an RGB, two identical RGBW lights (the colour group), a
+/// tunable white and a single white (the white group), simulated.
 void main() {
   const List<String> all = <String>[
     'Desk strip',
     'Living room',
     'Reading lamp',
-    'Kitchen',
-    'Hallway',
   ];
   const int rainbow = 10;
 
-  Future<DemoApp> open(WidgetTester t) async {
+  Future<DemoApp> open(
+    WidgetTester t, [
+    GroupKind kind = GroupKind.colour,
+  ]) async {
     t.view.physicalSize = const Size(393, 2600);
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.reset);
     final DemoApp d = await DemoApp.start(t, lights: DemoApp.groupLights);
     await DemoApp.settle(t, 1);
-    openAllLights(t);
+    openGroup(t, kind);
     await DemoApp.settle(t, 5);
     expect(find.byType(AllLightsScreen), findsOneWidget);
-    expect(find.text('5 of 5 connected'), findsOneWidget);
+    expect(
+      find.text(
+        kind == GroupKind.colour ? '3 of 3 connected' : '2 of 2 connected',
+      ),
+      findsOneWidget,
+    );
     return d;
   }
 
@@ -71,7 +78,7 @@ void main() {
     await DemoApp.shutDown(t);
   });
 
-  testWidgets('a colour reaches the colour lights; the white lights keep '
+  testWidgets('a colour reaches the colour group; the white lights keep '
       'theirs', (WidgetTester t) async {
     final DemoApp d = await open(t);
     final ChannelColor kitchen = d.twin('Kitchen').color;
@@ -92,18 +99,16 @@ void main() {
   testWidgets('Rainbow shows how many lights have it and goes to those', (
     WidgetTester t,
   ) async {
-    final DemoApp d = await open(t);
+    final DemoApp d = await open(t, GroupKind.white);
     await t.tap(find.text('Effects'));
     await DemoApp.settle(t, 1);
     // The single white has no Rainbow; the tunable white's firmware has it.
-    expect(find.text('4/5'), findsOneWidget);
+    expect(find.text('1/2'), findsOneWidget);
     await t.tap(find.byKey(const ValueKey<String>('mode-$rainbow')));
     await DemoApp.settle(t, 2);
-    for (final String n in all.where((String n) => n != 'Hallway')) {
-      expect(d.twin(n).mode, rainbow, reason: n);
-    }
+    expect(d.twin('Kitchen').mode, rainbow);
     expect(d.twin('Hallway').mode, 1);
-    expect(find.text('Applied to 4 of 5 lights'), findsOneWidget);
+    expect(find.text('Applied to 1 of 2 lights'), findsOneWidget);
     await DemoApp.shutDown(t);
   });
 
@@ -161,7 +166,7 @@ void main() {
     await t.ensureVisible(include);
     await t.tap(include);
     await DemoApp.settle(t, 1);
-    expect(find.text('4 of 5 connected'), findsOneWidget);
+    expect(find.text('2 of 3 connected'), findsOneWidget);
     final ChannelColor before = d.twin('Reading lamp').color;
     await t.ensureVisible(find.byType(ColourEditor));
     await pick(t, const HsvIntent(Hsv(120, 1, 1)));
@@ -169,16 +174,18 @@ void main() {
     expect(d.twin('Reading lamp').color, before);
     await DemoApp.shutDown(t);
   });
-  testWidgets('Home opens All Lights; leaving it releases its connections '
+  testWidgets('Home opens a group; leaving it releases its connections '
       'after the idle grace', (WidgetTester t) async {
     t.view.physicalSize = const Size(393, 2600);
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.reset);
     final DemoApp d = await DemoApp.start(t, lights: DemoApp.groupLights);
     await DemoApp.settle(t, 3);
-    int ready() => all
-        .where((String n) => d.session(n).status.phase == LinkPhase.ready)
-        .length;
+    int ready() => <String>[
+      ...all,
+      'Kitchen',
+      'Hallway',
+    ].where((String n) => d.session(n).status.phase == LinkPhase.ready).length;
     // Home keeps three lights connected.
     expect(ready(), 3);
     // The card is the only way in.
@@ -186,9 +193,10 @@ void main() {
       find.byKey(const ValueKey<String>('all-lights-button')),
       findsNothing,
     );
-    expect(find.text('3 of 5 connected'), findsOneWidget);
+    expect(find.text('3 of 3 connected'), findsOneWidget);
+    expect(find.text('0 of 2 connected'), findsOneWidget);
 
-    await t.tap(find.byKey(const ValueKey<String>('all-lights-card')));
+    await t.tap(find.byKey(const ValueKey<String>('group-card-white')));
     await DemoApp.settle(t, 5);
     expect(find.byType(AllLightsScreen), findsOneWidget);
     expect(ready(), 5);
@@ -205,9 +213,11 @@ void main() {
   });
 }
 
-/// Opens All Lights over Home.
-void openAllLights(WidgetTester t) => unawaited(
+/// Opens a group over Home.
+void openGroup(WidgetTester t, GroupKind kind) => unawaited(
   t
       .state<NavigatorState>(find.byType(Navigator).first)
-      .push(MaterialPageRoute<void>(builder: (_) => const AllLightsScreen())),
+      .push(
+        MaterialPageRoute<void>(builder: (_) => AllLightsScreen(kind: kind)),
+      ),
 );
