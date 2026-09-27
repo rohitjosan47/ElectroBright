@@ -7,7 +7,12 @@ import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/design/components/glass_controls.dart';
 import 'package:electrobright/design/controls/glass_slider.dart';
 import 'package:electrobright/design/controls/hue_wheel.dart';
+import 'package:electrobright/core/color/light_tone.dart';
+import 'package:electrobright/core/protocol/eb/eb_scene.dart';
+import 'package:electrobright/design/tone/tone_scope.dart';
 import 'package:electrobright/features/control/colour/colour_editor.dart';
+import 'package:electrobright/features/control/control_screen.dart';
+import 'package:electrobright/features/control/effects/effect_colours.dart';
 import 'package:electrobright/features/groups/group_screen.dart';
 import 'package:electrobright/sessions/fixture_session.dart';
 import 'package:electrobright/sessions/group_capabilities.dart';
@@ -351,9 +356,203 @@ void main() {
     await t.tap(row);
     await DemoApp.settle(t, 1);
     expect(
-      find.byKey(ValueKey<String>('trim-chip-${d.id('Living room')}')),
+      find.descendant(
+        of: find.byKey(ValueKey<String>('level-pill-${d.id('Living room')}')),
+        matching: find.text('${(level * 100).round()} %'),
+      ),
       findsOneWidget,
     );
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('every row shows its level; the pill opens and closes the '
+      'slider, which moves only that light', (WidgetTester t) async {
+    final SemanticsHandle semantics = t.ensureSemantics();
+    final DemoApp d = await open(t);
+    for (final String n in colourLights) {
+      final Finder pill = find.byKey(ValueKey<String>('level-pill-${d.id(n)}'));
+      expect(pill, findsOneWidget);
+      expect(
+        find.descendant(of: pill, matching: find.text('100 %')),
+        findsOneWidget,
+      );
+    }
+    final String id = d.id('Reading lamp');
+    final Finder pill = find.byKey(ValueKey<String>('level-pill-$id'));
+    expect(
+      t.getSemantics(pill),
+      matchesSemantics(
+        label: 'Level in group, 100 percent',
+        hint: 'Double tap to adjust',
+        isButton: true,
+        hasExpandedState: true,
+        hasTapAction: true,
+      ),
+    );
+    double turns() => t
+        .widget<AnimatedRotation>(
+          find.descendant(of: pill, matching: find.byType(AnimatedRotation)),
+        )
+        .turns;
+    expect(turns(), 0);
+    await t.ensureVisible(pill);
+    await t.tap(pill);
+    await DemoApp.settle(t, 1);
+    final Finder trim = find.byKey(ValueKey<String>('trim-$id'));
+    expect(trim, findsOneWidget);
+    expect(turns(), 0.5);
+    final int other = d.twin('Living room').brightness;
+    await t.drag(trim, const Offset(-120, 0));
+    await DemoApp.settle(t, 1);
+    expect(groupOf(t).trimOf(id), lessThan(1));
+    expect(d.twin('Reading lamp').brightness, lessThan(255));
+    expect(d.twin('Living room').brightness, other);
+    await t.tap(pill);
+    await DemoApp.settle(t, 1);
+    expect(trim, findsNothing);
+    expect(turns(), 0);
+    semantics.dispose();
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('colour group, Police: colour source and beacons for every '
+      'light, mixed while they differ; the white group has none', (
+    WidgetTester t,
+  ) async {
+    final DemoApp d = await open(t);
+    await t.tap(find.text('Effects'));
+    await DemoApp.settle(t, 1);
+    await t.tap(find.byKey(const ValueKey<String>('mode-12')));
+    await DemoApp.settle(t, 2);
+    final Finder source = find.byKey(
+      const ValueKey<String>('group-colour-source'),
+    );
+    expect(source, findsOneWidget);
+    // Police starts on its own red/blue: no beacons.
+    expect(find.byType(BeaconSwatch), findsNothing);
+    await t.ensureVisible(source);
+    await t.tap(
+      find.descendant(of: source, matching: find.text('Your colours')),
+    );
+    await DemoApp.settle(t, 2);
+    for (final String n in colourLights) {
+      expect(d.twin(n).policeColorMode, 0, reason: n);
+    }
+    expect(find.byType(BeaconSwatch), findsNWidgets(2));
+    // One light's beacon on its own: split swatch until the group sets it.
+    unawaited(
+      d
+          .session('Living room')
+          .setPoliceColor(
+            EbPoliceSlot.a,
+            ChannelColor(ChannelLayout.rgbw, const <int>[0, 0, 255, 0]),
+            origin: CommandOrigin.system,
+          ),
+    );
+    await DemoApp.settle(t, 1);
+    expect(
+      t
+          .widget<BeaconSwatch>(
+            find.byKey(const ValueKey<String>('group-beacon-a')),
+          )
+          .color,
+      isNull,
+    );
+    await groupOf(t)
+        .setPoliceColor(EbPoliceSlot.a, const HsvIntent(Hsv(120, 1, 1)));
+    await DemoApp.settle(t, 1);
+    expect(
+      t
+          .widget<BeaconSwatch>(
+            find.byKey(const ValueKey<String>('group-beacon-a')),
+          )
+          .color,
+      isNotNull,
+    );
+    for (final String n in colourLights) {
+      expect(d.twin(n).policeA.values.take(3), <int>[0, 255, 0], reason: n);
+    }
+    // A colour source that differs shows no choice.
+    unawaited(
+      d
+          .session('Desk strip')
+          .setColorMode(
+            EbColorModeKind.police,
+            1,
+            origin: CommandOrigin.system,
+          ),
+    );
+    await DemoApp.settle(t, 1);
+    expect(
+      t
+          .widget<GlassSegmented<int?>>(
+            find.descendant(
+              of: source,
+              matching: find.byType(GlassSegmented<int?>),
+            ),
+          )
+          .selected,
+      isNull,
+    );
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('white group, Police: no colour source', (WidgetTester t) async {
+    await open(t, lights: cctW, kind: GroupKind.white);
+    await t.tap(find.text('Effects'));
+    await DemoApp.settle(t, 1);
+    await t.tap(find.byKey(const ValueKey<String>('mode-12')));
+    await DemoApp.settle(t, 2);
+    expect(
+      find.byKey(const ValueKey<String>('group-colour-source')),
+      findsNothing,
+    );
+    expect(find.byType(ColourSourceControl), findsNothing);
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('the white group\'s tone is a CCT light\'s at the same '
+      'temperature', (WidgetTester t) async {
+    // Tones land at once (no glide) to compare them.
+    t.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(t.platformDispatcher.clearAllTestValues);
+    final DemoApp d = await open(t, lights: cctOnly, kind: GroupKind.white);
+    await groupOf(t).setTemperature(3000);
+    await DemoApp.settle(t, 2);
+    final LightTone group = ToneScope.of(t.element(find.byType(KelvinSlider)));
+    // Back to Home, then the same temperature on one light's own screen.
+    await t.tap(find.byIcon(Icons.chevron_left_rounded).first);
+    await DemoApp.settle(t, 2);
+    await d.open(t, 'Kitchen');
+    await DemoApp.settle(t, 1);
+    final LightTone single = ToneScope.of(t.element(find.byType(KelvinSlider)));
+    expect(group, single);
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('a W-only group\'s tone is a W light\'s', (WidgetTester t) async {
+    // Tones land at once (no glide) to compare them.
+    t.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(t.platformDispatcher.clearAllTestValues);
+    final DemoApp d = await open(t, lights: wOnly, kind: GroupKind.white);
+    final LightTone group = ToneScope.of(
+      t.element(find.byKey(const ValueKey<String>('effects-grid'))),
+    );
+    await t.tap(find.byIcon(Icons.chevron_left_rounded).first);
+    await DemoApp.settle(t, 2);
+    await d.open(t, 'Hallway');
+    await DemoApp.settle(t, 1);
+    final LightTone single = ToneScope.of(
+      t.element(
+        find.descendant(
+          of: find.byType(ControlScreen),
+          matching: find.byKey(const ValueKey<String>('brightness')),
+        ),
+      ),
+    );
+    expect(group, single);
     await DemoApp.shutDown(t);
   });
 

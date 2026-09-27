@@ -5,6 +5,7 @@ import '../core/color/colour_engine.dart';
 import '../core/color/hsv.dart';
 import '../core/model/channel_color.dart';
 import '../core/model/channel_layout.dart';
+import '../core/protocol/eb/eb_scene.dart';
 import '../core/store/json_store.dart';
 import 'group_capabilities.dart';
 
@@ -18,6 +19,9 @@ final class GroupPresetLight {
     required this.mode,
     required this.speed,
     required this.frequency,
+    this.colorModes,
+    this.policeA,
+    this.policeB,
   });
 
   final bool on;
@@ -32,6 +36,21 @@ final class GroupPresetLight {
   final int speed;
   final int frequency;
 
+  /// Colour source per kind (firework, club, police), in the order of
+  /// [EbColorModeKind.values]; null when not kept (white lights).
+  final List<int>? colorModes;
+
+  /// Police beacon colours in the light's own channels; null when not kept.
+  final ChannelColor? policeA;
+  final ChannelColor? policeB;
+
+  /// The colour source kept for [kind], if any.
+  int? colorMode(EbColorModeKind kind) => colorModes?[kind.index];
+
+  /// The beacon colour kept for [slot], if any.
+  ChannelColor? police(EbPoliceSlot slot) =>
+      slot == EbPoliceSlot.a ? policeA : policeB;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'on': on,
     'layout': colour.layout.wire,
@@ -40,6 +59,9 @@ final class GroupPresetLight {
     'mode': mode,
     'speed': speed,
     'frequency': frequency,
+    if (colorModes case final List<int> m) 'colorModes': m,
+    if (policeA case final ChannelColor a) 'policeA': a.toJson(),
+    if (policeB case final ChannelColor b) 'policeB': b.toJson(),
   };
 
   static GroupPresetLight? fromJson(Object? json) {
@@ -59,6 +81,13 @@ final class GroupPresetLight {
     if (colour == null || mode is! int || speed is! int || frequency is! int) {
       return null;
     }
+    final List<int>? colorModes = switch (json['colorModes']) {
+      final List<Object?> m
+          when m.length == EbColorModeKind.values.length &&
+              m.every((Object? v) => v is int && (v == 0 || v == 1)) =>
+        m.cast<int>(),
+      _ => null,
+    };
     return GroupPresetLight(
       on: json['on'] != false,
       colour: colour,
@@ -66,6 +95,9 @@ final class GroupPresetLight {
       mode: mode,
       speed: speed,
       frequency: frequency,
+      colorModes: colorModes,
+      policeA: ChannelColor.fromJson(layout!, json['policeA']),
+      policeB: ChannelColor.fromJson(layout, json['policeB']),
     );
   }
 
@@ -102,9 +134,22 @@ final class GroupPresetLight {
       other.pick == pick &&
       other.mode == mode &&
       other.speed == speed &&
-      other.frequency == frequency;
+      other.frequency == frequency &&
+      const ListEquality<int>().equals(other.colorModes, colorModes) &&
+      other.policeA == policeA &&
+      other.policeB == policeB;
   @override
-  int get hashCode => Object.hash(on, colour, pick, mode, speed, frequency);
+  int get hashCode => Object.hash(
+    on,
+    colour,
+    pick,
+    mode,
+    speed,
+    frequency,
+    colorModes == null ? null : Object.hashAll(colorModes!),
+    policeA,
+    policeB,
+  );
 }
 
 /// A group preset, stored on the phone (never in the lights' own slots):

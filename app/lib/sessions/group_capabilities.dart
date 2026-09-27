@@ -82,16 +82,26 @@ final class GroupCapabilities {
   bool get hasTunable => tunableIds.isNotEmpty;
   bool get hasFixedWhite => fixedWhiteIds.isNotEmpty;
 
-  /// The temperature slider's range: the union of the CCT lights' ranges.
+  /// The group's white points: the temperature range is the union of the
+  /// CCT lights' ranges; the single white is the first W light's.
   LedWhitePoints get whitePoints {
+    const LedWhitePoints d = LedWhitePoints();
+    if (kind != GroupKind.white) return d;
     final List<GroupLight> tunable = <GroupLight>[
       for (final GroupLight l in lights)
-        if (kind == GroupKind.white && l.tunable) l,
+        if (l.tunable) l,
     ];
-    if (tunable.isEmpty) return const LedWhitePoints();
+    final GroupLight? fixed = lights
+        .where((GroupLight l) => l.fixedWhite)
+        .firstOrNull;
     return LedWhitePoints(
-      wwK: tunable.map((GroupLight l) => l.whitePoints.wwK).min,
-      cwK: tunable.map((GroupLight l) => l.whitePoints.cwK).max,
+      wK: fixed?.whitePoints.wK ?? d.wK,
+      wwK: tunable.isEmpty
+          ? d.wwK
+          : tunable.map((GroupLight l) => l.whitePoints.wwK).min,
+      cwK: tunable.isEmpty
+          ? d.cwK
+          : tunable.map((GroupLight l) => l.whitePoints.cwK).max,
     );
   }
 

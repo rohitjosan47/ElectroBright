@@ -7,6 +7,7 @@ import 'package:electrobright/core/model/channel_color.dart';
 import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/model/fixture.dart';
 import 'package:electrobright/core/protocol/eb/eb_fixture_catalog.dart';
+import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/core/store/json_store.dart';
 import 'package:electrobright/core/util/scheduler.dart';
 import 'package:electrobright/drivers/electrobright/eb_session.dart';
@@ -37,6 +38,24 @@ void main() {
   const String x = 'fx-rgbcct', x2 = 'fx-rgbcct-2';
   const String cct = 'fx-cct', cct2 = 'fx-cct-2';
   const String w = 'fx-w', w2 = 'fx-w-2';
+  // An RGB light whose firmware has neither Fireworks nor Police.
+  const String basic = 'fx-rgb-basic';
+  const EbFixtureSpec rgbBasic = EbFixtureSpec(
+    folder: 'ElectroBright_RGB',
+    fwsimName: 'rgb',
+    layout: ChannelLayout.rgb,
+    modelId: 'EB-C3-RGB-V1',
+    bleName: 'ElectroBright_C3_RGB_V1',
+    capsReply:
+        'CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,'
+        'LAYOUT=RGB,MODES=17F7',
+    nvsNamespace: 'eb3rgb',
+    modeMask: 0x17F7,
+    colorValues: <int>[255, 255, 255],
+    policeAValues: <int>[255, 165, 0],
+    policeBValues: <int>[255, 255, 255],
+    legacyFrames: false,
+  );
   const Map<String, (String, String, EbFixtureSpec)> catalog =
       <String, (String, String, EbFixtureSpec)>{
         rgb: ('dev-rgb', 'Desk', EbFixtureCatalog.rgb),
@@ -49,6 +68,7 @@ void main() {
         cct2: ('dev-cct-2', 'Kitchen 2', EbFixtureCatalog.cct),
         w: ('dev-w', 'Hallway', EbFixtureCatalog.w),
         w2: ('dev-w-2', 'Hallway 2', EbFixtureCatalog.w),
+        basic: ('dev-rgb-basic', 'Basic', rgbBasic),
       };
   const List<String> defaults = <String>[rgb, a, b, x, cct, w];
   const List<String> colourDefaults = <String>[rgb, a, b, x];
@@ -876,6 +896,149 @@ void main() {
     final Object? json = jsonDecode(jsonEncode(p.toJson()));
     expect(GroupPreset.fromJson(json), p);
   });
+
+  // ---- effect colours ----------------------------------------------------------------
+
+  test('colour source and beacons reach every colour light that has the '
+      'effect and skip the others; a late light catches up; the white group '
+      'has none', () async {
+    await build(ids: <String>[rgb, a, x, basic, cct, w]);
+    available(x, on: false);
+    colour().activate();
+    await run(const Duration(seconds: 10));
+    expect(colour().status.ready, 3);
+    const EbColorModeKind police = EbColorModeKind.police;
+    expect(
+      await settle(colour().setColorMode(police, 0)),
+      const GroupResult(ok: 2, skipped: 1),
+    );
+    expect(
+      await settle(colour().setColorMode(EbColorModeKind.firework, 1)),
+      const GroupResult(ok: 2, skipped: 1),
+    );
+    const HsvIntent green = HsvIntent(Hsv(120, 1, 1), white: 0.5);
+    const HsvIntent sent = HsvIntent(Hsv(120, 1, 1));
+    expect(
+      await settle(colour().setPoliceColor(EbPoliceSlot.a, green)),
+      const GroupResult(ok: 2, skipped: 1),
+    );
+    for (final String id in <String>[rgb, a]) {
+      expect(twin(id).scene.policeColorMode, 0, reason: id);
+      expect(twin(id).scene.fireworkColorMode, 1, reason: id);
+      expect(twin(id).scene.policeA, encoded(id, sent), reason: id);
+    }
+    expect(twin(a).scene.policeA.values, <int>[0, 255, 0, 0]);
+    expect(twin(basic).scene.policeColorMode, 1, reason: 'skipped');
+    expect(twin(basic).scene.policeA.values, <int>[255, 165, 0]);
+    expect(colour().look.policeColorMode, const Common<int>.of(0));
+    expect(colour().look.policeA, const Common<Rgb>.of((0, 255, 0)));
+
+    available(x, on: true);
+    await run(const Duration(seconds: 20));
+    expect(session(x).status.isReady, isTrue);
+    expect(twin(x).scene.policeColorMode, 0);
+    expect(twin(x).scene.fireworkColorMode, 1);
+    expect(twin(x).scene.policeA.values, <int>[0, 255, 0, 0, 0]);
+
+    // The white group has no colour sources or beacons.
+    final ChannelColor cctBeacon = twin(cct).scene.policeA;
+    expect(await settle(white().setColorMode(police, 0)), const GroupResult());
+    expect(
+      await settle(white().setPoliceColor(EbPoliceSlot.a, green)),
+      const GroupResult(),
+    );
+    expect(twin(cct).scene.policeA, cctBeacon);
+    expect(white().look.policeColorMode, const Common<int>.none());
+  });
+
+  test('lights that differ read as mixed until the first change sets them '
+      'all', () async {
+    await build();
+    await activate(colour());
+    const EbColorModeKind police = EbColorModeKind.police;
+    await settle(colour().setColorMode(police, 1));
+    unawaited(session(a).setColorMode(police, 0, origin: CommandOrigin.system));
+    unawaited(
+      session(a).setPoliceColor(
+        EbPoliceSlot.a,
+        ChannelColor(ChannelLayout.rgbw, const <int>[0, 0, 255, 0]),
+        origin: CommandOrigin.system,
+      ),
+    );
+    await run(const Duration(seconds: 2));
+    expect(colour().look.policeColorMode, const Common<int>.mixed());
+    expect(colour().look.policeA, const Common<Rgb>.mixed());
+    await settle(colour().setColorMode(police, 0));
+    await settle(
+      colour().setPoliceColor(EbPoliceSlot.a, const HsvIntent(Hsv(0, 1, 1))),
+    );
+    expect(colour().look.policeColorMode, const Common<int>.of(0));
+    expect(colour().look.policeA, const Common<Rgb>.of((255, 0, 0)));
+  });
+
+  test('presets keep and restore colour sources and beacons (colour group '
+      'only)', () async {
+    await build();
+    await activate(colour());
+    await settle(colour().setBrightness(200));
+    await settle(colour().setColorMode(EbColorModeKind.police, 0));
+    await settle(colour().setColorMode(EbColorModeKind.club, 1));
+    await settle(
+      colour().setPoliceColor(EbPoliceSlot.b, const HsvIntent(Hsv(240, 1, 1))),
+    );
+    expect(colour().savePreset(0, 'Beacons'), const GroupSaveResult(4, 4));
+    final GroupPresetLight kept = colour().presets[0]!.lights[a]!;
+    expect(kept.colorMode(EbColorModeKind.police), 0);
+    expect(kept.colorMode(EbColorModeKind.club), 1);
+    expect(kept.policeB!.values, <int>[0, 0, 255, 0]);
+
+    await settle(colour().setColorMode(EbColorModeKind.police, 1));
+    await settle(colour().setColorMode(EbColorModeKind.club, 0));
+    await settle(
+      colour().setPoliceColor(EbPoliceSlot.b, const HsvIntent(Hsv(0, 1, 1))),
+    );
+    await settle(colour().applyPreset(0));
+    for (final String id in colourDefaults) {
+      expect(twin(id).scene.policeColorMode, 0, reason: id);
+      expect(twin(id).scene.clubColorMode, 1, reason: id);
+      expect(
+        twin(id).scene.policeB,
+        encoded(id, const HsvIntent(Hsv(240, 1, 1))),
+        reason: id,
+      );
+    }
+    // A white preset keeps none of them.
+    await activate(white());
+    await settle(white().setBrightness(90));
+    expect(white().savePreset(0, 'Warm'), const GroupSaveResult(2, 2));
+    for (final GroupPresetLight l in white().presets[0]!.lights.values) {
+      expect(l.colorModes, isNull);
+      expect(l.policeA, isNull);
+    }
+  });
+
+  test(
+    'a beacon changed on a following light\'s own screen detaches it',
+    () async {
+      await build();
+      await activate(colour());
+      await settle(colour().setBrightness(150));
+      expect(colour().isFollowing(a), isTrue);
+      unawaited(
+        session(a).setPoliceColor(
+          EbPoliceSlot.a,
+          ChannelColor(ChannelLayout.rgbw, const <int>[0, 0, 255, 0]),
+        ),
+      );
+      await run(const Duration(seconds: 1));
+      expect(colour().isOwn(a), isTrue);
+      // Group changes to the beacons don't.
+      await settle(
+        colour().setPoliceColor(EbPoliceSlot.a, const HsvIntent(Hsv(60, 1, 1))),
+      );
+      expect(colour().isOwn(b), isFalse);
+    },
+  );
 
   // ---- identify ----------------------------------------------------------------------
 

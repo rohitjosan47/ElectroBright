@@ -7,6 +7,7 @@ import 'package:electrobright/app/providers.dart';
 import 'package:electrobright/core/color/colour_engine.dart';
 import 'package:electrobright/core/color/hsv.dart';
 import 'package:electrobright/core/model/channel_layout.dart';
+import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/features/groups/group_screen.dart';
 import 'package:electrobright/sessions/group_capabilities.dart';
 import 'package:electrobright/sessions/group_session.dart';
@@ -91,6 +92,33 @@ void main() {
       await t.tap(find.text('Presets'));
       await DemoApp.settle(t, 1);
       await expectGolden(t, 'group_colour_presets_$theme.png');
+    });
+
+    testWidgets('group colour police manual $theme', (WidgetTester t) async {
+      await open(t, dark, GroupKind.colour, DemoApp.groupLights);
+      final GroupSession group = groupOf(t, GroupKind.colour);
+      await group.setMode(12);
+      await group.setColorMode(EbColorModeKind.police, 0);
+      await group.setPoliceColor(EbPoliceSlot.a, const HsvIntent(Hsv(0, 1, 1)));
+      await group.setPoliceColor(
+        EbPoliceSlot.b,
+        const HsvIntent(Hsv(220, 1, 1)),
+      );
+      await DemoApp.settle(t, 1);
+      await t.tap(find.text('Effects'));
+      await DemoApp.settle(t, 1);
+      await t.scrollUntilVisible(
+        find.byKey(const ValueKey<String>('group-beacon-b')),
+        200,
+        scrollable: find
+            .descendant(
+              of: find.byType(GroupScreen),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await DemoApp.settle(t, 1);
+      await expectGolden(t, 'group_colour_police_manual_$theme.png');
     });
 
     testWidgets('group white cct w white $theme', (WidgetTester t) async {

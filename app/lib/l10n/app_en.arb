@@ -161,14 +161,15 @@
       }
     }
   },
-  "trimChip": "Level {percent} %",
-  "@trimChip": {
+  "levelPill": "Level in group, {percent} percent",
+  "@levelPill": {
     "placeholders": {
       "percent": {
         "type": "int"
       }
     }
   },
+  "levelPillHint": "Double tap to adjust",
   "rejoinAll": "Rejoin all",
   "includeLights": "Include lights",
   "groupNoneFollowing": "No light follows this group right now. Bring them back to set them together.",

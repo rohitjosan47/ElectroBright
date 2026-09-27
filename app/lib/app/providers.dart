@@ -328,6 +328,34 @@ final ProviderFamily<Common<ColourIntent>, GroupKind> groupColourProvider =
           ref.watch(_groupLookProvider(kind).select((GroupLook l) => l.colour)),
     );
 
+/// The white group's temperature (the CCT lights' common one, or their
+/// mean when they differ); null without a ready CCT light.
+final ProviderFamily<double?, GroupKind> groupKelvinProvider =
+    Provider.family<double?, GroupKind>(
+      (Ref ref, GroupKind kind) =>
+          ref.watch(_groupLookProvider(kind).select((GroupLook l) => l.kelvin)),
+    );
+
+/// The colour group's colour source for effects of a kind, over the lights
+/// that have that effect.
+final ProviderFamily<Common<int>, (GroupKind, EbColorModeKind)>
+groupColorModeProvider =
+    Provider.family<Common<int>, (GroupKind, EbColorModeKind)>(
+      (Ref ref, (GroupKind, EbColorModeKind) k) => ref.watch(
+        _groupLookProvider(k.$1).select((GroupLook l) => l.colorMode(k.$2)),
+      ),
+    );
+
+/// The colour group's police beacon colour (R, G, B), over the lights that
+/// have Police.
+final ProviderFamily<Common<Rgb>, (GroupKind, EbPoliceSlot)>
+groupPoliceColourProvider =
+    Provider.family<Common<Rgb>, (GroupKind, EbPoliceSlot)>(
+      (Ref ref, (GroupKind, EbPoliceSlot) k) => ref.watch(
+        _groupLookProvider(k.$1).select((GroupLook l) => l.police(k.$2)),
+      ),
+    );
+
 /// The ready lights' common sleep-timer deadline (within 2 s), mixed or none.
 final ProviderFamily<Common<Duration>, GroupKind> groupTimerProvider =
     Provider.family<Common<Duration>, GroupKind>(

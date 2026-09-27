@@ -9,6 +9,7 @@ import '../../core/color/colour_engine.dart';
 import '../../core/color/led_white_points.dart';
 import '../../core/color/light_surfaces.dart';
 import '../../core/color/light_tone.dart';
+import '../../core/color/steady_colour.dart';
 import '../../core/model/channel_color.dart';
 import '../../core/model/channel_layout.dart';
 import '../../core/model/fixture.dart';
@@ -29,6 +30,7 @@ import '../../sessions/group_capabilities.dart';
 import '../../sessions/group_session.dart';
 import '../../sessions/rituals.dart';
 import '../control/colour/colour_editor.dart';
+import '../control/effects/effect_colours.dart';
 import '../control/effects/effects_grid.dart';
 import '../control/effects/mode_presentation.dart';
 import '../control/shared/brightness_pill_slider.dart';
@@ -224,20 +226,22 @@ class _GroupTone extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ChannelColor colour = ref.watch(
-      groupColourProvider(kind).select(_groupColour),
-    );
+    final _GroupLookOf t = _groupLook(ref, kind);
     final int mode = ref.watch(
       groupModeProvider(kind)
           .select((Common<int> m) => m.value ?? EbModeCatalog.solid),
     );
     final bool anyOn = ref.watch(groupAnyOnProvider(kind));
+    // The same path as a single light's screen (ControlScreen): a colour
+    // group reads as a light showing its colour, a white group as one of
+    // its own white lights.
     return ToneScope(
       tone: LightTone.derive(
         DisplayColor.ofScene(
-          EbScene.defaults(ChannelLayout.rgbcct)
-              .copyWith(color: colour, mode: mode, brightness: 255),
+          t.look.copyWith(mode: mode),
           sleeping: !anyOn,
+          whitePoints: t.whitePoints,
+          steady: t.steady,
         ),
         dark: Theme.of(context).brightness == Brightness.dark,
       ),
@@ -246,8 +250,59 @@ class _GroupTone extends ConsumerWidget {
   }
 }
 
-/// What the group's colour controls and tiles start from: the lights'
-/// common colour as an RGB+CCT light makes it, else a neutral white.
+typedef _GroupLookOf = ({
+  EbScene look,
+  LedWhitePoints whitePoints,
+  SteadyLevels? steady,
+});
+
+/// The group's look at full brightness, as one light shows it:
+/// - colour group: an RGB+CCT light with the lights' common colour;
+/// - white group with CCT lights: a CCT light at their temperature (their
+///   mean when they differ), picked, with the group's white points;
+/// - W lights only: a W light at its white.
+/// The steady levels are those such a light would have
+/// (steadyLevelsProvider).
+_GroupLookOf _groupLook(WidgetRef ref, GroupKind kind) {
+  if (kind == GroupKind.colour) {
+    return (
+      look: EbScene.defaults(ChannelLayout.rgbcct).copyWith(
+        color: ref.watch(groupColourProvider(kind).select(_groupColour)),
+        brightness: 255,
+      ),
+      whitePoints: const LedWhitePoints(),
+      steady: null,
+    );
+  }
+  final ({LedWhitePoints wp, bool tunable}) c = ref.watch(
+    groupCapabilitiesProvider(kind).select(
+      (GroupCapabilities c) => (wp: c.whitePoints, tunable: c.hasTunable),
+    ),
+  );
+  final ChannelLayout layout = c.tunable ? ChannelLayout.cct : ChannelLayout.w;
+  final ColourEngine engine = ColourEngine(c.wp);
+  final WhiteIntent white = WhiteIntent(
+    ref.watch(groupKelvinProvider(kind)) ?? 4000,
+    1,
+  );
+  final ChannelColor colour = c.tunable
+      ? engine.encode(white, layout)
+      : ChannelColor(layout, const <int>[255]);
+  return (
+    look: EbScene.defaults(layout).copyWith(color: colour, brightness: 255),
+    whitePoints: c.wp,
+    steady: c.tunable
+        ? SteadyLevels.next(
+            null,
+            colour,
+            intent: engine.fullLevels(white, layout),
+          )
+        : SteadyLevels.next(null, colour),
+  );
+}
+
+/// What the colour group's tone starts from: the lights' common colour as
+/// an RGB+CCT light makes it, else a neutral white.
 ChannelColor _groupColour(Common<ColourIntent> common) {
   const ColourEngine engine = ColourEngine();
   const ChannelLayout layout = ChannelLayout.rgbcct;
@@ -737,9 +792,11 @@ class _GroupEffectsTab extends ConsumerWidget {
     final _LightMode? first = selected == null
         ? null
         : lights[having(selected.id).first];
+    final _GroupLookOf look = _groupLook(ref, group.kind);
     final Color colour = swatchOf(
-      ref.watch(groupColourProvider(group.kind).select(_groupColour)),
-      const LedWhitePoints(),
+      look.look.color,
+      look.whitePoints,
+      steady: look.steady,
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -759,20 +816,139 @@ class _GroupEffectsTab extends ConsumerWidget {
           mode:
               selected != null &&
                   first != null &&
-                  (selected.hasSpeed || selected.hasFrequency)
+                  (selected.hasSpeed ||
+                      selected.hasFrequency ||
+                      (group.kind == GroupKind.colour && selected.hasColorMode))
               ? selected
               : null,
-          builder: (EbModeSpec mode) => ModeSliders(
-            mode: mode,
-            speed: first!.speed,
-            frequency: first.frequency,
-            enabled: enabled,
-            fg: fg,
-            onSpeed: (int v) => run(group.setSpeed(mode.id, v)),
-            onFrequency: (int v) => run(group.setFrequency(mode.id, v)),
+          builder: (EbModeSpec mode) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              ModeSliders(
+                mode: mode,
+                speed: first!.speed,
+                frequency: first.frequency,
+                enabled: enabled,
+                fg: fg,
+                onSpeed: (int v) => run(group.setSpeed(mode.id, v)),
+                onFrequency: (int v) => run(group.setFrequency(mode.id, v)),
+              ),
+              if (group.kind == GroupKind.colour && mode.colorModeKind != null)
+                _GroupEffectColours(
+                  group: group,
+                  kind: mode.colorModeKind!,
+                  enabled: enabled,
+                  fg: fg,
+                  run: run,
+                ),
+            ],
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The colour group's colour source for the selected effect and, for Police
+/// on its picked colours, the two beacons: the lights' common values; when
+/// they differ nothing is selected (a split beacon swatch) until the first
+/// change sets them all.
+class _GroupEffectColours extends ConsumerWidget {
+  const _GroupEffectColours({
+    required this.group,
+    required this.kind,
+    required this.enabled,
+    required this.fg,
+    required this.run,
+  });
+  final GroupSession group;
+  final EbColorModeKind kind;
+  final bool enabled;
+  final Color fg;
+  final GroupRun run;
+
+  static const ChannelLayout _layout = ChannelLayout.rgb;
+
+  static ChannelColor _colourOf(Rgb c) =>
+      ChannelColor(_layout, <int>[c.$1, c.$2, c.$3]);
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppLocalizations l = AppLocalizations.of(context);
+    final Common<int> source = ref.watch(
+      groupColorModeProvider((group.kind, kind)),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const SizedBox(height: Space.m),
+        ColourSourceControl(
+          key: const ValueKey<String>('group-colour-source'),
+          kind: kind,
+          layout: _layout,
+          selected: source.value,
+          fg: fg,
+          onChanged: (int v) {
+            if (enabled) run(group.setColorMode(kind, v));
+          },
+        ),
+        if (kind == EbColorModeKind.police && source.value == 0) ...<Widget>[
+          const SizedBox(height: Space.m),
+          Row(
+            children: <Widget>[
+              for (final EbPoliceSlot slot in EbPoliceSlot.values)
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      right: slot == EbPoliceSlot.a ? Space.xs : 0,
+                      left: slot == EbPoliceSlot.b ? Space.xs : 0,
+                    ),
+                    child: _beacon(context, ref, l, slot),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _beacon(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l,
+    EbPoliceSlot slot,
+  ) {
+    final Common<Rgb> c = ref.watch(
+      groupPoliceColourProvider((group.kind, slot)),
+    );
+    final String label = slot == EbPoliceSlot.a ? l.beaconA : l.beaconB;
+    final Rgb? rgb = c.value;
+    return BeaconSwatch(
+      key: ValueKey<String>('group-beacon-${slot.name}'),
+      label: label,
+      color: rgb == null
+          ? null
+          : swatchOf(_colourOf(rgb), const LedWhitePoints()),
+      fg: fg,
+      onTap: !enabled
+          ? null
+          : () => unawaited(
+              showBeaconSheet(
+                context,
+                title: label,
+                start: rgb == null
+                    ? ChannelColor(_layout, const <int>[255, 0, 0])
+                    : _colourOf(rgb),
+                whitePoints: const LedWhitePoints(),
+                showChannels: false,
+                onChanged: (_, ColourIntent? intent) {
+                  if (intent is HsvIntent) {
+                    run(group.setPoliceColor(slot, intent));
+                  }
+                },
+              ),
+            ),
     );
   }
 }
@@ -929,75 +1105,60 @@ class _GroupLightRowState extends ConsumerState<_GroupLightRow> {
       color: fg.withValues(alpha: 0.6),
       fontSize: 12,
     );
+    void toggle() => setState(() => _open = !_open);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         Row(
           children: <Widget>[
             Expanded(
-              child: Semantics(
-                button: true,
-                expanded: _open,
-                label: fixture.name,
-                value: state,
-                hint: l.levelInGroup,
-                child: GestureDetector(
-                  key: ValueKey<String>('row-$id'),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => setState(() => _open = !_open),
-                  child: ExcludeSemantics(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Row(
+              child: GestureDetector(
+                key: ValueKey<String>('row-$id'),
+                behavior: HitTestBehavior.opaque,
+                onTap: toggle,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Semantics(
+                      label: fixture.name,
+                      value: state,
+                      child: ExcludeSemantics(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
                             // Shrinks only when the row is too narrow.
-                            Flexible(
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: Alignment.centerLeft,
-                                child: FixtureTypeBadge(
-                                  layout: fixture.layout,
-                                  whitePoints: fixture.whitePoints,
-                                ),
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: FixtureTypeBadge(
+                                layout: fixture.layout,
+                                whitePoints: fixture.whitePoints,
                               ),
                             ),
-                            if (!_open && g.trim < 1) ...<Widget>[
-                              const SizedBox(width: Space.xs),
-                              Container(
-                                key: ValueKey<String>('trim-chip-$id'),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: Space.xs,
-                                  vertical: 1,
-                                ),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(
-                                    Radii.small,
-                                  ),
-                                  color: fg.withValues(alpha: 0.08),
-                                ),
-                                child: Text(
-                                  l.trimChip((g.trim * 100).round()),
-                                  style: small.copyWith(fontSize: 11),
-                                ),
+                            const SizedBox(height: Space.xxs),
+                            Text(
+                              fixture.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: fg,
+                                fontWeight: FontWeight.w600,
                               ),
-                            ],
+                            ),
+                            Text(state, style: small),
                           ],
                         ),
-                        const SizedBox(height: Space.xxs),
-                        Text(
-                          fixture.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: fg,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(state, style: small),
-                      ],
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: Space.xxs),
+                    _LevelPill(
+                      key: ValueKey<String>('level-pill-$id'),
+                      trim: g.trim,
+                      open: _open,
+                      fg: fg,
+                      onTap: toggle,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -1052,6 +1213,77 @@ class _GroupLightRowState extends ConsumerState<_GroupLightRow> {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// A row's level in the group, always shown: tap it (or the row) to adjust
+/// it with the slider below; the chevron turns while that is open.
+class _LevelPill extends StatelessWidget {
+  const _LevelPill({
+    required this.trim,
+    required this.open,
+    required this.fg,
+    required this.onTap,
+    super.key,
+  });
+  final double trim;
+  final bool open;
+  final Color fg;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppLocalizations l = AppLocalizations.of(context);
+    final int percent = (trim * 100).round();
+    final Color ink = fg.withValues(
+      alpha: LightSurfaces.dim(0.75, dark: fg == Colors.white),
+    );
+    return Semantics(
+      container: true,
+      button: true,
+      expanded: open,
+      label: l.levelPill(percent),
+      hint: l.levelPillHint,
+      onTap: onTap,
+      child: ExcludeSemantics(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(Space.xs, 2, Space.xxs, 2),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(Radii.small),
+              color: fg.withValues(alpha: 0.08),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(Icons.wb_sunny_rounded, size: 13, color: ink),
+                const SizedBox(width: Space.xxs),
+                Text(
+                  '$percent %',
+                  style: TextStyle(
+                    color: ink,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures(),
+                    ],
+                  ),
+                ),
+                AnimatedRotation(
+                  turns: open ? 0.5 : 0,
+                  duration: Motion.reduced(context)
+                      ? Duration.zero
+                      : Motion.fast,
+                  child: Icon(Icons.expand_more_rounded, size: 16, color: ink),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

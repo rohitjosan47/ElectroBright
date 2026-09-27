@@ -269,33 +269,38 @@ class _GlassSegmentedState<T> extends State<GlassSegmented<T>>
             return Stack(
               clipBehavior: Clip.none,
               children: <Widget>[
-                AnimatedBuilder(
-                  animation: _x,
-                  builder: (BuildContext context, _) {
-                    final ({double left, double right}) span =
-                        GlassSegmented.thumbSpan(
-                          x: _x.value,
-                          velocity: _x.velocity,
-                          n: n,
-                          inner: c.maxWidth,
-                        );
-                    return Positioned(
-                      left: span.left,
-                      width: span.right - span.left,
-                      top: 0,
-                      bottom: 0,
-                      // Its edge is the glass's own rim (no border), and it
-                      // casts no shadow outside itself.
-                      child: GlassSurface(
-                        tier: widget.thumbTier,
-                        radius: GlassSegmented.thumbRadius,
-                        tinted: false,
-                        elevated: false,
-                        child: const SizedBox.expand(),
-                      ),
-                    );
-                  },
-                ),
+                // No thumb while no segment is selected (e.g. lights that
+                // differ).
+                if (widget.segments.any(
+                  ((T, String) s) => s.$1 == widget.selected,
+                ))
+                  AnimatedBuilder(
+                    animation: _x,
+                    builder: (BuildContext context, _) {
+                      final ({double left, double right}) span =
+                          GlassSegmented.thumbSpan(
+                            x: _x.value,
+                            velocity: _x.velocity,
+                            n: n,
+                            inner: c.maxWidth,
+                          );
+                      return Positioned(
+                        left: span.left,
+                        width: span.right - span.left,
+                        top: 0,
+                        bottom: 0,
+                        // Its edge is the glass's own rim (no border), and it
+                        // casts no shadow outside itself.
+                        child: GlassSurface(
+                          tier: widget.thumbTier,
+                          radius: GlassSegmented.thumbRadius,
+                          tinted: false,
+                          elevated: false,
+                          child: const SizedBox.expand(),
+                        ),
+                      );
+                    },
+                  ),
                 Row(
                   children: <Widget>[
                     for (final (T value, String label) in widget.segments)

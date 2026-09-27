@@ -9,6 +9,7 @@ import '../core/model/channel_color.dart';
 import '../core/model/channel_layout.dart';
 import '../core/model/fixture.dart';
 import '../core/model/light_capabilities.dart';
+import '../core/protocol/eb/eb_scene.dart';
 import '../core/store/json_store.dart';
 import '../core/util/scheduler.dart';
 import '../drivers/electrobright/eb_types.dart';
@@ -187,6 +188,12 @@ final class GroupLook {
     this.mode = const Common<int>.none(),
     this.colour = const Common<ColourIntent>.none(),
     this.timerDeadline = const Common<Duration>.none(),
+    this.kelvin,
+    this.fireworkColorMode = const Common<int>.none(),
+    this.clubColorMode = const Common<int>.none(),
+    this.policeColorMode = const Common<int>.none(),
+    this.policeA = const Common<Rgb>.none(),
+    this.policeB = const Common<Rgb>.none(),
   });
 
   final Common<int> brightness;
@@ -197,6 +204,30 @@ final class GroupLook {
   /// Scheduler time the sleep timers fire (equal within 2 s).
   final Common<Duration> timerDeadline;
 
+  /// White group: the CCT lights' common temperature, or their mean when
+  /// they differ; null without a ready CCT light (and in the colour group).
+  final double? kelvin;
+
+  /// Colour group: the colour source of each kind, over the lights that
+  /// have that effect.
+  final Common<int> fireworkColorMode;
+  final Common<int> clubColorMode;
+  final Common<int> policeColorMode;
+
+  /// Colour group: the police beacons' colours (R, G, B), over the lights
+  /// that have Police.
+  final Common<Rgb> policeA;
+  final Common<Rgb> policeB;
+
+  Common<int> colorMode(EbColorModeKind kind) => switch (kind) {
+    EbColorModeKind.firework => fireworkColorMode,
+    EbColorModeKind.club => clubColorMode,
+    EbColorModeKind.police => policeColorMode,
+  };
+
+  Common<Rgb> police(EbPoliceSlot slot) =>
+      slot == EbPoliceSlot.a ? policeA : policeB;
+
   @override
   bool operator ==(Object other) =>
       other is GroupLook &&
@@ -204,11 +235,31 @@ final class GroupLook {
       other.anyOn == anyOn &&
       other.mode == mode &&
       other.colour == colour &&
-      other.timerDeadline == timerDeadline;
+      other.timerDeadline == timerDeadline &&
+      other.kelvin == kelvin &&
+      other.fireworkColorMode == fireworkColorMode &&
+      other.clubColorMode == clubColorMode &&
+      other.policeColorMode == policeColorMode &&
+      other.policeA == policeA &&
+      other.policeB == policeB;
   @override
-  int get hashCode =>
-      Object.hash(brightness, anyOn, mode, colour, timerDeadline);
+  int get hashCode => Object.hash(
+    brightness,
+    anyOn,
+    mode,
+    colour,
+    timerDeadline,
+    kelvin,
+    fireworkColorMode,
+    clubColorMode,
+    policeColorMode,
+    policeA,
+    policeB,
+  );
 }
+
+/// A colour's red, green and blue channels.
+typedef Rgb = (int, int, int);
 
 /// How one command went across the group.
 @immutable
@@ -440,6 +491,8 @@ final class GroupSession {
   _Look? _look;
   int? _brightness;
   bool? _power;
+  final Map<EbColorModeKind, int> _colorModes = <EbColorModeKind, int>{};
+  final Map<EbPoliceSlot, HsvIntent> _police = <EbPoliceSlot, HsvIntent>{};
 
   /// Set: a timer was sent; its deadline, or null when it was cancelled.
   (Duration?,)? _timer;
@@ -605,6 +658,8 @@ final class GroupSession {
     _look = null;
     _brightness = null;
     _power = null;
+    _colorModes.clear();
+    _police.clear();
     _timer = null;
     _activePreset = null;
     _emit();
@@ -733,6 +788,45 @@ final class GroupSession {
     );
   }
 
+  /// The colour group's colour source for the effects of [k] (0 = picked
+  /// colours, 1 = automatic), on the lights that have that effect. The white
+  /// group has none: nothing is sent.
+  Future<GroupResult> setColorMode(EbColorModeKind k, int v) {
+    if (kind != GroupKind.colour) {
+      return Future<GroupResult>.value(const GroupResult());
+    }
+    _command();
+    _colorModes[k] = v;
+    return _send(
+      (FixtureSession s, _) =>
+          s.setColorMode(k, v, origin: CommandOrigin.group),
+      supported: (_, LightCapabilities c) => c.supportsMode(k.mode),
+    );
+  }
+
+  /// The colour group's police beacon [slot], with every white LED off,
+  /// encoded for each light that has Police. The white group has none.
+  Future<GroupResult> setPoliceColor(EbPoliceSlot slot, HsvIntent pick) {
+    if (kind != GroupKind.colour) {
+      return Future<GroupResult>.value(const GroupResult());
+    }
+    _command();
+    final HsvIntent i = GroupCapabilities.colourPick(pick);
+    _police[slot] = i;
+    return _send(
+      (FixtureSession s, _) => s.setPoliceColor(
+        slot,
+        _encode(s.fixture, i),
+        origin: CommandOrigin.group,
+      ),
+      supported: (_, LightCapabilities c) =>
+          c.supportsMode(EbColorModeKind.police.mode),
+    );
+  }
+
+  static ChannelColor _encode(Fixture f, ColourIntent i) =>
+      ColourEngine(f.whitePoints).encode(i, f.layout);
+
   /// Sleep timer on every ready light; 0 cancels. Never part of a preset.
   Future<GroupResult> setTimer(int seconds) {
     _timer = (
@@ -771,7 +865,15 @@ final class GroupSession {
             if (_ready.contains(id) && _memory.following.contains(id))
               if (_connections.session(id) case final FixtureSession s)
                 if (s.status.state case final EbDeviceState st)
-                  (id, st, _presetLightOf(s.status, st)),
+                  (
+                    id,
+                    st,
+                    _presetLightOf(
+                      s.status,
+                      st,
+                      effectColours: kind == GroupKind.colour,
+                    ),
+                  ),
         ];
     if (saved.isEmpty) return GroupSaveResult(0, driven.length);
     final List<(int, double)> levels = <(int, double)>[
@@ -823,6 +925,8 @@ final class GroupSession {
     _look = _PresetLook(p);
     _brightness = null;
     _power = null;
+    _colorModes.clear();
+    _police.clear();
     _activePreset = slot;
     _emit();
     return _send((FixtureSession s, LightCapabilities c) {
@@ -850,22 +954,36 @@ final class GroupSession {
   }
 
   /// What a light shows, as a preset keeps it.
-  static GroupPresetLight _presetLightOf(FixtureStatus st, EbDeviceState s) =>
-      GroupPresetLight(
-        on: !s.sleeping && s.scene.brightness > 0,
-        colour: s.scene.color,
-        pick: switch (_pickOf(st)) {
-          final ColourIntent i when i is! RawIntent => i,
-          _ => null,
-        },
-        mode: s.scene.mode,
-        speed: s.scene.speed,
-        frequency: s.scene.frequency,
-      );
+  /// With [effectColours] (colour group) the colour sources and police
+  /// beacons are kept too.
+  static GroupPresetLight _presetLightOf(
+    FixtureStatus st,
+    EbDeviceState s, {
+    required bool effectColours,
+  }) => GroupPresetLight(
+    on: !s.sleeping && s.scene.brightness > 0,
+    colour: s.scene.color,
+    pick: switch (_pickOf(st)) {
+      final ColourIntent i when i is! RawIntent => i,
+      _ => null,
+    },
+    mode: s.scene.mode,
+    speed: s.scene.speed,
+    frequency: s.scene.frequency,
+    colorModes: effectColours
+        ? List<int>.unmodifiable(<int>[
+            for (final EbColorModeKind k in EbColorModeKind.values)
+              s.scene.colorMode(k),
+          ])
+        : null,
+    policeA: effectColours ? s.scene.policeA : null,
+    policeB: effectColours ? s.scene.policeB : null,
+  );
 
-  /// A preset light's look, in order: colour, mode with its settings,
-  /// brightness, power. A single white takes no colour; one the layout or
-  /// firmware can't take is skipped.
+  /// A preset light's look, in order: colour, mode with its settings, the
+  /// colour sources and police beacons it keeps, brightness, power. A single
+  /// white takes no colour; one the layout or firmware can't take is
+  /// skipped.
   Future<EbResult> _sendPresetLight(
     FixtureSession s,
     LightCapabilities caps,
@@ -884,6 +1002,20 @@ final class GroupSession {
         ..add(s.setMode(l.mode, origin: origin))
         ..add(s.setSpeed(l.mode, l.speed, origin: origin))
         ..add(s.setFrequency(l.mode, l.frequency, origin: origin));
+    }
+    for (final EbColorModeKind k in EbColorModeKind.values) {
+      final int? v = l.colorMode(k);
+      if (v != null && caps.supportsMode(k.mode)) {
+        sent.add(s.setColorMode(k, v, origin: origin));
+      }
+    }
+    if (caps.supportsMode(EbColorModeKind.police.mode)) {
+      for (final EbPoliceSlot slot in EbPoliceSlot.values) {
+        final ChannelColor? c = l.police(slot);
+        if (c != null && c.layout == f.layout) {
+          sent.add(s.setPoliceColor(slot, c, origin: origin));
+        }
+      }
     }
     if (brightness != null) s.setBrightness(brightness, origin: origin);
     if (on != null) sent.add(s.setPower(on: on, origin: origin));
@@ -1127,6 +1259,20 @@ final class GroupSession {
         sent = true;
       }
     }
+    // The colour sources and beacons sent in this activation.
+    for (final MapEntry<EbColorModeKind, int> e in _colorModes.entries) {
+      if (!caps.supportsMode(e.key.mode)) continue;
+      unawaited(s.setColorMode(e.key, e.value, origin: origin));
+      sent = true;
+    }
+    if (caps.supportsMode(EbColorModeKind.police.mode)) {
+      for (final MapEntry<EbPoliceSlot, HsvIntent> e in _police.entries) {
+        unawaited(
+          s.setPoliceColor(e.key, _encode(s.fixture, e.value), origin: origin),
+        );
+        sent = true;
+      }
+    }
     final (Duration?,)? timer = _timer;
     if (timer != null && caps.hasTimer) {
       final Duration? deadline = timer.$1;
@@ -1188,11 +1334,13 @@ final class GroupSession {
   GroupLook _lookOf(List<String> ids) {
     final List<FixtureStatus> ready = <FixtureStatus>[];
     final List<Fixture> fixtures = <Fixture>[];
+    final List<LightCapabilities> caps = <LightCapabilities>[];
     for (final String id in ids) {
       final FixtureSession? s = _connections.session(id);
       if (s == null || !_ready.contains(id) || s.status.state == null) continue;
       ready.add(s.status);
       fixtures.add(s.fixture);
+      caps.add(_capabilities(s));
     }
     final List<EbDeviceState> states = <EbDeviceState>[
       for (final FixtureStatus st in ready) st.state!,
@@ -1202,6 +1350,34 @@ final class GroupSession {
     bool shows(Fixture f) => kind == GroupKind.colour
         ? f.layout.hasColour
         : f.layout == ChannelLayout.cct;
+    final List<ColourIntent> shown = <ColourIntent>[
+      for (int i = 0; i < ready.length; i++)
+        if (shows(fixtures[i])) _shownIntent(ready[i], fixtures[i]),
+    ];
+    final List<double> kelvins = <double>[
+      if (kind == GroupKind.white)
+        for (final ColourIntent i in shown)
+          if (i case WhiteIntent(:final double kelvin)) kelvin,
+    ];
+    // Colour group: effect colours over the lights that have the effect.
+    final bool colour = kind == GroupKind.colour;
+    Iterable<EbScene> having(int mode) sync* {
+      for (int i = 0; i < states.length; i++) {
+        if (caps[i].supportsMode(mode)) yield states[i].scene;
+      }
+    }
+
+    Common<int> colorMode(EbColorModeKind k) => colour
+        ? Common<int>.from(having(k.mode).map((EbScene s) => s.colorMode(k)))
+        : const Common<int>.none();
+    Common<Rgb> police(EbPoliceSlot slot) => colour
+        ? Common<Rgb>.from(
+            having(EbColorModeKind.police.mode).map((EbScene s) {
+              final ChannelColor c = s.police(slot);
+              return (c[0], c[1], c[2]);
+            }),
+          )
+        : const Common<Rgb>.none();
     return GroupLook(
       brightness: commonMaster(<(int, double)>[
         for (int i = 0; i < states.length; i++)
@@ -1211,13 +1387,16 @@ final class GroupSession {
         (EbDeviceState s) => !s.sleeping && s.scene.brightness > 0,
       ),
       mode: Common<int>.from(states.map((EbDeviceState s) => s.scene.mode)),
-      colour: Common<ColourIntent>.from(<ColourIntent>[
-        for (int i = 0; i < ready.length; i++)
-          if (shows(fixtures[i])) _shownIntent(ready[i], fixtures[i]),
-      ]),
+      colour: Common<ColourIntent>.from(shown),
       timerDeadline: _commonDeadline(
         states.map((EbDeviceState s) => s.timerDeadline).toList(),
       ),
+      kelvin: kelvins.isEmpty ? null : kelvins.average,
+      fireworkColorMode: colorMode(EbColorModeKind.firework),
+      clubColorMode: colorMode(EbColorModeKind.club),
+      policeColorMode: colorMode(EbColorModeKind.police),
+      policeA: police(EbPoliceSlot.a),
+      policeB: police(EbPoliceSlot.b),
     );
   }
 
