@@ -19,6 +19,7 @@ import 'package:electrobright/sim/eb_device_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/fixtures.dart';
+import '../support/fwsim/fw_case.dart';
 import '../support/fwsim/fwsim_process.dart';
 
 const DeepCollectionEquality _deep = DeepCollectionEquality();
@@ -28,15 +29,36 @@ void main() {
   final int seeds =
       int.tryParse(Platform.environment['FWSIM_SEEDS'] ?? '') ?? 12;
   const int opsPerSeed = 500;
+  // One case alone: DIFF_CASE=<fixture>:<seed>, e.g. DIFF_CASE=rgbcct:7.
+  final ({EbFixtureSpec fixture, List<String> fields})? only =
+      caseFromEnvironment('DIFF_CASE', fields: 1);
+  final List<int> seedList = only != null
+      ? <int>[int.parse(only.fields.single)]
+      : <int>[for (int seed = 1; seed <= seeds; seed++) seed];
 
-  for (final EbFixtureSpec fixture in fixturesUnderTest()) {
-    test('${fixture.layout.wire}: firmware twin matches fwsim on $seeds random '
-        'traffic runs', () async {
-      for (int seed = 1; seed <= seeds; seed++) {
+  for (final EbFixtureSpec fixture
+      in only != null ? <EbFixtureSpec>[only.fixture] : fixturesUnderTest()) {
+    test('${fixture.layout.wire}: firmware twin matches fwsim on '
+        '${seedList.length} random traffic runs', () async {
+      // The seed in flight: reported by the tear-down if the test times out.
+      _Progress? running;
+      addTearDown(() async {
+        final _Progress? p = running;
+        if (p == null) return;
+        await _report(fixture, p, 'did not finish (test timed out?)');
+        p.sim.kill();
+      });
+      for (final int seed in seedList) {
         // Fresh device per seed.
         final FwSim sim = await FwSim.start(fixture: fixture.fwsimName);
+        final _Progress p = running = _Progress(sim, seed, opsPerSeed);
         try {
-          await _runSeed(sim, fixture, seed, opsPerSeed);
+          await _runSeed(sim, fixture, seed, opsPerSeed, p);
+          running = null;
+        } catch (e) {
+          running = null;
+          await _report(fixture, p, e);
+          rethrow;
         } finally {
           await sim.close();
         }
@@ -45,14 +67,45 @@ void main() {
   }
 }
 
+/// Where a seed's run has got to.
+final class _Progress {
+  _Progress(this.sim, this.seed, this.ops);
+  final FwSim sim;
+  final int seed;
+  final int ops;
+  int op = -1;
+  String request = '(none yet)';
+
+  String get step => op < 0
+      ? 'setup, last request "$request"'
+      : op >= ops
+      ? 'final check, last request "$request"'
+      : 'op $op of $ops, last request "$request"';
+}
+
+Future<void> _report(EbFixtureSpec fixture, _Progress p, Object error) =>
+    reportFwCaseFailure(
+      test: 'differential',
+      fixture: fixture.fwsimName,
+      seed: '${p.seed}',
+      step: p.step,
+      error: error,
+      rerun:
+          'DIFF_CASE=${fixture.fwsimName}:${p.seed} flutter test '
+          'test/fw_in_the_loop/differential_test.dart',
+      sim: p.sim,
+    );
+
 Future<void> _runSeed(
   FwSim sim,
   EbFixtureSpec fixture,
   int seed,
   int ops,
+  _Progress progress,
 ) async {
   // Both sides start freshly booted at t = 1000 ms with empty flash; the test
   // schedules every control pass explicitly.
+  progress.request = 'AUTO 0';
   await sim.request('AUTO 0');
   final EbDeviceModel model = EbDeviceModel(fixture: fixture)..takeSounds();
   expect(model.now, (await sim.state())['now']);
@@ -63,6 +116,7 @@ Future<void> _runSeed(
 
   Future<void> both(String request, void Function() onModel) async {
     log.add(request);
+    progress.request = request;
     final FwSimReply r = await sim.request(request);
     onModel();
     final List<String> want = r.notifications.map(_hex).toList();
@@ -78,6 +132,7 @@ Future<void> _runSeed(
   }
 
   Future<void> compareState(String when) async {
+    progress.request = 'STATE';
     final Map<String, Object?> want = await sim.state();
     final Object? got = jsonDecode(jsonEncode(model.state()));
     if (!_deep.equals(want, got)) {
@@ -89,6 +144,7 @@ Future<void> _runSeed(
   }
 
   for (int i = 0; i < ops; i++) {
+    progress.op = i;
     final _Op op = traffic.next(connected: model.connected);
     switch (op) {
       case _Write(:final List<int> bytes):
@@ -134,6 +190,7 @@ Future<void> _runSeed(
             ..takeSounds();
         });
       case _CheckSounds():
+        progress.request = 'SOUNDS';
         final List<String> want = (await sim.request('SOUNDS')).sounds!;
         final List<String> got = model.takeSounds();
         expect(got, want, reason: 'seed $seed: sounds differ');
@@ -141,6 +198,7 @@ Future<void> _runSeed(
         await compareState('at op $i');
     }
   }
+  progress.op = ops;
   if (splitOpen) await both('END', model.passEnd);
   await compareState('at the end');
 }

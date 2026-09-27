@@ -19,12 +19,24 @@ final class FwSimReply {
   final String? info;
 }
 
+/// Where fw-in-the-loop tests save the fwsim transcript of a failed case
+/// (relative to the app package root).
+const String testFailuresDir = 'build/test_failures';
+
 /// Drives the real firmware core (fwsim) over stdin/stdout.
 final class FwSim {
-  FwSim._(this._process, this._lines);
+  FwSim._(this.fixture, this._process, this._lines, this._transcript);
 
+  /// The fwsim fixture name (`--fixture`).
+  final String fixture;
   final Process _process;
   final StreamIterator<String> _lines;
+
+  /// Every request sent ("> ") and every stdout line received ("< "), in
+  /// order.
+  final List<String> _transcript;
+  final StringBuffer _stderr = StringBuffer();
+  int? _exitCode;
 
   /// Builds fwsim if needed (make is incremental) and starts it simulating
   /// [fixture] (`fwsim --fixture`, e.g. rgbw, rgb, rgbcct, cct, w).
@@ -34,20 +46,60 @@ final class FwSim {
       '--fixture',
       fixture,
     ]);
-    unawaited(p.stderr.drain<void>()); // sanitizer banners, never protocol
+    final List<String> transcript = <String>[];
     final StreamIterator<String> lines = StreamIterator<String>(
-      p.stdout.transform(utf8.decoder).transform(const LineSplitter()),
+      p.stdout.transform(utf8.decoder).transform(const LineSplitter()).map((
+        String l,
+      ) {
+        transcript.add('< $l');
+        return l;
+      }),
     );
-    final FwSim sim = FwSim._(p, lines);
+    final FwSim sim = FwSim._(fixture, p, lines, transcript);
+    // Sanitizer banners and crash reports, never protocol: kept for the
+    // failure transcript.
+    p.stderr
+        .transform(const Utf8Decoder(allowMalformed: true))
+        .listen(sim._stderr.write);
+    unawaited(p.exitCode.then((int code) => sim._exitCode = code));
     final FwSimReply hello = await sim.request('HELLO');
     if (hello.info == null || !hello.info!.startsWith('fwsim/1')) {
-      throw StateError('unexpected fwsim greeting: ${hello.info}');
+      throw StateError(
+        'unexpected fwsim greeting: ${hello.info}\n${sim.transcript}',
+      );
     }
     return sim;
   }
 
+  /// Everything exchanged with this fwsim process so far: requests, replies,
+  /// stderr and its exit code (if it has exited).
+  String get transcript {
+    final StringBuffer b = StringBuffer()
+      ..writeln('fwsim --fixture $fixture (pid ${_process.pid})')
+      ..writeln('exit code: ${_exitCode ?? 'still running'}')
+      ..writeln('---- stdin (>) and stdout (<) ----')
+      ..writeAll(_transcript, '\n')
+      ..writeln()
+      ..writeln('---- stderr ----')
+      ..write(_stderr.isEmpty ? '(empty)\n' : _stderr);
+    return b.toString();
+  }
+
+  /// Writes [header] and the [transcript] to `build/test_failures/<name>.log`
+  /// and returns the file's path.
+  Future<String> saveTranscript(String name, {String header = ''}) async {
+    final File f = File('$testFailuresDir/$name.log');
+    await f.parent.create(recursive: true);
+    await f.writeAsString('$header\n$transcript');
+    return f.path;
+  }
+
+  /// Ends the process without the QUIT handshake (a case abandoned mid-way).
+  void kill() => _process.kill();
+
   /// Sends one request and collects its reply lines up to the "." terminator.
   Future<FwSimReply> request(String line) async {
+    _transcript.add('> $line');
     _process.stdin.writeln(line);
     await _process.stdin.flush();
     final List<Uint8List> notes = <Uint8List>[];
@@ -56,7 +108,13 @@ final class FwSim {
     String? info;
     while (true) {
       if (!await _lines.moveNext()) {
-        throw StateError('fwsim exited while handling "$line"');
+        // Let the exit code and the last stderr land in the transcript.
+        _exitCode ??= await _process.exitCode
+            .then<int?>((int c) => c)
+            .timeout(const Duration(seconds: 2), onTimeout: () => null);
+        throw StateError(
+          'fwsim exited (code $_exitCode) while handling "$line"',
+        );
       }
       final String l = _lines.current;
       if (l == '.') break;
