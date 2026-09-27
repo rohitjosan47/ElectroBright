@@ -15,6 +15,8 @@
 // temperature instead: see colourToWhites(). A single white LED (W) shows it
 // as brightness: see colourToWhite().
 
+#include <math.h>
+
 #include "../core/Types.h"
 #include "../fixture/ChannelLayout.h"
 
@@ -31,24 +33,45 @@ inline LinColor foldWhite(const LinColor& c, const LinColor& mix) {
 // Coloured light -> cool/warm white for fixtures with only white LEDs.
 //   level  = max(r, g, b): a colour is as bright as its strongest channel, so
 //            saturated effect colours stay fully visible;
-//   warmth = 0.5 + 0.5 (r - b) / max(r, b): red/orange/yellow -> 1 (warm LED),
-//            blue/cyan -> 0 (cool LED), white/green/magenta -> 0.5 (both);
-//   cool += level * min(1, 2 (1 - warmth)), warm += level * min(1, 2 warmth),
-// so a neutral colour lights both LEDs at its level. Existing white light (w,
-// ww) is kept; if a white then exceeds full scale both are scaled down
-// together, which keeps the warm/cool balance.
+//   warmth = 0.5 + 0.5 sat cos(hue - 15 deg), sat = (max - min) / max: a smooth
+//            wave around the hue circle, warmest at red/orange, coolest at
+//            cyan/blue (195 deg), neutral for white; no jumps or plateaus, so
+//            a hue sweep (Rainbow) becomes a smooth temperature sweep;
+//   cool += level (1 - warmth), warm += level warmth,
+// so cool + warm always equals the colour's level (steady brightness). Existing
+// white light (w, ww) is kept; if a white then exceeds full scale both are
+// scaled down together, which keeps the warm/cool balance.
+inline float colourWarmth(const LinColor& c) {
+  float hi = c.r > c.g ? c.r : c.g;
+  if (c.b > hi) hi = c.b;
+  float lo = c.r < c.g ? c.r : c.g;
+  if (c.b < lo) lo = c.b;
+  const float chroma = hi - lo;
+  if (!(hi > 0.0f) || !(chroma > 0.0f)) return 0.5f;
+  // HSV hue in sixths of the circle, 0..6.
+  float h;
+  if (hi == c.r) {
+    h = (c.g - c.b) / chroma;
+    if (h < 0.0f) h += 6.0f;
+  } else if (hi == c.g) {
+    h = 2.0f + (c.b - c.r) / chroma;
+  } else {
+    h = 4.0f + (c.r - c.g) / chroma;
+  }
+  constexpr float kSixth = 1.04719755f;     // 60 deg in radians
+  constexpr float kWarmest = 0.26179939f;   // 15 deg: between red and orange
+  return 0.5f + 0.5f * (chroma / hi) * cosf(h * kSixth - kWarmest);
+}
+
 inline LinColor colourToWhites(const LinColor& c) {
   float level = c.r > c.g ? c.r : c.g;
   if (c.b > level) level = c.b;
   float cool = c.w;
   float warm = c.ww;
   if (level > 0.0f) {
-    const float rb = c.r > c.b ? c.r : c.b;
-    const float warmth = rb > 0.0f ? 0.5f + 0.5f * (c.r - c.b) / rb : 0.5f;
-    const float toCool = 2.0f * (1.0f - warmth);
-    const float toWarm = 2.0f * warmth;
-    cool += level * (toCool < 1.0f ? toCool : 1.0f);
-    warm += level * (toWarm < 1.0f ? toWarm : 1.0f);
+    const float warmth = colourWarmth(c);
+    cool += level * (1.0f - warmth);
+    warm += level * warmth;
   }
   const float peak = cool > warm ? cool : warm;
   if (peak > 1.0f) {

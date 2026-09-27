@@ -1,6 +1,7 @@
 #pragma once
-// LED PWM on the ESP32-C3 LEDC peripheral (14-bit, ~4.9 kHz): one channel per
-// output of the fixture's layout, LEDC channels 0 .. n-1 on timer 0.
+// LED PWM on the ESP32-C3 LEDC peripheral (25 kHz, 11-bit + 4 dithered
+// fractional bits): one channel per output of the fixture's layout, LEDC
+// channels 0 .. n-1 on timer 0.
 
 #include <stdint.h>
 
@@ -13,7 +14,7 @@ class PwmOutput {
   // are never left floating or high.
   bool begin(const FixtureProfile& fixture);
 
-  // Applies one duty (0..16383) per layout channel. Unchanged channels are not touched.
+  // Applies one duty (0..cfg::kPwmMaxDuty, in 1/16 counts) per layout channel. Unchanged channels are not touched.
   void write(const uint16_t* duty);
 
  private:

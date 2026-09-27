@@ -32,6 +32,7 @@ final class LightCapabilities {
     this.presetSlots = Eb.numPresets,
     this.hasTimer = true,
     this.hasSound = true,
+    this.supportsIdentify = false,
   });
 
   /// A light whose firmware has not been read yet (e.g. from its BLE name or
@@ -49,6 +50,9 @@ final class LightCapabilities {
   final int presetSlots;
   final bool hasTimer;
   final bool hasSound;
+
+  /// CAPS `IDENTIFY=1` (3.6.1+); false when absent or not read yet.
+  final bool supportsIdentify;
 
   bool supportsMode(int mode) =>
       mode >= 1 && mode <= modeCount && (modeMask >> (mode - 1)) & 1 == 1;
@@ -74,6 +78,7 @@ final class LightCapabilities {
     'presetSlots': presetSlots,
     'hasTimer': hasTimer,
     'hasSound': hasSound,
+    'supportsIdentify': supportsIdentify,
   };
 
   static LightCapabilities? fromJson(Object? json) {
@@ -98,6 +103,7 @@ final class LightCapabilities {
       presetSlots: slots.clamp(1, Eb.numPresets),
       hasTimer: json['hasTimer'] != false,
       hasSound: json['hasSound'] != false,
+      supportsIdentify: json['supportsIdentify'] == true,
     );
   }
 
@@ -109,11 +115,19 @@ final class LightCapabilities {
       other.modeCount == modeCount &&
       other.presetSlots == presetSlots &&
       other.hasTimer == hasTimer &&
-      other.hasSound == hasSound;
+      other.hasSound == hasSound &&
+      other.supportsIdentify == supportsIdentify;
 
   @override
-  int get hashCode =>
-      Object.hash(layout, modeMask, modeCount, presetSlots, hasTimer, hasSound);
+  int get hashCode => Object.hash(
+    layout,
+    modeMask,
+    modeCount,
+    presetSlots,
+    hasTimer,
+    hasSound,
+    supportsIdentify,
+  );
 
   @override
   String toString() =>

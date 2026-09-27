@@ -18,10 +18,10 @@ If you are upgrading an existing build from an **Arduino Nano** (ATmega328P) to 
 
 | Function | Old Arduino Nano Pin | New ESP32-C3 Pin | Signal / Logic Level | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **Red Channel** | **D3** (PWM) | **GPIO 1** | 3.3V PWM (14-bit, ~4.9 kHz) | Connects to Red MOSFET Gate via 220Ω (Avoids strapping conflict on GPIO 2) |
-| **Green Channel** | **D5** (PWM) | **GPIO 3** | 3.3V PWM (14-bit, ~4.9 kHz) | Connects to Green MOSFET Gate via 220Ω |
-| **Blue Channel** | **D6** (PWM) | **GPIO 4** | 3.3V PWM (14-bit, ~4.9 kHz) | Connects to Blue MOSFET Gate via 220Ω |
-| **White Channel** | **D9** (PWM) | **GPIO 5** | 3.3V PWM (14-bit, ~4.9 kHz) | Connects to White MOSFET Gate via 220Ω |
+| **Red Channel** | **D3** (PWM) | **GPIO 1** | 3.3V PWM (25 kHz, 11-bit + dithering) | Connects to Red MOSFET Gate via 220Ω (Avoids strapping conflict on GPIO 2) |
+| **Green Channel** | **D5** (PWM) | **GPIO 3** | 3.3V PWM (25 kHz, 11-bit + dithering) | Connects to Green MOSFET Gate via 220Ω |
+| **Blue Channel** | **D6** (PWM) | **GPIO 4** | 3.3V PWM (25 kHz, 11-bit + dithering) | Connects to Blue MOSFET Gate via 220Ω |
+| **White Channel** | **D9** (PWM) | **GPIO 5** | 3.3V PWM (25 kHz, 11-bit + dithering) | Connects to White MOSFET Gate via 220Ω |
 | **Audio Buzzer** | **D10** | **GPIO 6** | 3.3V Pulse | Positive (+) leg of piezo buzzer |
 | **Status LED** | *None* (Old D13) | **GPIO 7 / 8 — not used** | — | The current firmware has no status LED (see 4.3). |
 | **Power Input** | **5V / VIN** | **5V / VBUS** | 5V DC (regulated) | From DC-DC Buck Converter or USB |

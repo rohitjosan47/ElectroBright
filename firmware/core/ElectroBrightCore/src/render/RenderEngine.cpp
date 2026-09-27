@@ -45,14 +45,36 @@ EffectInput RenderEngine::makeInput(const RenderParams& p, uint8_t mode, float d
   return in;
 }
 
-uint16_t RenderEngine::toDuty(float v) {
+uint16_t RenderEngine::toDuty(float v) const {
   if (!(v > 0.0f)) return 0;  // also catches NaN
-  if (v >= 1.0f) return cfg::kPwmMaxDuty;
-  const uint32_t d = static_cast<uint32_t>(v * static_cast<float>(cfg::kPwmMaxDuty) + 0.5f);
-  // A channel that is supposed to be on never rounds to off: the lowest
-  // slider steps stay visibly lit. Genuine zeros (black colour, brightness 0,
-  // dark effect phases, finished fades) are exact 0.0 and turn fully off.
-  return static_cast<uint16_t>(d == 0 ? 1 : d);
+  if (v >= 1.0f) return maxDuty_;
+  const uint32_t d = static_cast<uint32_t>(v * static_cast<float>(maxDuty_) + 0.5f);
+  // A channel that is supposed to be on never drops below the minimum duty:
+  // the lowest slider steps stay steadily, visibly lit. Genuine zeros (black
+  // colour, brightness 0, dark effect phases, finished fades) are exact 0.0
+  // and turn fully off.
+  return static_cast<uint16_t>(d < minDuty_ ? minDuty_ : d);
+}
+
+// IDENTIFY: every channel full / dark for a few crisp flashes, straight to the
+// duty (no brightness smoothing, no sleep fade). The pipeline underneath keeps
+// running, so the light continues exactly where it was once the flashes end.
+// A new id restarts the flashes; id 0 (any other state change) cancels them.
+void RenderEngine::identifyOverlay(const RenderParams& p, float dtMs, uint16_t* duty) {
+  if (p.identifyId == 0) {
+    identifyId_ = 0;
+    identifyMs_ = kIdentifyMs;
+    return;
+  }
+  if (p.identifyId != identifyId_) {
+    identifyId_ = p.identifyId;
+    identifyMs_ = 0.0f;
+  } else if (identifyMs_ < kIdentifyMs) {
+    identifyMs_ += dtMs;
+  }
+  if (identifyMs_ >= kIdentifyMs) return;
+  const bool lit = fmodf(identifyMs_, kIdentifyPeriodMs) < static_cast<float>(cfg::kIdentifyOnMs);
+  for (uint8_t i = 0; i < layout_.count; ++i) duty[i] = lit ? maxDuty_ : 0;
 }
 
 float RenderEngine::approach(float current, float target, float alpha) {
@@ -114,6 +136,7 @@ void RenderEngine::frame(const RenderParams& p, uint32_t nowMs, uint16_t* duty) 
     // Fully dark: skip effect work entirely.
     lastOut_ = kBlack;
     for (uint8_t i = 0; i < layout_.count; ++i) duty[i] = 0;
+    identifyOverlay(p, dt, duty);
     return;
   }
 
@@ -136,4 +159,5 @@ void RenderEngine::frame(const RenderParams& p, uint32_t nowMs, uint16_t* duty) 
                          : whitesOnly_ ? chanmap::colourToWhites(out)
                                        : out;
   for (uint8_t i = 0; i < layout_.count; ++i) duty[i] = toDuty(chanmap::component(mapped, layout_.roles[i]) * k);
+  identifyOverlay(p, dt, duty);
 }

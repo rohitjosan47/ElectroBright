@@ -55,6 +55,7 @@ constexpr Spec kSpecs[] = {
   {"CAPS",                CmdId::Caps,              0, 0, 0,          0, 0,         "FORMAT"},
   {"PING",                CmdId::Ping,              0, 0, 0,          0, 0,         "FORMAT"},
   {"DIAG",                CmdId::Diag,              0, 0, 0,          0, 0,         "FORMAT"},
+  {"IDENTIFY",            CmdId::Identify,          0, 0, 0,          0, 0,         "FORMAT"},
 };
 // clang-format on
 
@@ -179,4 +180,21 @@ ParseResult parseCommand(const char* line, const ChannelLayout& layout) {
 
 bool isCoalescible(CmdId id) {
   return id == CmdId::Rgbw || id == CmdId::Brightness || id == CmdId::Speed || id == CmdId::Frequency;
+}
+
+bool isQuery(CmdId id) {
+  switch (id) {
+    case CmdId::PresetList:
+    case CmdId::Status:
+    case CmdId::ModeSettings:
+    case CmdId::ModeCapabilities:
+    case CmdId::Info:
+    case CmdId::Version:
+    case CmdId::Caps:
+    case CmdId::Ping:
+    case CmdId::Diag:
+      return true;
+    default:
+      return false;
+  }
 }

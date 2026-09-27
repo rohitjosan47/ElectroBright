@@ -24,7 +24,9 @@ inline Scene defaultScene() { return state::defaultScene(fx::rgbw::kProfile.defa
 
 class Engine {
  public:
-  explicit Engine(uint32_t seed) : engine_(seed) {}
+  // Duties on the v3.4.0 PWM scale (14-bit, minimum 1): the baseline pins the
+  // rendering, not the PWM resolution (25 kHz / 11-bit + dither since 3.6.1).
+  explicit Engine(uint32_t seed) : engine_(seed) { engine_.setDutyRange(16383, 1); }
   void frame(const RenderParams& p, uint32_t nowMs, uint16_t* duty) { engine_.frame(p, nowMs, duty); }
 
  private:

@@ -67,6 +67,7 @@ class ControllerCore {
   void sceneChanged(uint32_t nowMs);
   void wake();
   void sleep(uint16_t fadeMs);
+  void endIdentify();
   void sendStatus(uint32_t nowMs);
   void sendDiag();
   void checkStorage(bool ok);
@@ -80,6 +81,8 @@ class ControllerCore {
   Settings settings_{};
   bool sleeping_ = false;
   uint16_t fadeMs_ = 0;
+  bool identifying_ = false;  // an IDENTIFY is published (see RenderParams::identifyId)
+  uint16_t identifySeq_ = 0;  // id of the latest IDENTIFY; never reused back to back
   bool timerActive_ = false;
   uint32_t timerDeadlineMs_ = 0;
   bool haveSeq_ = false;

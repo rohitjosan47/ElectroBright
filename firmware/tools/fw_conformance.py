@@ -448,6 +448,23 @@ async def suite_sleep_timer(fx, R):
     await fx.cmd("WAKE", "OK")
 
 
+async def suite_identify(fx, R, caps):
+    print("\n[identify]")
+    R.check(caps is not None and "IDENTIFY=1" in caps.split(":", 1)[1].split(","), "CAPS reports IDENTIFY=1", caps)
+    before = await fx.status()
+    R.check(await fx.cmd("IDENTIFY", "OK") == "OK", "IDENTIFY replies OK")
+    R.check(await fx.cmd("IDENTIFY", "OK") == "OK", "IDENTIFY again (restarts) replies OK")
+    await asyncio.sleep(0.8)  # the flashes are over
+    R.check(await fx.status() == before, "IDENTIFY changes no state", before)
+    await fx.cmd("SLEEP", "OK")
+    R.check(await fx.cmd("IDENTIFY", "OK") == "OK", "IDENTIFY while asleep replies OK")
+    s = await fx.status()
+    R.check(s and s["sleep"] == 1, "IDENTIFY does not wake the light", s)
+    await fx.cmd("WAKE", "OK")
+    line = await fx.cmd("IDENTIFY:1", "ERROR:")
+    R.check(line == "ERROR:FORMAT", "IDENTIFY takes no arguments -> ERROR:FORMAT", line)
+
+
 async def suite_sound(fx, R, original_sound):
     print("\n[sound]")
     R.check(await fx.cmd("SOUND_OFF", "OK") == "OK", "SOUND_OFF")
@@ -502,6 +519,7 @@ async def run_suites(fx, R, args):
     await suite_binary(fx, R)
     await suite_presets(fx, R)
     await suite_sleep_timer(fx, R)
+    await suite_identify(fx, R, caps)
     await suite_sound(fx, R, original["sound"] == 1)
     if args.stress > 0:
         await suite_stress(fx, R, args.stress)

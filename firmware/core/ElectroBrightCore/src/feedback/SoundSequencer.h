@@ -23,6 +23,7 @@ enum class SoundId : uint8_t {
   SoundOn,
   FactoryReset,
   Connect,
+  Identify,
 };
 
 // Output port for the sequencer (implemented by the LEDC buzzer on device).

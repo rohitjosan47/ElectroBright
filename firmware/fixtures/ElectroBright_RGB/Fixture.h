@@ -16,7 +16,7 @@ namespace rgb {
 // Identity (the app matches these; the cross-repo tests read them).
 constexpr const char* kDeviceName = "ElectroBright_C3_RGB_V1";
 constexpr const char* kModelId = "EB-C3-RGB-V1";
-constexpr const char* kCapsReply = "CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,LAYOUT=RGB";
+constexpr const char* kCapsReply = "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=RGB";
 constexpr const char* kNvsNamespace = "eb3rgb";  // separate from the RGBW light's "eb3"
 
 // Wiring (same board as RGBW; GPIO 7 / 8 are never configured).

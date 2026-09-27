@@ -7,11 +7,11 @@ Firmware for ElectroBright BLE light fixtures. One **shared core** holds everyth
 
 Each **fixture** is a small Arduino sketch that adds only its identity, channel layout and wiring. Every fixture works with the ElectroBright app. The protocol contract is in [`docs/protocol.md`](../docs/protocol.md), and the hardware is described in [`docs/wiring_guide.md`](../docs/wiring_guide.md).
 
-Family version **3.6.0**
+Family version **3.6.1**
 
 | Fixture | Sketch | Channels | Model id | BLE name | Status |
 |---|---|---|---|---|---|
-| RGBW | [`fixtures/ElectroBright_RGBW`](fixtures/ElectroBright_RGBW/README.md) | R, G, B, W | `EB-C3-RGBW-V1` | `ElectroBright_C3_V1` | shipping. Same behaviour as 3.4.0 except VERSION/CAPS and the handling of malformed 5- and 9-byte writes |
+| RGBW | [`fixtures/ElectroBright_RGBW`](fixtures/ElectroBright_RGBW/README.md) | R, G, B, W | `EB-C3-RGBW-V1` | `ElectroBright_C3_V1` | shipping. Same behaviour as 3.4.0 except VERSION/CAPS, IDENTIFY and the handling of malformed 5- and 9-byte writes |
 | RGB | [`fixtures/ElectroBright_RGB`](fixtures/ElectroBright_RGB/README.md) | R, G, B | `EB-C3-RGB-V1` | `ElectroBright_C3_RGB_V1` | new; host-tested, awaiting a hardware run |
 | RGBCCT | [`fixtures/ElectroBright_RGBCCT`](fixtures/ElectroBright_RGBCCT/README.md) | R, G, B, cool white, warm white | `EB-C3-RGBCCT-V1` | `ElectroBright_C3_RGBCCT_V1` | new; host-tested, awaiting a hardware run |
 | CCT | [`fixtures/ElectroBright_CCT`](fixtures/ElectroBright_CCT/README.md) | cool white, warm white | `EB-C3-CCT-V1` | `ElectroBright_C3_CCT_V1` | new; host-tested, awaiting a hardware run |
@@ -52,11 +52,17 @@ firmware/tools/build.sh            # every fixture
 firmware/tools/build.sh RGB        # one fixture (folder suffix)
 ```
 
-Reference build (3.6.0), per fixture: ≈657 KB flash (50 %) and 31.0 KB static RAM (9 %), with zero compiler warnings under `--warnings all`.
+Reference build (3.6.1), per fixture: ≈658 KB flash (50 %) and 31.0 KB static RAM (9 %), with zero compiler warnings under `--warnings all`.
 
 **First boot starts clean.** Each fixture stores its settings and presets in its own NVS namespace: `eb3` for RGBW, `eb3rgb` for RGB and `eb3rgbcct` for RGBCCT, `eb3cct` for CCT and `eb3w` for W.
 - Updating to this firmware clears all saved presets once; colour, mode and the sound setting are kept.
 - Data from the original pre-3.x firmware (namespace `eeprom`) is erased once.
+
+> **MOSFET gate drive at 25 kHz (3.6.1+).** The PWM now switches about five
+> times as often as before, so large MOSFETs (e.g. IRLZ44N) driven through the
+> 220 Ω gate resistor spend more time in their linear region and run warmer.
+> If they get warm, use a 100 Ω gate resistor or a low-gate-charge MOSFET
+> (AO3400, IRLB8721).
 
 ---
 
@@ -139,6 +145,11 @@ Design rules that remove whole classes of bugs found in the original firmware:
   and idle tasks.
 - **Safe power-up.** The LED gates are driven low first, then the device
   fades in from black over 600 ms (no boot flash, no inrush spike).
+- **Inaudible PWM.** 25 kHz, above hearing, so the fixtures' buck converters
+  do not whine under the pulsed load (4.9 kHz before 3.6.1). At 80 MHz that
+  leaves an 11-bit counter; the C3's LEDC hardware dithering adds 4
+  fractional bits (15 bits effective). The dimmest level is one whole count
+  every period, a steady pulse train that never flickers.
 - **Phase-shifted PWM.** The n channels switch at 1/n-period offsets, which
   lowers the peak current on the strip supply and reduces EMI.
 - **One core, many fixtures.** Effects always render linear RGBW; the channel
@@ -244,6 +255,7 @@ How this firmware differs from the original (pre-3.x) firmware:
   - SLEEP turns the light off in every mode, and cancels the timer.
   - Colour and brightness received while asleep update the stored values but do not wake the light. In the original firmware, a late drag packet after pressing Power turned it back on.
   - `WAKE`, `MODE` and `PRESET_LOAD` wake the light.
+- **Identify (3.6.1+, CAPS `IDENTIFY=1`):** `IDENTIFY` flashes the light twice (150 ms full, 150 ms dark), even when it is asleep, then resumes its previous output. It changes no state.
 - **Timer:** when it fires, the light fades out over 2 s and pushes an unsolicited `STATUS`.
 - **Presets:** 15 slots, 0..14 (CAPS announces `PRESETS=15`). Loading a preset keeps the mute setting. Mute is a device setting, not part of a scene.
 - **Power-up:** sleep state is not persisted, so power-up always means light on.
@@ -253,7 +265,7 @@ How this firmware differs from the original (pre-3.x) firmware:
 
 ## 6. Tests
 
-**Host tests** (`test/`: portable core, ASan + UBSan, `-Werror`): 163 tests.
+**Host tests** (`test/`: portable core, ASan + UBSan, `-Werror`): 175 tests.
 ```bash
 make -C firmware/test                 # portable check, all tests, fwsim
 make -C firmware/test run T=rgb       # filter by name
@@ -327,7 +339,8 @@ python3 firmware/tools/fw_conformance.py --persist       # power-cycle check
 ## 8. Tuning
 
 **Shared settings** are in `core/ElectroBrightCore/src/config/Config.h`:
-- PWM frequency, resolution and phase stagger;
+- PWM frequency, resolution, minimum duty and phase stagger;
+- IDENTIFY flash timing;
 - smoothing, crossfade and fade times;
 - persistence debounce;
 - buffer sizes;

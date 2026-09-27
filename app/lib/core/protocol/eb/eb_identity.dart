@@ -102,6 +102,7 @@ abstract final class EbIdentity {
       modeCount: Eb.numModes,
       // Firmware before 3.6.0 announces no count: assume the current one.
       presetSlots: (caps.presetSlots ?? Eb.numPresets).clamp(1, Eb.numPresets),
+      supportsIdentify: caps.identify,
     );
   }
 }

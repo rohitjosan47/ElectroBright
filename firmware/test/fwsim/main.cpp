@@ -60,6 +60,7 @@ const char* soundName(SoundId id) {
     case SoundId::SoundOn: return "SoundOn";
     case SoundId::FactoryReset: return "FactoryReset";
     case SoundId::Connect: return "Connect";
+    case SoundId::Identify: return "Identify";
   }
   return "?";
 }
@@ -119,10 +120,11 @@ std::string stateJson(SimDevice& dev) {
   }
   snprintf(b, sizeof(b),
            "],\"now\":%lu,\"connected\":%u,\"mtu\":%u,\"subscribed\":%u,\"pendingText\":%lu,"
-           "\"mailbox\":%u,\"pendingReplies\":%lu,\"render\":{\"sleeping\":%u,\"fadeMs\":%u},",
+           "\"mailbox\":%u,\"pendingReplies\":%lu,\"render\":{\"sleeping\":%u,\"fadeMs\":%u,\"identify\":%u},",
            static_cast<unsigned long>(dev.now()), dev.connected() ? 1u : 0u, dev.mtu(), dev.subscribed() ? 1u : 0u,
            static_cast<unsigned long>(dev.pendingText()), dev.mailboxFull() ? 1u : 0u,
-           static_cast<unsigned long>(dev.pendingReplies()), dev.lastParams().sleeping, dev.lastParams().fadeMs);
+           static_cast<unsigned long>(dev.pendingReplies()), dev.lastParams().sleeping, dev.lastParams().fadeMs,
+           dev.lastParams().identifyId);
   j += b;
   snprintf(b, sizeof(b),
            "\"stats\":{\"rx\":%lu,\"ovf\":%lu,\"rej\":%lu,\"sdrop\":%lu,\"unk\":%lu,\"err\":%lu,\"coal\":%lu,"

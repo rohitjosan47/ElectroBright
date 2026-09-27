@@ -40,6 +40,7 @@ const Note* SoundSequencer::melody(SoundId id, uint8_t& count) {
     case SoundId::SoundOn: return pick(kSoundOn, count);
     case SoundId::FactoryReset: return pick(kFactory, count);
     case SoundId::Connect: return pick(kConnect, count);
+    case SoundId::Identify: return pick(kConnect, count);  // the same single short chirp
     default: count = 0; return nullptr;
   }
 }

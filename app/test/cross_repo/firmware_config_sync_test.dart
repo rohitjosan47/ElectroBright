@@ -60,7 +60,9 @@ void main() {
               value(m.group(6)!),
             ),
         };
-    expect(ranges.length, 31, reason: 'every parser row found');
+    expect(ranges.length, 32, reason: 'every parser row found');
+    expect(ranges['IDENTIFY'], (0, 0, 0, 0));
+    expect(const Identify().wire, 'IDENTIFY');
 
     void accepts(
       String name,

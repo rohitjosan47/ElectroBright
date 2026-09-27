@@ -10,7 +10,7 @@ This sketch is the shared core ([`firmware/core`](../../core/ElectroBrightCore))
 | | |
 |---|---|
 | Model id / BLE name | `EB-C3-CCT-V1` / `ElectroBright_C3_CCT_V1` |
-| CAPS | `CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,LAYOUT=CCT` |
+| CAPS | `CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=CCT` |
 | Channels (wire order) | CW, WW |
 | Colour on the wire | `COLOR:cw,ww` and `POLICE_COLOR_A/B:cw,ww`; 6-byte binary frame `[AA, seq, CW, WW, Br, cs]`, salt 0x57; STATUS has 17 fields |
 | Flash namespace | `eb3cct` (separate from the other fixtures) |

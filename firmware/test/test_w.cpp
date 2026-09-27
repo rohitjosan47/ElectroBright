@@ -95,7 +95,7 @@ TEST(w_reports_its_identity_layout_and_modes) {
   r.send("CAPS");
   CHECK_STR(r.env.lines[0], "INFO:EB-C3-W-V1");
   CHECK_STR(r.env.lines[1], std::string("VERSION:") + cfg::kFirmwareVersion);
-  CHECK_STR(r.env.lines[2], "CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,LAYOUT=W,MODES=1DFF");
+  CHECK_STR(r.env.lines[2], "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=W,MODES=1DFF");
 }
 
 TEST(w_status_has_14_fields_and_full_white_default) {

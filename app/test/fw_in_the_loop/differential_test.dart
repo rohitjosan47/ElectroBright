@@ -449,7 +449,7 @@ final class _Traffic {
       26 => 'INFO',
       27 => 'VERSION',
       28 => 'CAPS',
-      29 => 'PING',
+      29 => _r.nextBool() ? 'PING' : 'IDENTIFY',
       30 => 'DIAG',
       _ => 'TIMER:${_r.nextInt(86401)}',
     };

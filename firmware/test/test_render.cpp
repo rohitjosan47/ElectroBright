@@ -101,9 +101,10 @@ TEST(render_color_changes_are_smoothed_not_stepped) {
   s.step();
   // One frame after a jump to black the output is still mostly on...
   CHECK(s.duty[0] > cfg::kPwmMaxDuty / 2);
-  // ...and it converges within ~5 time constants.
+  // ...and it converges within ~5 time constants: down to ~0.06 % of full
+  // scale, just above the minimum non-zero duty (the tail then snaps to 0).
   s.run(static_cast<uint32_t>(cfg::kColorTauMs * 8));
-  CHECK(s.duty[0] < 10);
+  CHECK(s.duty[0] < 20);
 }
 
 TEST(render_sleep_blacks_out_every_mode_and_wake_restores) {
@@ -842,4 +843,98 @@ TEST(sound_sequencer_new_sound_preempts) {
   log.now = 5;
   seq.tick(5, log);
   CHECK_EQ(log.events.back().second, 150);
+}
+
+// ---- IDENTIFY ---------------------------------------------------------------------
+
+namespace {
+// Runs the IDENTIFY overlay on `a` and checks it against the untouched twin `b`:
+// crisp full / dark flashes (all channels together), then exactly b's output.
+void checkIdentify(Sim& a, Sim& b) {
+  const uint32_t frames = (2u * (cfg::kIdentifyOnMs + cfg::kIdentifyOffMs)) / kFrameMs;
+  int rises = 0;
+  bool wasLit = false;
+  for (uint32_t i = 0; i < frames; ++i) {
+    a.step();
+    b.step();
+    const bool lit = a.duty[0] == cfg::kPwmMaxDuty;
+    for (uint16_t d : a.duty) CHECK_EQ(d, lit ? cfg::kPwmMaxDuty : 0);
+    const bool expectLit = (i * kFrameMs) % (cfg::kIdentifyOnMs + cfg::kIdentifyOffMs) < cfg::kIdentifyOnMs;
+    CHECK_EQ(lit, expectLit);
+    rises += lit && !wasLit;
+    wasLit = lit;
+  }
+  CHECK_EQ(rises, int(cfg::kIdentifyFlashes));
+  bool same = true;
+  for (int i = 0; i < 400; ++i) {
+    a.step();
+    b.step();
+    for (int k = 0; k < 4; ++k) same = same && a.duty[k] == b.duty[k];
+  }
+  CHECK(same);
+}
+}  // namespace
+
+TEST(render_identify_flashes_crisply_then_resumes_exactly) {
+  for (uint8_t mode : std::initializer_list<uint8_t>{1, 3, 10}) {
+    Sim a(mode), b(mode);
+    a.p.scene.brightness = b.p.scene.brightness = 60;  // flashes ignore brightness
+    a.run(1500);
+    b.run(1500);
+    a.p.identifyId = 1;
+    checkIdentify(a, b);
+  }
+}
+
+TEST(render_identify_shows_while_asleep_and_leaves_it_dark) {
+  Sim a, b;
+  a.run(1000);
+  b.run(1000);
+  a.p.sleeping = b.p.sleeping = 1;
+  a.run(cfg::kSleepFadeMs + 100);
+  b.run(cfg::kSleepFadeMs + 100);
+  CHECK(a.dark());
+  a.p.identifyId = 7;
+  checkIdentify(a, b);
+  CHECK(a.dark());
+}
+
+TEST(render_identify_restarts_on_a_new_id_and_stops_on_cancel) {
+  Sim a, b;
+  a.run(1000);
+  b.run(1000);
+  a.p.identifyId = 1;
+  a.run(200);  // in the first dark gap
+  b.run(200);
+  CHECK(a.dark());
+  a.p.identifyId = 2;  // restart: lit again at once, full sequence
+  checkIdentify(a, b);
+  a.p.identifyId = 3;
+  a.run(50);
+  b.run(50);
+  CHECK_EQ(a.duty[0], cfg::kPwmMaxDuty);
+  a.p.identifyId = 0;  // cancelled: straight back to the normal output
+  a.step();
+  b.step();
+  for (int k = 0; k < 4; ++k) CHECK_EQ(a.duty[k], b.duty[k]);
+}
+
+TEST(render_lowest_level_is_a_steady_minimum_and_duty_is_monotonic) {
+  // Anything on is at least one whole PWM count (no sparse dithered pulses).
+  Sim s;
+  s.p.scene.brightness = 1;
+  s.run(1000);
+  for (uint16_t d : s.duty) CHECK(d == 0 || d >= cfg::kPwmMinDuty);
+  CHECK(s.duty[0] >= cfg::kPwmMinDuty);
+  // Brightness steps never lower the output.
+  uint16_t prev = 0;
+  for (int b = 1; b <= 255; ++b) {
+    Sim t;
+    t.p.scene.color = {255, 255, 255, 255};
+    t.p.scene.brightness = static_cast<uint8_t>(b);
+    t.run(1000);
+    CHECK(t.duty[0] >= prev);
+    prev = t.duty[0];
+  }
+  CHECK_EQ(prev, cfg::kPwmMaxDuty);
 }

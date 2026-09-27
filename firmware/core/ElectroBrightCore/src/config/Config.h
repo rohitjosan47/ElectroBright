@@ -13,7 +13,7 @@ namespace cfg {
 // Family version, shared by every fixture built from this core. A fixture's
 // own identity (model id, BLE name, CAPS, pins) lives in its FixtureProfile
 // (firmware/fixtures/<Name>/Fixture.h).
-constexpr const char* kFirmwareVersion = "3.6.0";
+constexpr const char* kFirmwareVersion = "3.6.1";
 
 // Nordic UART Service
 constexpr const char* kServiceUuid = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
@@ -21,10 +21,23 @@ constexpr const char* kRxCharUuid  = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E";  //
 constexpr const char* kTxCharUuid  = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";  // device -> phone (notify)
 
 // --- LED PWM ----------------------------------------------------------------
-constexpr uint32_t kPwmFreqHz   = 4882;    // 80 MHz / 2^14
-constexpr uint8_t  kPwmBits     = 14;
-constexpr uint16_t kPwmMaxDuty  = (1u << kPwmBits) - 1;   // 16383
+// ~25 kHz: above hearing, so the fixtures' buck converters no longer whine
+// under the pulsed load. The 80 MHz LEDC clock leaves 11 bits per period; the
+// C3's LEDC adds 4 fractional duty bits (hardware dithering: the fraction adds
+// one count in that many of every 16 periods), so duties are in 1/16 counts.
+constexpr uint32_t kPwmFreqHz     = 25000;   // 80 MHz / 1.5625 / 2^11 (exact LEDC clock divider)
+constexpr uint8_t  kPwmBits       = 11;      // counts per period (the most 80 MHz allows at ~25 kHz)
+constexpr uint8_t  kPwmDitherBits = 4;       // LEDC fractional duty bits
+constexpr uint16_t kPwmMaxDuty    = (1u << (kPwmBits + kPwmDitherBits)) - 1;   // 32767
+// Smallest non-zero duty: one whole count in every period (no dithering below
+// it), so the dimmest level is a steady pulse train, never a sparse one.
+constexpr uint16_t kPwmMinDuty    = 1u << kPwmDitherBits;                    // 16
 constexpr bool     kPwmPhaseStagger = true; // spread channel turn-on across the period
+
+// --- Identify (IDENTIFY command) ---------------------------------------------
+constexpr uint16_t kIdentifyOnMs   = 150;
+constexpr uint16_t kIdentifyOffMs  = 150;
+constexpr uint8_t  kIdentifyFlashes = 2;
 
 // --- Model -------------------------------------------------------------------
 constexpr uint8_t kNumModes   = 13;

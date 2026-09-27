@@ -262,6 +262,18 @@ final class Ping extends EbCommand {
   EbExpect get expect => EbExpect.ok;
 }
 
+/// Flashes the light twice so it can be found (only when CAPS has
+/// `IDENTIFY=1`). Changes no state; a resend just restarts the flashes.
+final class Identify extends EbCommand {
+  const Identify();
+  @override
+  String get wire => 'IDENTIFY';
+  @override
+  EbExpect get expect => EbExpect.ok;
+  @override
+  String get mergeKey => 'identify';
+}
+
 // ---- Presets and reset (barriers) -----------------------------------------------------
 
 final class PresetSave extends EbCommand {

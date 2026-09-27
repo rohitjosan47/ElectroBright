@@ -20,7 +20,7 @@ namespace w {
 // Identity (the app matches these; the cross-repo tests read them).
 constexpr const char* kDeviceName = "ElectroBright_C3_W_V1";
 constexpr const char* kModelId = "EB-C3-W-V1";
-constexpr const char* kCapsReply = "CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,LAYOUT=W,MODES=1DFF";
+constexpr const char* kCapsReply = "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=W,MODES=1DFF";
 constexpr const char* kNvsNamespace = "eb3w";  // separate from the other fixtures
 
 // Wiring. GPIO 7 / 8 are never configured.

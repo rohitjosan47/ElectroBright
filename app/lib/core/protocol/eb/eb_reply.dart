@@ -75,6 +75,9 @@ final class EbCaps extends EbReply {
 
   bool get hasModes => fields.containsKey('MODES');
 
+  /// `IDENTIFY=1` (3.6.1+): the light answers the IDENTIFY command.
+  bool get identify => fields['IDENTIFY'] == '1';
+
   /// `PRESETS=<n>` (3.6.0+); null when absent or not a plain number.
   int? get presetSlots {
     final String? v = fields['PRESETS'];

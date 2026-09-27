@@ -2,6 +2,7 @@
 
 #include <driver/gpio.h>
 #include <driver/ledc.h>
+#include <soc/ledc_struct.h>
 
 #include "../config/Config.h"
 
@@ -11,16 +12,18 @@ constexpr ledc_timer_t kTimer = LEDC_TIMER_0;
 constexpr ledc_channel_t kChannels[kMaxChannels] = {LEDC_CHANNEL_0, LEDC_CHANNEL_1, LEDC_CHANNEL_2, LEDC_CHANNEL_3,
                                                     LEDC_CHANNEL_4};
 constexpr uint32_t kPeriod = 1u << cfg::kPwmBits;
+static_assert(cfg::kPwmDitherBits == 4, "the C3 LEDC duty register has 4 fractional bits");
 
 // Phase-shifted PWM: channel i of n turns on at i/n of the period, so the
 // MOSFETs do not all switch at the same instant. That lowers the peak current
 // step on the 12/24 V supply (less ripple, less buck-converter noise and EMI).
 // The offset is reduced when needed so hpoint + duty never exceeds the period
-// (the duty cycle itself is always exact).
-uint32_t hpointFor(int ch, int count, uint32_t duty) {
+// (the duty cycle itself is always exact). `counts` is the longest on-time in
+// whole counts (a dithered duty is one count longer in some periods).
+uint32_t hpointFor(int ch, int count, uint32_t counts) {
   if (!cfg::kPwmPhaseStagger) return 0;
   uint32_t hp = (kPeriod / static_cast<uint32_t>(count)) * static_cast<uint32_t>(ch);
-  if (hp + duty > kPeriod - 1) hp = (duty >= kPeriod - 1) ? 0 : (kPeriod - 1 - duty);
+  if (hp + counts > kPeriod - 1) hp = (counts >= kPeriod - 1) ? 0 : (kPeriod - 1 - counts);
   return hp;
 }
 }  // namespace
@@ -53,7 +56,7 @@ bool PwmOutput::begin(const FixtureProfile& fixture) {
   t.duty_resolution = static_cast<ledc_timer_bit_t>(cfg::kPwmBits);
   t.timer_num = kTimer;
   t.freq_hz = cfg::kPwmFreqHz;
-  t.clk_cfg = LEDC_AUTO_CLK;
+  t.clk_cfg = LEDC_USE_APB_CLK;  // 80 MHz: the only source fast enough for 11 bits at ~25 kHz
   if (ledc_timer_config(&t) != ESP_OK) return false;
 
   for (int i = 0; i < count_; ++i) {
@@ -75,8 +78,13 @@ void PwmOutput::write(const uint16_t* duty) {
   for (int i = 0; i < count_; ++i) {
     if (duty[i] == last_[i]) continue;
     const uint32_t d = duty[i] > cfg::kPwmMaxDuty ? cfg::kPwmMaxDuty : duty[i];
+    const uint32_t whole = d >> cfg::kPwmDitherBits;
+    const uint32_t frac = d & ((1u << cfg::kPwmDitherBits) - 1u);
+    ledc_set_duty_with_hpoint(kMode, kChannels[i], whole, hpointFor(i, count_, whole + (frac ? 1u : 0u)));
+    // The driver only writes whole counts; the duty register's low 4 bits are
+    // the hardware's fractional part (dithering), so write the full value.
+    LEDC.channel_group[kMode].channel[kChannels[i]].duty.duty = d;
     // The new duty latches at the next period boundary: no glitch / tearing.
-    ledc_set_duty_with_hpoint(kMode, kChannels[i], d, hpointFor(i, count_, d));
     ledc_update_duty(kMode, kChannels[i]);
     last_[i] = duty[i];
   }

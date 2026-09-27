@@ -47,6 +47,7 @@ enum class CmdId : uint8_t {
   Caps,
   Ping,
   Diag,
+  Identify,
 };
 
 struct Command {
@@ -70,3 +71,6 @@ inline ParseResult parseCommand(const char* line) { return parseCommand(line, la
 // Commands where only the most recent value matters; a run of them in one
 // batch collapses to the last one.
 bool isCoalescible(CmdId id);
+
+// Read-only commands: they only reply and change no state.
+bool isQuery(CmdId id);

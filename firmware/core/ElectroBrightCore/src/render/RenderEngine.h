@@ -1,17 +1,19 @@
 #pragma once
-// Portable render core: turns RenderParams + time into one 14-bit PWM duty per
-// channel of the fixture's layout.
+// Portable render core: turns RenderParams + time into one PWM duty
+// (0..cfg::kPwmMaxDuty) per channel of the fixture's layout.
 //
 // Pipeline per frame (all in linear light):
 //   targets --one-pole smoothing--> base colour / brightness
 //   effect(mode) [crossfaded with the previous mode for 300 ms]
 //   -> fixture channels (ChannelMap: W folded into RGB on layouts without W)
-//   x master brightness x sleep/boot fade gain  --> 14-bit duty
+//   x master brightness x sleep/boot fade gain  --> PWM duty
+//   [IDENTIFY overrides the result with full / dark flashes, then lets it through]
 //
 // No heap, no blocking, deterministic for a given seed (host-testable).
 
 #include <stdint.h>
 
+#include "../config/Config.h"
 #include "../core/Rng.h"
 #include "../core/Types.h"
 #include "../fixture/ChannelLayout.h"
@@ -29,21 +31,32 @@ class RenderEngine {
   // `nowMs` may wrap; frame-to-frame dt is clamped to 50 ms.
   void frame(const RenderParams& p, uint32_t nowMs, uint16_t* duty);
 
+  // Output duty scale: full scale and smallest non-zero duty (default: the
+  // device PWM). Lets the golden baseline keep its original 14-bit scale.
+  void setDutyRange(uint16_t maxDuty, uint16_t minDuty) {
+    maxDuty_ = maxDuty;
+    minDuty_ = minDuty;
+  }
+
   // Seeds the effect RNG (the device uses the hardware RNG at boot).
   void reseed(uint32_t seed) { rng_.reseed(seed); }
 
   float gain() const { return gain_; }
   uint8_t activeMode() const { return activeMode_; }
   bool crossfading() const { return xfadeMs_ < kXfadeDoneMs; }
+  bool identifying() const { return identifyMs_ < kIdentifyMs; }
   // Last effect output before channel mapping, brightness and fades (linear RGBW).
   LinColor lastOutput() const { return lastOut_; }
 
  private:
   static constexpr float kXfadeDoneMs = 1e9f;
+  static constexpr float kIdentifyPeriodMs = static_cast<float>(cfg::kIdentifyOnMs + cfg::kIdentifyOffMs);
+  static constexpr float kIdentifyMs = kIdentifyPeriodMs * cfg::kIdentifyFlashes;
 
   Effect& effectFor(uint8_t mode);
   EffectInput makeInput(const RenderParams& p, uint8_t mode, float dtMs);
-  static uint16_t toDuty(float v);
+  uint16_t toDuty(float v) const;
+  void identifyOverlay(const RenderParams& p, float dtMs, uint16_t* duty);
   static float approach(float current, float target, float alpha);
 
   SolidEffect solid_;
@@ -77,4 +90,8 @@ class RenderEngine {
   uint8_t prevMode_ = 1;
   float xfadeMs_ = kXfadeDoneMs;
   LinColor lastOut_{};
+  uint16_t maxDuty_ = cfg::kPwmMaxDuty;
+  uint16_t minDuty_ = cfg::kPwmMinDuty;
+  uint16_t identifyId_ = 0;
+  float identifyMs_ = kIdentifyMs;
 };

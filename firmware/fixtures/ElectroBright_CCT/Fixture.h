@@ -17,7 +17,7 @@ namespace cct {
 // Identity (the app matches these; the cross-repo tests read them).
 constexpr const char* kDeviceName = "ElectroBright_C3_CCT_V1";
 constexpr const char* kModelId = "EB-C3-CCT-V1";
-constexpr const char* kCapsReply = "CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,LAYOUT=CCT";
+constexpr const char* kCapsReply = "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=CCT";
 constexpr const char* kNvsNamespace = "eb3cct";  // separate from the other fixtures
 
 // Wiring. GPIO 7 / 8 are never configured.

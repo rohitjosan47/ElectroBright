@@ -7,6 +7,7 @@ import 'package:electrobright/core/protocol/eb/eb_frame.dart';
 import 'package:electrobright/core/protocol/eb/eb_identity.dart';
 import 'package:electrobright/core/protocol/eb/eb_reply.dart';
 import 'package:electrobright/core/protocol/eb/eb_scene.dart';
+import 'package:electrobright/sim/eb_device_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Layout-native protocol (docs/protocol.md §2-§5) for every fixture.
@@ -262,11 +263,13 @@ void main() {
             modeSettingsPairs: 13,
           );
       const String base = 'PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL';
-      // Every 3.6.0 fixture announces 15.
+      // Every current fixture announces 15.
+      final EbVersion current =
+          parseEbReply('VERSION:${EbDeviceModel.firmwareVersion}') as EbVersion;
       for (final EbFixtureSpec f in EbFixtureCatalog.all) {
         final LightCapabilities c = EbIdentity.capabilities(
           fromModel: f.layout,
-          version: const EbVersion('3.6.0', 3, 6, 0),
+          version: current,
           caps: parseEbReply(f.capsReply) as EbCaps,
           modeSettingsPairs: 13,
         );
@@ -280,6 +283,40 @@ void main() {
       expect(of('$base,PRESETS=25,LAYOUT=RGB').presetSlots, 15);
       expect(of('$base,PRESETS=0,LAYOUT=RGB').presetSlots, 1);
       expect(of('$base,PRESETS=x,LAYOUT=RGB').presetSlots, 15);
+    });
+
+    test('CAPS IDENTIFY=1 sets supportsIdentify; absent means false', () {
+      LightCapabilities of(String body) => EbIdentity.capabilities(
+        fromModel: ChannelLayout.rgb,
+        version: v35,
+        caps: caps(body),
+        modeSettingsPairs: 13,
+      );
+      const String base = 'PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL';
+      expect(of('$base,LAYOUT=RGB').supportsIdentify, isFalse);
+      expect(of('$base,IDENTIFY=1,LAYOUT=RGB').supportsIdentify, isTrue);
+      expect(of('$base,IDENTIFY=0,LAYOUT=RGB').supportsIdentify, isFalse);
+      // Every current fixture announces it.
+      for (final EbFixtureSpec f in EbFixtureCatalog.all) {
+        expect(
+          (parseEbReply(f.capsReply) as EbCaps).identify,
+          isTrue,
+          reason: f.modelId,
+        );
+      }
+      // Saved with the fixture; older saved records read back as false.
+      const LightCapabilities withIdentify = LightCapabilities(
+        layout: ChannelLayout.cct,
+        supportsIdentify: true,
+      );
+      expect(LightCapabilities.fromJson(withIdentify.toJson()), withIdentify);
+      final Map<String, Object> old = withIdentify.toJson()
+        ..remove('supportsIdentify');
+      expect(LightCapabilities.fromJson(old)!.supportsIdentify, isFalse);
+      expect(
+        LightCapabilities.assumed(ChannelLayout.cct).supportsIdentify,
+        isFalse,
+      );
     });
 
     test('capabilities saved with 25 slots come back with 15', () {

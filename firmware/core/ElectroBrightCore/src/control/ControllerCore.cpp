@@ -32,6 +32,7 @@ void ControllerCore::onDisconnect(uint32_t) { haveSeq_ = false; }
 void ControllerCore::tick(uint32_t nowMs) {
   if (timerActive_ && static_cast<int32_t>(nowMs - timerDeadlineMs_) >= 0) {
     timerActive_ = false;
+    endIdentify();
     sleep(cfg::kTimerSleepFadeMs);
     sound(SoundId::Sleep);
     sendStatus(nowMs);  // unsolicited: lets the app update without polling
@@ -53,6 +54,7 @@ void ControllerCore::onColorFrame(const ColorFrame& f, uint32_t nowMs) {
     haveSeq_ = true;
     expectedSeq_ = static_cast<uint8_t>(f.seq + 1);
   }
+  endIdentify();
   scene_.color = f.color;
   if (f.hasBrightness) scene_.brightness = f.brightness;
   // Deliberately does NOT wake a sleeping light: a trailing drag packet after
@@ -96,6 +98,12 @@ void ControllerCore::processLines(const char* const* lines, size_t count, uint32
 // ------------------------------------------------------------------ commands
 void ControllerCore::execute(const Command& c, uint32_t nowMs) {
   const int32_t* a = c.args;
+  // Any state change cancels a running IDENTIFY; the command then applies
+  // normally (and republishes if it changes the output).
+  if (identifying_ && c.id != CmdId::Identify && !isQuery(c.id)) {
+    endIdentify();
+    publish();
+  }
   switch (c.id) {
     case CmdId::Rgbw:
       scene_.color = layout::fromTuple(*fixture_.layout, a);
@@ -295,6 +303,19 @@ void ControllerCore::execute(const Command& c, uint32_t nowMs) {
     case CmdId::Diag:
       sendDiag();
       return;
+
+    case CmdId::Identify:
+      // Flashes the light on top of whatever it shows (even asleep) and then
+      // resumes it; no state changes, nothing persists, no Sleep/Wake sounds.
+      // A fresh id every time, so the renderer restarts even if it never saw
+      // the cancelled snapshot in between.
+      identifySeq_ = static_cast<uint16_t>(identifySeq_ + 1);
+      if (identifySeq_ == 0) identifySeq_ = 1;
+      identifying_ = true;
+      publish();
+      sound(SoundId::Identify);
+      env_.sendLine("OK");
+      return;
   }
 }
 
@@ -314,8 +335,11 @@ void ControllerCore::publish() {
   p.scene = scene_;
   p.sleeping = sleeping_ ? 1 : 0;
   p.fadeMs = fadeMs_;
+  p.identifyId = identifying_ ? identifySeq_ : 0;
   env_.publish(p);
 }
+
+void ControllerCore::endIdentify() { identifying_ = false; }
 
 void ControllerCore::sceneChanged(uint32_t nowMs) { store_.noteSceneChanged(nowMs); }
 

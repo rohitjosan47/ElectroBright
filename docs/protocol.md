@@ -34,14 +34,16 @@ After connecting, send `INFO`, `VERSION` and `CAPS`:
 
 ```
 INFO:EB-C3-<LAYOUT>-V<rev>                         e.g. INFO:EB-C3-RGB-V1
-VERSION:<major>.<minor>.<patch>                    e.g. VERSION:3.6.0
-CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,LAYOUT=<LAYOUT>
+VERSION:<major>.<minor>.<patch>                    e.g. VERSION:3.6.1
+CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=<LAYOUT>
 ```
 
 - **Where the layout comes from:** the `LAYOUT` key in CAPS. It always equals the middle part of the model id.
 - **RGBW 3.4.0:** it predates the `LAYOUT` key. Its model id `EB-C3-RGBW-V1` implies `RGBW`.
 - **CAPS is `KEY=VALUE` pairs:** parse it as a map and ignore unknown keys. Keys may be added in later versions.
 - **Preset slots:** `PRESETS=<n>` is the number of preset slots (15 on 3.6.0); absent on firmware before 3.6.0, where clients assume 15.
+- **Identify:** `IDENTIFY=1` (3.6.1+) means the light supports the `IDENTIFY` command (§4, §6). If it is absent, the light does not; clients must not send it.
+- **PWM:** `PWM=<bits>` is informational: the effective duty resolution. 3.6.1+ sends `PWM=15`: 25 kHz PWM (inaudible) with an 11-bit counter plus 4 bits of hardware dithering. Earlier firmware sends `PWM=14` (14-bit at 4.9 kHz, which can make the fixture's buck converter whine). Clients do not need it.
 - **Supported modes:** `MODES=<hex mask>` (bit m−1 = mode m) is present only when a light doesn't support all 13 modes. If it is absent, all 13 are supported.
   - The single-white light sends `MODES=1DFF`: every mode except Rainbow (10), which only changes colour at constant intensity.
   - An unsupported mode behaves like an out-of-range one: `MODE:10` → `ERROR:MODE_INVALID`, `MODE_SPEED:10,s` → `ERROR:MODE_SPEED_INVALID`, `MODE_FREQUENCY:10,f` → `ERROR:MODE_FREQUENCY_INVALID`, `MODE_CAPABILITIES:10` → `ERROR:MODE_INVALID`.
@@ -97,6 +99,7 @@ Colour arguments are `v1,…,vn`, each 0–255. The wrong number of values gives
 | `MODE_SETTINGS` | `MODE_SETTINGS:s1,f1;…;s13,f13` |
 | `MODE_CAPABILITIES:m` | `CAPABILITIES:NONE` / `FREQUENCY` / `SPEED,FREQUENCY[,COLOR_MODE]` |
 | `SLEEP` · `WAKE` · `PING` | `OK` |
+| `IDENTIFY` (only when CAPS has `IDENTIFY=1`) | `OK` (§6) |
 | `SOUND_ON` · `SOUND_OFF` | `OK` (preceded by `ERROR:STORAGE` if it could not be saved) |
 | `TIMER:0-86400` (seconds; 0 cancels) | `OK` |
 | `FACTORY_RESET` | `OK` (no reboot; the link stays up) |
@@ -141,6 +144,7 @@ W     STATUS:255,255,1,5,5,0,0,1,0,0,0,1,255,255
   - `WAKE`, `MODE` and `PRESET_LOAD` wake the light.
   - Sleep is never persisted: power-up means on.
 - **Timer:** when it fires, the light fades out over 2 s and pushes a STATUS.
+- **Identify** (`IDENTIFY`, 3.6.1+): the light flashes twice, all LEDs full for 150 ms and then dark for 150 ms, whether it is on or asleep. The flashes skip brightness smoothing and the sleep fade. If sound is on, one short chirp plays at the start. Afterwards the light shows exactly what it showed before; an effect keeps running underneath. IDENTIFY changes no state and persists nothing, and it plays no Sleep/Wake sounds. A new `IDENTIFY` restarts the flashes. Any other state-changing command (anything except the queries `STATUS`, `MODE_SETTINGS`, `MODE_CAPABILITIES`, `PRESET_LIST`, `INFO`, `VERSION`, `CAPS`, `PING` and `DIAG`), a binary colour frame or the timer firing cancels them and then applies normally.
 - **Persistence:**
   - The live scene is saved 3 s after the last change, and at most 15 s after the first change.
   - Presets and the sound setting are saved immediately.
@@ -153,9 +157,9 @@ W     STATUS:255,255,1,5,5,0,0,1,0,0,0,1,255,255
   - W: the white LED at full.
   - RGB (no white LED): white mixed from the RGB LEDs, with the same hue and never brighter than full scale.
 - **Coloured effect light on a white-only light (CCT):** Rainbow, TV, Police (auto), and the Fireworks and Club auto palettes make their own colours. The CCT light shows them as white temperature:
-  - Brightness follows the colour's strongest channel.
-  - Warm hues (red, orange, yellow) go to the warm LED, cool hues (blue, cyan) to the cool LED, and neutral ones to both.
-  - So Rainbow sweeps warm to cool, and auto Police alternates warm and cool.
+  - Brightness follows the colour's strongest channel, and cool + warm together always add up to it, so brightness stays steady.
+  - Warmth changes smoothly around the hue circle: red/orange are the warmest, cyan/blue the coolest, and white is neutral (both LEDs at half each). There are no jumps.
+  - So Rainbow sweeps smoothly between warm and cool, and auto Police alternates warm (red) and cool (blue).
 - **Coloured effect light on a single white LED (W):** it becomes brightness, the level of the colour's strongest channel. Saturated flashes (Police, Club, Fireworks) stay at full brightness. Rainbow is not available (§2).
 - **Storage:** each fixture has its own flash namespace (`eb3` for RGBW, `eb3rgb` for RGB, `eb3rgbcct` for RGBCCT, `eb3cct` for CCT, `eb3w` for W). Reflashing a board with another fixture's firmware starts it with factory defaults.
 - **Defaults** (power-up and factory reset):

@@ -2,8 +2,10 @@
 // white (CW) and warm white (WW) LEDs. Protocol widths, identity, defaults,
 // persistence, and how coloured effect light becomes white temperature.
 
+#include <math.h>
 #include <string.h>
 
+#include <algorithm>
 #include <initializer_list>
 #include <string>
 #include <vector>
@@ -75,7 +77,7 @@ TEST(cct_reports_its_identity_and_layout) {
   r.send("CAPS");
   CHECK_STR(r.env.lines[0], "INFO:EB-C3-CCT-V1");
   CHECK_STR(r.env.lines[1], std::string("VERSION:") + cfg::kFirmwareVersion);
-  CHECK_STR(r.env.lines[2], "CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,LAYOUT=CCT");
+  CHECK_STR(r.env.lines[2], "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=CCT");
 }
 
 TEST(cct_status_has_17_fields_and_white_defaults) {
@@ -206,31 +208,65 @@ TEST(cct_presets_and_scene_survive_a_power_cycle) {
 
 TEST(cct_colour_maps_to_white_temperature) {
   auto map = [](LinColor c) { return chanmap::colourToWhites(c); };
-  LinColor o = map({1, 0, 0, 0});  // red: warm
-  CHECK_NEAR(o.w, 0.0, 1e-6);
-  CHECK_NEAR(o.ww, 1.0, 1e-6);
-  o = map({1, 0.5f, 0, 0});  // orange: warm
-  CHECK_NEAR(o.w, 0.0, 1e-6);
-  CHECK_NEAR(o.ww, 1.0, 1e-6);
-  o = map({0, 0, 1, 0});  // blue: cool
-  CHECK_NEAR(o.w, 1.0, 1e-6);
-  CHECK_NEAR(o.ww, 0.0, 1e-6);
-  o = map({0, 0.6f, 0.6f, 0});  // cyan: cool
-  CHECK_NEAR(o.w, 0.6, 1e-6);
-  CHECK_NEAR(o.ww, 0.0, 1e-6);
-  o = map({0.5f, 0.5f, 0.5f, 0});  // white: both, at its level
-  CHECK_NEAR(o.w, 0.5, 1e-6);
-  CHECK_NEAR(o.ww, 0.5, 1e-6);
-  o = map({0, 0.3f, 0, 0});  // green: neutral
-  CHECK_NEAR(o.w, 0.3, 1e-6);
-  CHECK_NEAR(o.ww, 0.3, 1e-6);
+  auto warmth = [&](LinColor c) {
+    const LinColor o = map(c);
+    return o.ww / (o.w + o.ww);
+  };
+  // Endpoints: red / orange warmest, cyan / blue coolest.
+  CHECK(warmth({1, 0, 0, 0}) > 0.95);
+  CHECK(warmth({1, 0.5f, 0, 0}) > 0.95);
+  CHECK(warmth({0, 0.6f, 0.6f, 0}) < 0.05);
+  CHECK(warmth({0, 0, 1, 0}) < 0.2);
+  // Police red vs blue stay clearly apart.
+  CHECK(warmth({1, 0, 0, 0}) - warmth({0, 0, 1, 0}) >= 0.8);
+  // Cool + warm equals the colour's level: no doubled brightness at neutral colours.
+  LinColor o = map({0.5f, 0.5f, 0.5f, 0});  // white: both, half each
+  CHECK_NEAR(o.w, 0.25, 1e-6);
+  CHECK_NEAR(o.ww, 0.25, 1e-6);
+  o = map({0, 0.3f, 0, 0});  // green: its level, split
+  CHECK_NEAR(o.w + o.ww, 0.3, 1e-6);
   o = map({0, 0, 0, 0.2f, 0.7f});  // white light passes through unchanged
   CHECK_NEAR(o.w, 0.2, 1e-6);
   CHECK_NEAR(o.ww, 0.7, 1e-6);
   CHECK_NEAR(o.r + o.g + o.b, 0.0, 1e-6);
+  o = map({0, 0, 0, 0.9f, 0});
+  CHECK_NEAR(o.w, 0.9, 1e-6);
+  CHECK_NEAR(o.ww, 0.0, 1e-6);
   o = map({1, 0, 0, 0.5f, 0.8f});  // over full scale: scaled together, balance kept
+  const float wr = chanmap::colourWarmth({1, 0, 0, 0});
   CHECK_NEAR(o.ww, 1.0, 1e-6);
-  CHECK_NEAR(o.w, 0.5 / 1.8, 1e-6);
+  CHECK_NEAR(o.w, (0.5 + (1.0 - wr)) / (0.8 + wr), 1e-6);
+}
+
+TEST(cct_hue_sweep_is_continuous_with_steady_brightness) {
+  // A full hue circle in 0.1 degree steps (the Rainbow sweep): warmth never
+  // jumps, and cool + warm stays at the colour's level.
+  float prev = -1.0f, first = -1.0f, maxStep = 0.0f, lo = 1.0f, hi = 0.0f;
+  for (int i = 0; i <= 3600; ++i) {
+    const float h = static_cast<float>(i % 3600) / 600.0f;  // sixths
+    const float x = 1.0f - fabsf(fmodf(h, 2.0f) - 1.0f);
+    LinColor c{};
+    switch (static_cast<int>(h)) {
+      case 0: c = {1, x, 0, 0}; break;
+      case 1: c = {x, 1, 0, 0}; break;
+      case 2: c = {0, 1, x, 0}; break;
+      case 3: c = {0, x, 1, 0}; break;
+      case 4: c = {x, 0, 1, 0}; break;
+      default: c = {1, 0, x, 0}; break;
+    }
+    c = c * 0.8f;
+    const LinColor o = chanmap::colourToWhites(c);
+    CHECK_NEAR(o.w + o.ww, 0.8, 1e-5);
+    const float w = o.ww / (o.w + o.ww);
+    if (prev >= 0.0f) maxStep = std::max(maxStep, fabsf(w - prev));
+    if (first < 0.0f) first = w;
+    lo = std::min(lo, w);
+    hi = std::max(hi, w);
+    prev = w;
+  }
+  CHECK(maxStep < 0.001f);         // at most ~0.5 % per degree
+  CHECK_NEAR(prev, first, 1e-6);   // closes the circle
+  CHECK(hi - lo > 0.95f);          // still spans warm to cool
 }
 
 TEST(cct_every_mode_renders_two_bounded_channels_and_sleeps_dark) {

@@ -23,7 +23,7 @@ TEST(ctrl_app_handshake_replies) {
   CHECK_STR(r.env.lines[1].substr(0, 18), "MODE_SETTINGS:5,5;");
   CHECK_STR(r.env.lines[2], "PRESETS:");
   CHECK_STR(r.env.lines[3], std::string("VERSION:") + cfg::kFirmwareVersion);
-  CHECK_STR(r.env.lines[4], "CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,LAYOUT=RGBW");
+  CHECK_STR(r.env.lines[4], "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=RGBW");
   CHECK_STR(r.env.lines[5], "INFO:EB-C3-RGBW-V1");
 }
 
@@ -248,4 +248,83 @@ TEST(ctrl_diag_line_is_complete) {
   r.send("DIAG");
   CHECK_STR(r.env.last().substr(0, 8), "DIAG:rx=");
   CHECK(r.env.last().find(",up=42") != std::string::npos);
+}
+
+// ---- IDENTIFY ---------------------------------------------------------------------
+
+TEST(ctrl_identify_changes_no_state_persists_nothing_and_chirps) {
+  Rig r;
+  r.send("MODE:3");
+  r.advance(20000);  // let the mode change persist
+  r.send("STATUS");
+  const std::string before = r.env.last();
+  const int writes = r.kv.writes;
+  r.env.clear();
+  r.send("IDENTIFY");
+  CHECK_EQ(r.env.lines.size(), 1u);
+  CHECK_STR(r.env.last(), "OK");
+  CHECK(r.env.params.identifyId != 0);
+  CHECK_EQ(r.env.sounds.size(), 1u);
+  CHECK(hasSound(r.env, SoundId::Identify));
+  r.advance(20000);
+  CHECK_EQ(r.kv.writes, writes);
+  r.send("STATUS");
+  CHECK_STR(r.env.last(), before);
+  r.send("identify:");
+  CHECK_STR(r.env.last(), "OK");
+  r.send("IDENTIFY:1");
+  CHECK_STR(r.env.last(), "ERROR:FORMAT");
+}
+
+TEST(ctrl_identify_while_asleep_does_not_wake_or_play_sleep_sounds) {
+  Rig r;
+  r.send("SLEEP");
+  r.env.clear();
+  r.send("IDENTIFY");
+  CHECK_STR(r.env.last(), "OK");
+  CHECK(r.core.sleeping());
+  CHECK_EQ(r.env.params.sleeping, 1);
+  CHECK(r.env.params.identifyId != 0);
+  CHECK(!hasSound(r.env, SoundId::Wake) && !hasSound(r.env, SoundId::Sleep));
+  r.send("SOUND_OFF");
+  r.env.clear();
+  r.send("IDENTIFY");  // muted: no chirp
+  CHECK(r.env.sounds.empty());
+}
+
+TEST(ctrl_identify_restarts_and_is_cancelled_only_by_state_changes) {
+  Rig r;
+  r.send("IDENTIFY");
+  const uint16_t first = r.env.params.identifyId;
+  r.send("IDENTIFY");
+  CHECK(r.env.params.identifyId != 0 && r.env.params.identifyId != first);
+  // Queries leave it running.
+  for (const char* q : {"STATUS", "MODE_SETTINGS", "PRESET_LIST", "CAPS", "PING", "DIAG", "BOGUS"}) r.send(q);
+  CHECK(r.env.params.identifyId != 0);
+  // A state change cancels it and applies normally.
+  r.send("BRIGHTNESS:40");
+  CHECK_EQ(r.env.params.identifyId, 0);
+  CHECK_EQ(r.env.params.scene.brightness, 40);
+  // After a cancel, the next IDENTIFY still gets a fresh id.
+  r.send("IDENTIFY");
+  CHECK(r.env.params.identifyId != 0 && r.env.params.identifyId != first);
+  // Commands that do not change the output also cancel it (and republish).
+  r.send("TIMER:600");
+  CHECK_EQ(r.env.params.identifyId, 0);
+  r.send("IDENTIFY");
+  r.send("SOUND_ON");
+  CHECK_EQ(r.env.params.identifyId, 0);
+  // Binary colour frames and the timer expiry too.
+  r.send("IDENTIFY");
+  uint8_t pkt[8];
+  binframe::encode8(1, {9, 9, 9, 9}, 50, pkt);
+  ColorFrame f{};
+  CHECK(binframe::decode(pkt, 8, f));
+  r.core.onColorFrame(f, r.now);
+  CHECK_EQ(r.env.params.identifyId, 0);
+  r.send("TIMER:1");
+  r.send("IDENTIFY");
+  r.advance(1500);
+  CHECK(r.core.sleeping());
+  CHECK_EQ(r.env.params.identifyId, 0);
 }

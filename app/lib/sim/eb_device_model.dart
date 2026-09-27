@@ -6,7 +6,7 @@ import '../core/protocol/eb/eb_constants.dart';
 import '../core/protocol/eb/eb_fixture_catalog.dart';
 import '../core/protocol/eb/eb_scene.dart';
 
-/// Dart twin of the ElectroBright firmware (v3.6.0, every fixture of the
+/// Dart twin of the ElectroBright firmware (v3.6.1, every fixture of the
 /// family via [EbFixtureSpec]): the command parser,
 /// controller, persistence policy, reply buffer and the BLE/control-task glue,
 /// ported line for line from firmware/core/ElectroBrightCore/src and
@@ -31,7 +31,7 @@ final class EbDeviceModel {
   /// Makes flash writes fail (like fwsim `KVFAIL`), for fault tests.
   set flashWritesFail(bool fail) => _flash.failWrites = fail;
 
-  static const String firmwareVersion = '3.6.0';
+  static const String firmwareVersion = '3.6.1';
   String get modelId => fixture.modelId;
   String get capsReply => fixture.capsReply;
 
@@ -50,6 +50,9 @@ final class EbDeviceModel {
   static const int _rxStreamBytes = 1024;
   static const int _egressBytes = 1024;
   static const int _controlWakeMs = 50;
+  static const int _identifyOnMs = 150;
+  static const int _identifyOffMs = 150;
+  static const int _identifyFlashes = 2;
 
   final _Flash _flash = _Flash();
   late _Rig _rig;
@@ -228,6 +231,18 @@ final class EbDeviceModel {
   int get mtu => _mtu;
   bool get subscribed => _subscribed;
 
+  /// The demo light's output override (RenderEngine::identifyOverlay): during
+  /// an IDENTIFY, true = every LED full, false = dark; null = the light shows
+  /// its normal output (scene, or dark when asleep), also once the flashes end.
+  bool? get identifyFlash {
+    final _Params p = _rig.params;
+    if (p.identifyId == 0) return null;
+    const int period = _identifyOnMs + _identifyOffMs;
+    final int t = _now - p.identifyAt;
+    if (t < 0 || t >= period * _identifyFlashes) return null;
+    return t % period < _identifyOnMs;
+  }
+
   /// Same shape as fwsim's `STATE` reply.
   Map<String, Object> state() {
     final EbScene s = _rig.core.scene;
@@ -262,6 +277,7 @@ final class EbDeviceModel {
       'render': <String, Object>{
         'sleeping': _rig.params.sleeping ? 1 : 0,
         'fadeMs': _rig.params.fadeMs,
+        'identify': _rig.params.identifyId,
       },
       'stats': <String, Object>{
         'rx': st.rxLines,
@@ -304,10 +320,22 @@ final class _Stats {
 }
 
 final class _Params {
-  _Params(this.scene, {required this.sleeping, required this.fadeMs});
+  _Params(
+    this.scene, {
+    required this.sleeping,
+    required this.fadeMs,
+    this.identifyId = 0,
+    this.identifyAt = 0,
+  });
   final EbScene scene;
   final bool sleeping;
   final int fadeMs;
+
+  /// Non-zero: IDENTIFY flashes (a new id restarts them); 0 cancels.
+  final int identifyId;
+
+  /// Virtual time the current [identifyId] was published.
+  final int identifyAt;
 }
 
 /// Everything a reboot recreates (flash lives in [EbDeviceModel.flash]).
@@ -658,6 +686,7 @@ enum _Cmd {
   caps,
   ping,
   diag,
+  identify,
 }
 
 final class _Spec {
@@ -790,6 +819,7 @@ const List<_Spec> _specs = <_Spec>[
   _Spec('CAPS', _Cmd.caps, 0, 0, 0, 0, 0, 'FORMAT'),
   _Spec('PING', _Cmd.ping, 0, 0, 0, 0, 0, 'FORMAT'),
   _Spec('DIAG', _Cmd.diag, 0, 0, 0, 0, 0, 'FORMAT'),
+  _Spec('IDENTIFY', _Cmd.identify, 0, 0, 0, 0, 0, 'FORMAT'),
 ];
 
 enum _ParseStatus { ok, unknown, format, range }
@@ -926,6 +956,19 @@ bool _isCoalescible(_Cmd id) =>
     id == _Cmd.speed ||
     id == _Cmd.frequency;
 
+bool _isQuery(_Cmd id) => switch (id) {
+  _Cmd.presetList ||
+  _Cmd.status ||
+  _Cmd.modeSettings ||
+  _Cmd.modeCapabilities ||
+  _Cmd.info ||
+  _Cmd.version ||
+  _Cmd.caps ||
+  _Cmd.ping ||
+  _Cmd.diag => true,
+  _ => false,
+};
+
 // ---- ControllerCore.cpp + Replies.cpp -----------------------------------------------------
 final class _Controller {
   _Controller(this._rig);
@@ -940,6 +983,9 @@ final class _Controller {
   bool _haveSeq = false;
   int _expectedSeq = 0;
   bool _storageErrorReported = false;
+  bool _identifying = false;
+  int _identifySeq = 0;
+  int _identifyAt = 0;
 
   void begin(int now) {
     final (EbScene s, bool sound) = _rig.store.load();
@@ -959,6 +1005,7 @@ final class _Controller {
   void tick(int now) {
     if (timerActive && now - _timerDeadline >= 0) {
       timerActive = false;
+      _identifying = false;
       _sleep(EbDeviceModel._timerSleepFadeMs);
       _sound('Sleep');
       _sendStatus(now);
@@ -980,6 +1027,7 @@ final class _Controller {
       _haveSeq = true;
       _expectedSeq = (seq + 1) & 0xFF;
     }
+    _identifying = false;
     scene = scene.copyWith(
       color: f.color,
       brightness: f.brightness ?? scene.brightness,
@@ -1025,6 +1073,11 @@ final class _Controller {
   }
 
   void _execute(_Cmd id, List<int> a, int now) {
+    // Any state change cancels a running IDENTIFY, then applies normally.
+    if (_identifying && id != _Cmd.identify && !_isQuery(id)) {
+      _identifying = false;
+      _publish();
+    }
     switch (id) {
       case _Cmd.rgbw:
         scene = scene.copyWith(color: ChannelColor(_rig.device.layout, a));
@@ -1172,6 +1225,16 @@ final class _Controller {
         _rig.sendLine('OK');
       case _Cmd.diag:
         _sendDiag(now);
+      case _Cmd.identify:
+        // Flashes over whatever the light shows (even asleep), then resumes;
+        // no state change, nothing persisted, no Sleep/Wake sounds.
+        _identifySeq = (_identifySeq + 1) & 0xFFFF;
+        if (_identifySeq == 0) _identifySeq = 1;
+        _identifying = true;
+        _identifyAt = now;
+        _publish();
+        _sound('Identify');
+        _rig.sendLine('OK');
     }
   }
 
@@ -1207,8 +1270,13 @@ final class _Controller {
     if (soundEnabled) _rig.sounds.add(id);
   }
 
-  void _publish() =>
-      _rig.params = _Params(scene, sleeping: sleeping, fadeMs: _fadeMs);
+  void _publish() => _rig.params = _Params(
+    scene,
+    sleeping: sleeping,
+    fadeMs: _fadeMs,
+    identifyId: _identifying ? _identifySeq : 0,
+    identifyAt: _identifyAt,
+  );
 
   void _sceneChanged(int now) => _rig.store.noteSceneChanged(now);
 

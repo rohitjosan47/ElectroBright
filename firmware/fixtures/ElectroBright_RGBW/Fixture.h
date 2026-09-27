@@ -13,7 +13,7 @@ namespace rgbw {
 // Identity (the app matches these; the cross-repo tests read them).
 constexpr const char* kDeviceName = "ElectroBright_C3_V1";
 constexpr const char* kModelId = "EB-C3-RGBW-V1";
-constexpr const char* kCapsReply = "CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,LAYOUT=RGBW";
+constexpr const char* kCapsReply = "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=RGBW";
 constexpr const char* kNvsNamespace = "eb3";
 
 // Wiring (GPIO 7 / 8 — the old status LED — are never configured).

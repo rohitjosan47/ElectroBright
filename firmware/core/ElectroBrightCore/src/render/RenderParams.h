@@ -10,4 +10,5 @@ struct RenderParams {
   Scene scene;
   uint8_t sleeping;   // 1 = fade to black and stay dark
   uint16_t fadeMs;    // duration of the sleep / wake fade triggered by this snapshot
+  uint16_t identifyId;  // non-zero: IDENTIFY flashes (a new id restarts them); 0 cancels
 };

@@ -10,6 +10,7 @@
 //   3.6.0  VERSION; kNumPresets 25 → 15, CAPS gained PRESETS=15, legacy
 //          presets wiped once on first boot (marker key pv): PRESET_*:15 is
 //          out of range, and DIAG nvsw counts the marker write
+//   3.6.1  VERSION; CAPS gained IDENTIFY=1; new identify stream + transcript
 // Any other difference means RGBW behaviour changed.
 //
 //   make golden-record     rewrite the golden file (only when a change is intended)
@@ -206,6 +207,27 @@ std::string renderStreams() {
     snprintf(name, sizeof(name), "wrap_m%u", mode);
     out += streamLine(name, s);
   }
+
+  {  // IDENTIFY flashes over an effect, a restart, a cancel, and while asleep.
+    Stream s(17u);
+    s.p.scene.mode = 3;
+    s.run(1000);
+    s.p.identifyId = 1;
+    s.run(1000);
+    s.p.identifyId = 1;
+    s.run(1000);
+    s.p.identifyId = 2;  // restart mid-flash
+    s.run(200);
+    s.p.identifyId = 3;
+    s.run(200);
+    s.p.identifyId = 0;  // cancelled by another command
+    s.run(500);
+    s.p.sleeping = 1;
+    s.run(1000);
+    s.p.identifyId = 4;  // asleep
+    s.run(1000);
+    out += streamLine("identify", s);
+  }
   return out;
 }
 
@@ -399,6 +421,17 @@ std::string transcripts() {
     t.advance(20000);
     t.dev->flash().failWrites = false;
     for (const char* c : {"SOUND_ON", "PRESET_SAVE:1", "PRESET_LIST", "DIAG"}) t.line(c);
+    out += t.finish();
+  }
+  {
+    Transcript t("identify");
+    t.dev->setMtu(247);
+    auto id = [&t] { t.mark("render identify=" + std::to_string(t.dev->lastParams().identifyId)); };
+    for (const char* c : {"MODE:3", "IDENTIFY", "IDENTIFY", "STATUS", "BRIGHTNESS:40", "SLEEP", "IDENTIFY",
+                          "STATUS", "SOUND_OFF", "IDENTIFY", "identify", "IDENTIFY:1", "WAKE"}) {
+      t.line(c);
+      id();
+    }
     out += t.finish();
   }
   return out;
