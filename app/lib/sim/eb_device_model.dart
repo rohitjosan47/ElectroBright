@@ -6,7 +6,7 @@ import '../core/protocol/eb/eb_constants.dart';
 import '../core/protocol/eb/eb_fixture_catalog.dart';
 import '../core/protocol/eb/eb_scene.dart';
 
-/// Dart twin of the ElectroBright firmware (v3.6.1, every fixture of the
+/// Dart twin of the ElectroBright firmware (v3.6.2, every fixture of the
 /// family via [EbFixtureSpec]): the command parser,
 /// controller, persistence policy, reply buffer and the BLE/control-task glue,
 /// ported line for line from firmware/core/ElectroBrightCore/src and
@@ -31,7 +31,7 @@ final class EbDeviceModel {
   /// Makes flash writes fail (like fwsim `KVFAIL`), for fault tests.
   set flashWritesFail(bool fail) => _flash.failWrites = fail;
 
-  static const String firmwareVersion = '3.6.1';
+  static const String firmwareVersion = '3.6.2';
   String get modelId => fixture.modelId;
   String get capsReply => fixture.capsReply;
 

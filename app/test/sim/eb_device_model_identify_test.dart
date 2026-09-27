@@ -26,9 +26,10 @@ void main() {
     return m.takeNotifications().map((Uint8List n) => utf8.decode(n)).join();
   }
 
-  test('the simulator reports firmware 3.6.1 with IDENTIFY in CAPS', () {
+  test('the simulator reports its firmware version, IDENTIFY in CAPS', () {
     final EbDeviceModel m = connected();
-    expect(EbDeviceModel.firmwareVersion, '3.6.1');
+    // test/cross_repo checks the constant against the firmware's Config.h.
+    expect(send(m, 'VERSION'), 'VERSION:${EbDeviceModel.firmwareVersion}\n');
     expect(send(m, 'CAPS'), contains('IDENTIFY=1'));
   });
 

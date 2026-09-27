@@ -7,7 +7,7 @@ Firmware for ElectroBright BLE light fixtures. One **shared core** holds everyth
 
 Each **fixture** is a small Arduino sketch that adds only its identity, channel layout and wiring. Every fixture works with the ElectroBright app. The protocol contract is in [`docs/protocol.md`](../docs/protocol.md), and the hardware is described in [`docs/wiring_guide.md`](../docs/wiring_guide.md).
 
-Family version **3.6.1**
+Family version **3.6.2**
 
 | Fixture | Sketch | Channels | Model id | BLE name | Status |
 |---|---|---|---|---|---|
@@ -52,7 +52,7 @@ firmware/tools/build.sh            # every fixture
 firmware/tools/build.sh RGB        # one fixture (folder suffix)
 ```
 
-Reference build (3.6.1), per fixture: ≈658 KB flash (50 %) and 31.0 KB static RAM (9 %), with zero compiler warnings under `--warnings all`.
+Reference build (3.6.2), per fixture: ≈658 KB flash (50 %) and 31.0 KB static RAM (9 %), with zero compiler warnings under `--warnings all`.
 
 **First boot starts clean.** Each fixture stores its settings and presets in its own NVS namespace: `eb3` for RGBW, `eb3rgb` for RGB and `eb3rgbcct` for RGBCCT, `eb3cct` for CCT and `eb3w` for W.
 - Updating to this firmware clears all saved presets once; colour, mode and the sound setting are kept.
@@ -150,6 +150,12 @@ Design rules that remove whole classes of bugs found in the original firmware:
   leaves an 11-bit counter; the C3's LEDC hardware dithering adds 4
   fractional bits (15 bits effective). The dimmest level is one whole count
   every period, a steady pulse train that never flickers.
+- **True 100 % (3.6.2+).** The LEDC cannot produce an on-time of a whole
+  period (it outputs such a period as off), so full output is not PWM: the
+  channel is stopped with its pin held high. Every level below full is PWM
+  with an on-time of at most period - 1 counts, dither included
+  (`platform/PwmPlan.h`, tested for every duty). In 3.6.1 full brightness
+  came out at about 1/16 while 99 % was fine.
 - **Phase-shifted PWM.** The n channels switch at 1/n-period offsets, which
   lowers the peak current on the strip supply and reduces EMI.
 - **One core, many fixtures.** Effects always render linear RGBW; the channel

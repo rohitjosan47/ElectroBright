@@ -34,7 +34,7 @@ After connecting, send `INFO`, `VERSION` and `CAPS`:
 
 ```
 INFO:EB-C3-<LAYOUT>-V<rev>                         e.g. INFO:EB-C3-RGB-V1
-VERSION:<major>.<minor>.<patch>                    e.g. VERSION:3.6.1
+VERSION:<major>.<minor>.<patch>                    e.g. VERSION:3.6.2
 CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=<LAYOUT>
 ```
 
@@ -179,3 +179,8 @@ W     STATUS:255,255,1,5,5,0,0,1,0,0,0,1,255,255
 3. Register the fixture in `firmware/test/Fixtures.h`.
 
 The invariant tests (`test_layouts.cpp`) and `make conformance` then cover it. The channel roles are R, G, B, W, CW and WW. A layout without colour LEDs gets coloured effect light as white temperature (CW + WW) or as brightness (a single W). A layout can drop modes it cannot show (its `modes` mask, announced as CAPS `MODES`).
+
+## 8. Firmware changes
+
+- **3.6.2:** full brightness is a genuine 100 %. A channel at full output now holds its pin high (no PWM switching); every level below full stays PWM with an on-time shorter than a whole period. In 3.6.1 a channel at full asked the LEDC for a whole-period on-time, which it outputs as off, so 100 % came out at about 1/16 while 99 % looked right. The wire protocol, CAPS and every rendered level are unchanged.
+- **3.6.1:** 25 kHz PWM (`PWM=15`), smooth colour-to-white on CCT, `IDENTIFY` (CAPS `IDENTIFY=1`).

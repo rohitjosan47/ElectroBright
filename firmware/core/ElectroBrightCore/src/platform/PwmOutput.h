@@ -14,7 +14,9 @@ class PwmOutput {
   // are never left floating or high.
   bool begin(const FixtureProfile& fixture);
 
-  // Applies one duty (0..cfg::kPwmMaxDuty, in 1/16 counts) per layout channel. Unchanged channels are not touched.
+  // Applies one duty (0..cfg::kPwmMaxDuty, in 1/16 counts) per layout channel:
+  // 0 is off, full output holds the pin high (see PwmPlan.h). Unchanged
+  // channels are not touched.
   void write(const uint16_t* duty);
 
  private:

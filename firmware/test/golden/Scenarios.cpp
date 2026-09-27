@@ -11,6 +11,8 @@
 //          presets wiped once on first boot (marker key pv): PRESET_*:15 is
 //          out of range, and DIAG nvsw counts the marker write
 //   3.6.1  VERSION; CAPS gained IDENTIFY=1; new identify stream + transcript
+//   3.6.2  VERSION (full output now holds the pin high: PWM path only, the
+//          rendered duties are unchanged)
 // Any other difference means RGBW behaviour changed.
 //
 //   make golden-record     rewrite the golden file (only when a change is intended)

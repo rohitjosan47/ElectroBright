@@ -5,27 +5,19 @@
 #include <soc/ledc_struct.h>
 
 #include "../config/Config.h"
+#include "PwmPlan.h"
 
 namespace {
 constexpr ledc_mode_t kMode = LEDC_LOW_SPEED_MODE;  // the C3 only has low-speed LEDC
 constexpr ledc_timer_t kTimer = LEDC_TIMER_0;
 constexpr ledc_channel_t kChannels[kMaxChannels] = {LEDC_CHANNEL_0, LEDC_CHANNEL_1, LEDC_CHANNEL_2, LEDC_CHANNEL_3,
                                                     LEDC_CHANNEL_4};
-constexpr uint32_t kPeriod = 1u << cfg::kPwmBits;
 static_assert(cfg::kPwmDitherBits == 4, "the C3 LEDC duty register has 4 fractional bits");
 
-// Phase-shifted PWM: channel i of n turns on at i/n of the period, so the
-// MOSFETs do not all switch at the same instant. That lowers the peak current
-// step on the 12/24 V supply (less ripple, less buck-converter noise and EMI).
-// The offset is reduced when needed so hpoint + duty never exceeds the period
-// (the duty cycle itself is always exact). `counts` is the longest on-time in
-// whole counts (a dithered duty is one count longer in some periods).
-uint32_t hpointFor(int ch, int count, uint32_t counts) {
-  if (!cfg::kPwmPhaseStagger) return 0;
-  uint32_t hp = (kPeriod / static_cast<uint32_t>(count)) * static_cast<uint32_t>(ch);
-  if (hp + counts > kPeriod - 1) hp = (counts >= kPeriod - 1) ? 0 : (kPeriod - 1 - counts);
-  return hp;
-}
+// Phase-shifted PWM (see pwmplan::plan): channel i of n turns on at i/n of the
+// period, so the MOSFETs do not all switch at the same instant. That lowers
+// the peak current step on the 12/24 V supply (less ripple, less
+// buck-converter noise and EMI).
 }  // namespace
 
 bool PwmOutput::begin(const FixtureProfile& fixture) {
@@ -78,14 +70,22 @@ void PwmOutput::write(const uint16_t* duty) {
   for (int i = 0; i < count_; ++i) {
     if (duty[i] == last_[i]) continue;
     const uint32_t d = duty[i] > cfg::kPwmMaxDuty ? cfg::kPwmMaxDuty : duty[i];
-    const uint32_t whole = d >> cfg::kPwmDitherBits;
-    const uint32_t frac = d & ((1u << cfg::kPwmDitherBits) - 1u);
-    ledc_set_duty_with_hpoint(kMode, kChannels[i], whole, hpointFor(i, count_, whole + (frac ? 1u : 0u)));
-    // The driver only writes whole counts; the duty register's low 4 bits are
-    // the hardware's fractional part (dithering), so write the full value.
-    LEDC.channel_group[kMode].channel[kChannels[i]].duty.duty = d;
-    // The new duty latches at the next period boundary: no glitch / tearing.
-    ledc_update_duty(kMode, kChannels[i]);
+    const pwmplan::Plan p = pwmplan::plan(d, static_cast<uint8_t>(i), count_);
+    if (p.kind == pwmplan::Kind::High) {
+      // Full output: the pin held high, no switching. ledc_stop sets the
+      // idle level before it disables the signal, so it never dips low.
+      ledc_stop(kMode, kChannels[i], 1);
+    } else {
+      // Off is PWM at 0. Every on-time stays within period - 1 (PwmPlan.h).
+      ledc_set_duty_with_hpoint(kMode, kChannels[i], p.whole, p.hpoint);
+      // The driver only writes whole counts; the duty register's low 4 bits
+      // are the hardware's fractional part (dithering): write the full value.
+      LEDC.channel_group[kMode].channel[kChannels[i]].duty.duty =
+          (static_cast<uint32_t>(p.whole) << cfg::kPwmDitherBits) | p.frac;
+      // Latches at the next period boundary (no glitch / tearing), and turns
+      // the signal output back on after a held-high stretch.
+      ledc_update_duty(kMode, kChannels[i]);
+    }
     last_[i] = duty[i];
   }
 }

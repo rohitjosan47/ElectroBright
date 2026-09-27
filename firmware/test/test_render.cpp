@@ -8,6 +8,7 @@
 
 #include "ElectroBright_RGBW/Fixture.h"
 #include "core/MathUtil.h"
+#include "platform/PwmPlan.h"
 #include "feedback/SoundSequencer.h"
 #include "render/Color.h"
 #include "render/RenderEngine.h"
@@ -77,6 +78,43 @@ TEST(render_boot_fades_in_then_solid_is_exact) {
   s.run(cfg::kBootFadeMs);
   CHECK_EQ(s.duty[0], cfg::kPwmMaxDuty);  // white 255 at 100 %
   CHECK_EQ(s.duty[3], 0);                 // W = 0
+}
+
+// Full output reaches the pins as a held-high level; one step below is PWM.
+pwmplan::Kind planOf(uint16_t duty) { return pwmplan::plan(duty, 0, 4).kind; }
+
+TEST(render_full_brightness_holds_the_output_high) {
+  Sim s(1);
+  s.run(1000);
+  CHECK_EQ(s.duty[0], cfg::kPwmMaxDuty);  // white at 255
+  CHECK(planOf(s.duty[0]) == pwmplan::Kind::High);
+  s.p.scene.brightness = 254;
+  s.run(1000);
+  CHECK(s.duty[0] < cfg::kPwmMaxDuty);
+  CHECK(planOf(s.duty[0]) == pwmplan::Kind::Pwm);
+}
+
+TEST(render_effect_peaks_at_full_are_held_high_below_full_pwm) {
+  // Blink: its on phase is the full colour.
+  for (const uint8_t b : {uint8_t{255}, uint8_t{254}}) {
+    Sim s(2);
+    s.p.scene.brightness = b;
+    uint16_t peak = 0;
+    bool high = false;
+    for (int i = 0; i < 2000; ++i) {
+      s.step();
+      peak = std::max(peak, s.duty[0]);
+      high = high || planOf(s.duty[0]) == pwmplan::Kind::High;
+    }
+    if (b == 255) {
+      CHECK_EQ(peak, cfg::kPwmMaxDuty);
+      CHECK(high);
+    } else {
+      // A 99 % peak: PWM every frame, never held high.
+      CHECK(peak > cfg::kPwmMaxDuty * 0.98 && peak < cfg::kPwmMaxDuty);
+      CHECK(!high);
+    }
+  }
 }
 
 TEST(render_brightness_is_perceptual_and_zero_is_off) {
