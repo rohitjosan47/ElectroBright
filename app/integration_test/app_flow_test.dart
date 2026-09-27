@@ -25,6 +25,8 @@ import 'package:integration_test/integration_test.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  // A tap or drag that would miss its target fails the test at once.
+  WidgetController.hitTestWarningShouldBeFatal = true;
 
   /// Real time passes; frames keep coming.
   Future<void> wait(WidgetTester t, [int ms = 1500]) async {
@@ -44,8 +46,42 @@ void main() {
     expect(f, findsWidgets);
   }
 
-  Future<void> scrollTo(WidgetTester t, Finder f) =>
-      t.scrollUntilVisible(f, 200, scrollable: find.byType(Scrollable).first);
+  /// Brings [f] to the middle of the screen: built first if a lazy list
+  /// hasn't built it yet (scrolling [scrollable] by [delta]), then centred,
+  /// so it is clear of the Add light button, the top edge and any toast.
+  /// Works the same on every screen size.
+  Future<void> reveal(
+    WidgetTester t,
+    Finder f, {
+    Finder? scrollable,
+    double delta = 200,
+  }) async {
+    if (f.evaluate().isEmpty) {
+      await t.scrollUntilVisible(
+        f,
+        delta,
+        scrollable: scrollable ?? find.byType(Scrollable).first,
+      );
+    }
+    await Scrollable.ensureVisible(t.element(f), alignment: 0.5);
+    await wait(t, 300);
+  }
+
+  Future<void> tapOn(
+    WidgetTester t,
+    Finder f, {
+    Finder? scrollable,
+    double delta = 200,
+  }) async {
+    await reveal(t, f, scrollable: scrollable, delta: delta);
+    await t.tap(f);
+  }
+
+  /// Waits for [screen] and for its page transition to finish.
+  Future<void> arrive(WidgetTester t, Finder screen) async {
+    await waitFor(t, screen);
+    await wait(t, 800);
+  }
 
   Finder tab(String name) => find.descendant(
     of: find.byType(GlassSegmented<ControlTab>),
@@ -57,8 +93,7 @@ void main() {
     final Finder slider = find.byWidgetPredicate(
       (Widget w) => w is GlassSlider && w.semanticLabel == 'Colour temperature',
     );
-    await t.ensureVisible(slider);
-    await wait(t, 300);
+    await reveal(t, slider);
     await t.drag(slider, Offset(warm ? -2000 : 2000, 0));
   }
 
@@ -93,8 +128,7 @@ void main() {
       ('Living room', 'RGBW · Colour + white', 'demo-rgbw'),
     ];
     for (final (String name, String type, String _) in lights) {
-      await scrollTo(t, find.text(type));
-      await t.tap(find.text(type));
+      await tapOn(t, find.text(type));
       await waitFor(
         t,
         find.textContaining('firmware ${EbDeviceModel.firmwareVersion}'),
@@ -112,23 +146,27 @@ void main() {
       }
       await wait(t, 500);
       // Home lists it (lazily built: scroll to it).
-      await scrollTo(t, find.text(name));
+      await reveal(t, find.text(name));
+      // Back to the top of Home for the next one.
       await t.scrollUntilVisible(
-        find.text('Nearby — not added'),
+        find.text('Lights'),
         -200,
         scrollable: find.byType(Scrollable).first,
       );
     }
 
     Future<void> openLight(String name) async {
-      await scrollTo(t, find.text(name));
-      await t.tap(find.text(name));
-      await waitFor(t, find.byType(ControlScreen));
-      await wait(t, 1500);
+      await tapOn(t, find.text(name));
+      await arrive(t, find.byType(ControlScreen));
+      await wait(t, 700);
     }
 
     Future<void> back() async {
-      await t.tap(find.byIcon(Icons.chevron_left_rounded).first);
+      await tapOn(
+        t,
+        find.byIcon(Icons.chevron_left_rounded).first,
+        delta: -200,
+      );
       await wait(t, 800);
     }
 
@@ -138,28 +176,32 @@ void main() {
     await wait(t);
     expect(twin('demo-cct').scene.color.values, <int>[0, 255]);
     // Preset: save, change, load back.
-    await t.tap(tab('Presets'));
+    await tapOn(t, tab('Presets'), delta: -200);
     await wait(t, 800);
-    await t.tap(find.byKey(const ValueKey<String>('preset-0')));
+    await tapOn(t, find.byKey(const ValueKey<String>('preset-0')));
     await wait(t, 800);
     await t.enterText(find.byType(TextField).last, 'Evening');
     await t.tap(find.text('Save').last);
     await wait(t);
     expect(twin('demo-cct').presetSlots, contains(0));
-    await t.tap(tab('White'));
+    await tapOn(t, tab('White'), delta: -200);
     await wait(t, 800);
     await slideTemperature(t, warm: false);
     await wait(t);
     expect(twin('demo-cct').scene.color.values, <int>[255, 0]);
-    await t.tap(tab('Presets'));
+    await tapOn(t, tab('Presets'), delta: -200);
     await wait(t, 800);
-    await t.tap(find.byKey(const ValueKey<String>('preset-0')));
+    await tapOn(t, find.byKey(const ValueKey<String>('preset-0')));
     await wait(t);
     expect(twin('demo-cct').scene.color.values, <int>[0, 255]);
     // Sleep timer.
-    await t.tap(find.byKey(const ValueKey<String>('timer-button')));
+    await tapOn(
+      t,
+      find.byKey(const ValueKey<String>('timer-button')),
+      delta: -200,
+    );
     await wait(t, 800);
-    await t.tap(find.byKey(const ValueKey<String>('timer-start')));
+    await tapOn(t, find.byKey(const ValueKey<String>('timer-start')));
     await wait(t);
     expect(twin('demo-cct').timerActive, isTrue);
     await back();
@@ -186,14 +228,12 @@ void main() {
       matching: find.text(name),
     );
     Future<void> openGroupCard(String kind) async {
-      final Finder card = find.byKey(ValueKey<String>('group-card-$kind'));
-      await t.scrollUntilVisible(
-        card,
-        -300,
-        scrollable: find.byType(Scrollable).first,
+      await tapOn(
+        t,
+        find.byKey(ValueKey<String>('group-card-$kind')),
+        delta: -300,
       );
-      await t.tap(card);
-      await waitFor(t, find.byType(GroupScreen));
+      await arrive(t, find.byType(GroupScreen));
     }
 
     Finder groupList() => find
@@ -205,8 +245,7 @@ void main() {
 
     /// Scrolls the group screen back to its tabs and opens [name].
     Future<void> showTab(String name) async {
-      await t.scrollUntilVisible(groupTab(name), -200, scrollable: groupList());
-      await t.tap(groupTab(name));
+      await tapOn(t, groupTab(name), scrollable: groupList(), delta: -200);
       await wait(t, 800);
     }
 
@@ -237,10 +276,9 @@ void main() {
       'demo-rgbw',
     ];
     // Brightness: one drag sets every light.
-    await t.drag(
-      find.byKey(const ValueKey<String>('brightness')),
-      const Offset(-80, 0),
-    );
+    final Finder pill = find.byKey(const ValueKey<String>('brightness'));
+    await reveal(t, pill, scrollable: groupList(), delta: -200);
+    await t.drag(pill, const Offset(-80, 0));
     await wait(t);
     final int level = twin(colourLights.first).scene.brightness;
     expect(level, lessThan(255));
@@ -250,8 +288,7 @@ void main() {
     // Colour: a hue on the wheel's ring reaches every light alike, white
     // LEDs off.
     Future<void> ring(double side) async {
-      await t.ensureVisible(find.byType(HueWheel));
-      await wait(t, 300);
+      await reveal(t, find.byType(HueWheel), scrollable: groupList());
       // The wheel is a square as tall as the widget, centred in it.
       final Rect wheel = t.getRect(find.byType(HueWheel));
       await t.tapAt(
@@ -262,6 +299,7 @@ void main() {
 
     // The lights start white: full saturation first (the square's top
     // right), then a hue on the ring.
+    await reveal(t, find.byType(HueWheel), scrollable: groupList());
     final Rect square = t.getRect(find.byType(HueWheel));
     await t.tapAt(
       square.center + Offset(square.shortestSide, -square.shortestSide) * 0.2,
@@ -278,11 +316,8 @@ void main() {
     expect(twin('demo-rgbcct').scene.color.values, <int>[...rgb, 0, 0]);
     // Saved as a preset on the phone.
     final Finder slot = find.byKey(const ValueKey<String>('group-preset-0'));
-    await t.tap(groupTab('Presets'));
-    await wait(t, 800);
-    await t.ensureVisible(slot);
-    await wait(t, 300);
-    await t.tap(slot);
+    await showTab('Presets');
+    await tapOn(t, slot, scrollable: groupList());
     await wait(t, 800);
     await t.enterText(find.byType(TextField), 'Evening');
     await t.tap(find.text('Save'));
@@ -293,9 +328,7 @@ void main() {
     await ring(-1);
     expect(twin('demo-rgb').scene.color.values, isNot(rgb));
     await showTab('Presets');
-    await t.ensureVisible(slot);
-    await wait(t, 300);
-    await t.tap(slot);
+    await tapOn(t, slot, scrollable: groupList());
     await wait(t);
     expect(twin('demo-rgb').scene.color.values, rgb);
     expect(onGroup('Current look: Evening'), findsOneWidget);
@@ -316,12 +349,10 @@ void main() {
     // Back on Home, at its card.
     expect(find.byKey(const ValueKey<String>('groups-card')), findsOneWidget);
 
-    // The light with the original firmware leads to the update screen.
-    await scrollTo(t, find.text('Update needed'));
-    // Clear of the Add light button.
-    await t.ensureVisible(find.text('Update needed'));
-    await wait(t, 300);
-    await t.tap(find.text('Update needed'));
+    // The light with the original firmware is listed apart, at the bottom
+    // of Home, and leads to the update screen.
+    await reveal(t, find.text('Unsupported lights'));
+    await tapOn(t, find.text('Update needed'));
     await waitFor(t, find.byType(FirmwareUpdateScreen));
   });
 }

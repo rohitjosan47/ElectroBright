@@ -128,7 +128,12 @@ class _ModeSettings extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
     final FixtureSession? s = session;
-    final EbColorModeKind? kind = mode.colorModeKind;
+    // White-only lights (CCT, W) show Police as its two whites on their
+    // own: no colour source, no beacons.
+    final EbColorModeKind? kind =
+        mode.colorModeKind == EbColorModeKind.police && !scene.layout.hasColour
+        ? null
+        : mode.colorModeKind;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[

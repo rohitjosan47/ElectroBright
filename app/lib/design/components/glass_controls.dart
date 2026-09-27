@@ -1005,41 +1005,45 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
       top: MediaQuery.paddingOf(context).top + Space.xs,
       left: Space.gutter,
       right: Space.gutter,
-      child: FadeTransition(
-        opacity: _c,
-        child: SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, -0.4),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: _c, curve: Motion.emphasized)),
-          child: Semantics(
-            liveRegion: true,
-            child: Material(
-              type: MaterialType.transparency,
-              child: GlassSurface(
-                tier: GlassTier.chrome,
-                radius: Radii.capsule,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Space.l,
-                  vertical: Space.s,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    if (widget.icon != null) ...<Widget>[
-                      Icon(widget.icon, color: fg, size: 18),
-                      const SizedBox(width: Space.xs),
-                    ],
-                    Flexible(
-                      child: Text(
-                        widget.message,
-                        style: TextStyle(
-                          color: fg,
-                          fontWeight: FontWeight.w600,
+      // A notice only: taps reach the controls under it (the top bar,
+      // tabs) while it shows.
+      child: IgnorePointer(
+        child: FadeTransition(
+          opacity: _c,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, -0.4),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(parent: _c, curve: Motion.emphasized)),
+            child: Semantics(
+              liveRegion: true,
+              child: Material(
+                type: MaterialType.transparency,
+                child: GlassSurface(
+                  tier: GlassTier.chrome,
+                  radius: Radii.capsule,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: Space.l,
+                    vertical: Space.s,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      if (widget.icon != null) ...<Widget>[
+                        Icon(widget.icon, color: fg, size: 18),
+                        const SizedBox(width: Space.xs),
+                      ],
+                      Flexible(
+                        child: Text(
+                          widget.message,
+                          style: TextStyle(
+                            color: fg,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

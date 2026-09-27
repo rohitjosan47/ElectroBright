@@ -1,6 +1,7 @@
 import 'package:electrobright/app/providers.dart';
 import 'package:electrobright/features/add_fixture/add_light_screen.dart';
 import 'package:electrobright/features/control/control_screen.dart';
+import 'package:electrobright/features/firmware_update/firmware_update_screen.dart';
 import 'package:electrobright/features/home/home_screen.dart';
 import 'package:electrobright/sessions/discovery.dart';
 import 'package:electrobright/sim/sim_central.dart';
@@ -120,24 +121,87 @@ void main() {
     await DemoApp.shutDown(t);
   });
 
-  testWidgets('a nearby light gone for 2 minutes leaves the list', (
-    WidgetTester t,
-  ) async {
+  Future<DemoApp> tall(WidgetTester t) async {
     t.view.physicalSize = const Size(393, 2400);
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.reset);
     final DemoApp d = await DemoApp.start(t);
+    // One more light nearby, not added (the demo's own are all saved).
+    d.radio.fixtures.add(SimFixture.electroBright(id: 'demo-extra'));
     await DemoApp.settle(t, 3);
-    expect(find.byType(NearbyRow), findsOneWidget);
-    d.radio.setAvailable('demo-legacy', available: false);
-    await DemoApp.settle(t, 100);
-    expect(find.byType(NearbyRow), findsOneWidget);
-    await DemoApp.settle(t, 35);
-    expect(find.byType(NearbyRow), findsNothing);
-    // Back again, it's listed again.
-    d.radio.setAvailable('demo-legacy', available: true);
+    return d;
+  }
+
+  Finder rowOf(String deviceId) => find.byWidgetPredicate(
+    (Widget w) => w is NearbyRow && w.light.seen.id == deviceId,
+  );
+
+  testWidgets('a nearby light switched off leaves the list 10 s after its '
+      'last advert, not before; back on, it is listed at once', (
+    WidgetTester t,
+  ) async {
+    final DemoApp d = await tall(t);
+    expect(rowOf('demo-extra'), findsOneWidget);
+    d.radio.setAvailable('demo-extra', available: false);
+    await DemoApp.settle(t, 9);
+    expect(rowOf('demo-extra'), findsOneWidget, reason: 'no flicker');
     await DemoApp.settle(t, 2);
-    expect(find.byType(NearbyRow), findsOneWidget);
+    expect(rowOf('demo-extra'), findsNothing);
+    d.radio.setAvailable('demo-extra', available: true);
+    await DemoApp.settle(t, 1);
+    expect(rowOf('demo-extra'), findsOneWidget);
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('legacy lights are never in "Nearby — not added"; they are in '
+      '"Unsupported lights" at the bottom, and open the firmware update', (
+    WidgetTester t,
+  ) async {
+    final DemoApp d = await tall(t);
+    expect(
+      d.radio.fixtures.any((SimFixture f) => f.id == 'demo-legacy'),
+      isTrue,
+    );
+    final Finder nearbyTitle = find.text('Nearby — not added');
+    final Finder unsupportedTitle = find.text('Unsupported lights');
+    expect(nearbyTitle, findsOneWidget);
+    expect(unsupportedTitle, findsOneWidget);
+    expect(
+      find.text('These lights run older firmware this app no longer supports.'),
+      findsOneWidget,
+    );
+    expect(find.bySemanticsLabel('Unsupported lights'), findsOneWidget);
+    // The legacy row sits under its own title, below the nearby list.
+    final double legacyY = t.getTopLeft(rowOf('demo-legacy')).dy;
+    expect(legacyY, greaterThan(t.getTopLeft(unsupportedTitle).dy));
+    expect(
+      t.getTopLeft(unsupportedTitle).dy,
+      greaterThan(t.getTopLeft(rowOf('demo-extra')).dy),
+    );
+    final ProviderContainer c = ProviderScope.containerOf(
+      t.element(find.byType(HomeScreen)),
+      listen: false,
+    );
+    expect(
+      c.read(nearbyProvider).where((NearbyLight n) => n.isLegacy).length,
+      1,
+    );
+    // Only the supported one counts as nearby.
+    expect(find.textContaining('· 1 nearby'), findsOneWidget);
+
+    // With no other light nearby: only the unsupported section.
+    d.radio.setAvailable('demo-extra', available: false);
+    await DemoApp.settle(t, 12);
+    expect(nearbyTitle, findsNothing);
+    expect(unsupportedTitle, findsOneWidget);
+    expect(rowOf('demo-legacy'), findsOneWidget);
+
+    // A row opens the firmware update, as before.
+    await t.ensureVisible(rowOf('demo-legacy'));
+    await t.pump();
+    await t.tap(rowOf('demo-legacy'));
+    await DemoApp.settle(t, 2);
+    expect(find.byType(FirmwareUpdateScreen), findsOneWidget);
     await DemoApp.shutDown(t);
   });
 }

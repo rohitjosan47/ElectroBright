@@ -26,6 +26,9 @@ import '../firmware_update/firmware_update_screen.dart';
 
 enum _Step { pick, connecting, found, failed }
 
+/// How long the add flow waits for a picked light before saying it failed.
+const Duration connectLimit = Duration(seconds: 20);
+
 /// [base], or "[base] 2", "[base] 3"... : the first not in [taken].
 String uniqueLightName(String base, Iterable<String> taken) {
   final Set<String> used = taken.toSet();
@@ -54,6 +57,10 @@ class _AddLightScreenState extends ConsumerState<AddLightScreen> {
   NearbyLight? _picked;
   String? _candidateId;
   Want? _want;
+
+  /// The manager holding the candidate, kept so [dispose] never uses `ref`
+  /// (unsafe while unmounting: the candidate would stay connected).
+  ConnectionManager? _connections;
   StreamSubscription<FixtureStatus>? _sub;
   Timer? _timeout;
   EbFirmware? _firmware;
@@ -77,15 +84,22 @@ class _AddLightScreenState extends ConsumerState<AddLightScreen> {
     super.dispose();
   }
 
-  Future<void> _release() async {
+  /// Drops the candidate. Everything up to the unregister happens at once
+  /// (no await before it), so a light picked again right after never finds
+  /// this one still holding it; the returned future ends once its link is
+  /// closed.
+  Future<void> _release() {
     _timeout?.cancel();
-    await _sub?.cancel();
+    _timeout = null;
+    unawaited(_sub?.cancel());
     _sub = null;
     _want?.release();
     _want = null;
     final String? id = _candidateId;
+    final ConnectionManager? cm = _connections;
     _candidateId = null;
-    if (id != null && !_saved) await _app.ble.connections.unregister(id);
+    if (id == null || cm == null || _saved) return Future<void>.value();
+    return cm.unregister(id);
   }
 
   void _pick(NearbyLight n) {
@@ -116,17 +130,25 @@ class _AddLightScreenState extends ConsumerState<AddLightScreen> {
       ),
     );
     final ConnectionManager cm = _app.ble.connections;
+    // A candidate this screen still holds (Retry) goes first.
+    unawaited(_release());
     cm.register(candidate);
+    _connections = cm;
     _candidateId = id;
     _picked = n;
-    _want = cm.want(id, WantReason.screen);
     setState(() => _step = _Step.connecting);
-    _timeout = Timer(const Duration(seconds: 20), () {
+    // Found or failed within [connectLimit], whatever the radio does.
+    _timeout = Timer(connectLimit, () {
       if (mounted && _step == _Step.connecting) {
         setState(() => _step = _Step.failed);
       }
     });
-    _sub = cm.session(id)!.statuses.listen(_onStatus);
+    // Listen before asking to connect, then read where it is now: a ready
+    // that comes at once is never missed.
+    final FixtureSession session = cm.session(id)!;
+    _sub = session.statuses.listen(_onStatus);
+    _want = cm.want(id, WantReason.screen);
+    _onStatus(session.status);
   }
 
   void _onStatus(FixtureStatus st) {

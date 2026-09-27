@@ -7,6 +7,7 @@ import 'package:electrobright/core/model/channel_color.dart';
 import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/model/fixture.dart';
 import 'package:electrobright/core/protocol/eb/eb_fixture_catalog.dart';
+import 'package:electrobright/core/protocol/eb/eb_reply.dart';
 import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/core/store/json_store.dart';
 import 'package:electrobright/core/util/scheduler.dart';
@@ -1186,26 +1187,73 @@ void main() {
 
   // ---- identify ----------------------------------------------------------------------
 
-  test('identify blinks exactly twice, about 150 ms on and 150 ms off, then '
-      'restores the look', () async {
+  /// Text lines and binary frames the twin of [id] has received.
+  (int, int) received(String id) {
+    final Map<String, Object?> st =
+        twin(id).state()['stats']! as Map<String, Object?>;
+    return (st['rx']! as int, st['bin']! as int);
+  }
+
+  test('identify on firmware with IDENTIFY sends exactly that one command; '
+      'the light flashes and restores itself, asleep too', () async {
     await build(ids: <String>[rgb, a]);
     final Want want = manager.want(rgb, WantReason.screen);
     await run(const Duration(seconds: 10));
     session(rgb).setBrightness(120, origin: CommandOrigin.system);
     await run(const Duration(seconds: 1));
-    expect(twin(rgb).scene.brightness, 120);
+    twin(rgb).takeSounds();
+    final (int rx, int bin) = received(rgb);
 
     final Future<void> done = session(rgb).identify();
+    await run(const Duration(milliseconds: 50));
+    expect(twin(rgb).identifyFlash, isTrue);
+    await done;
+    await run(const Duration(seconds: 1));
+    expect(received(rgb), (rx + 1, bin), reason: 'one line, no frames');
+    expect(twin(rgb).identifyFlash, isNull, reason: 'restored');
+    expect(twin(rgb).scene.brightness, 120);
+    expect(twin(rgb).takeSounds(), <String>['Identify']);
+
+    await session(rgb).setPower(on: false, origin: CommandOrigin.system);
+    await run(const Duration(seconds: 1));
+    twin(rgb).takeSounds();
+    await session(rgb).identify();
+    await run(const Duration(milliseconds: 50));
+    expect(twin(rgb).identifyFlash, isTrue, reason: 'flashes asleep');
+    await run(const Duration(seconds: 1));
+    expect(twin(rgb).sleeping, isTrue);
+    expect(twin(rgb).takeSounds(), <String>['Identify']);
+    want.release();
+  });
+
+  test('identify on older firmware dips twice to the lowest level (never 0, '
+      'no text command, no sound), then restores the exact level', () async {
+    await build(ids: <String>[basic, rgb]);
+    expect(
+      parseEbReply(rgbBasic.capsReply) is EbCaps &&
+          !(parseEbReply(rgbBasic.capsReply) as EbCaps).identify,
+      isTrue,
+    );
+    final Want want = manager.want(basic, WantReason.screen);
+    await run(const Duration(seconds: 10));
+    session(basic).setBrightness(120, origin: CommandOrigin.system);
+    await run(const Duration(seconds: 1));
+    twin(basic).takeSounds();
+    final (int rx, int _) = received(basic);
+
+    final Future<void> done = session(basic).identify();
     final List<int> samples = <int>[];
     const Duration step = Duration(milliseconds: 5);
-    for (int i = 0; i < 400; i++) {
+    for (int i = 0; i < 300; i++) {
       await _pump(5);
       clock.advance(step);
-      samples.add(twin(rgb).scene.brightness);
+      samples.add(twin(basic).scene.brightness);
+      expect(twin(basic).sleeping, isFalse);
     }
     await done;
     await run(const Duration(seconds: 1));
-    // Runs of equal samples: 255 (on) and 0 (off).
+    expect(samples, isNot(contains(0)));
+    // Runs of equal samples: the dips to 1, each about 150 ms.
     final List<(int, int)> runs = <(int, int)>[];
     for (final int v in samples) {
       if (runs.isNotEmpty && runs.last.$1 == v) {
@@ -1214,31 +1262,26 @@ void main() {
         runs.add((v, 1));
       }
     }
-    final List<int> on = <int>[
+    final List<int> dips = <int>[
       for (final (int v, int n) in runs)
-        if (v == 255) n * 5,
+        if (v == 1) n * 5,
     ];
-    final List<int> off = <int>[
-      for (int i = 1; i < runs.length - 1; i++)
-        if (runs[i].$1 == 0 && runs[i - 1].$1 == 255) runs[i].$2 * 5,
-    ];
-    expect(on, hasLength(FixtureRituals.identifyFlashes));
-    expect(FixtureRituals.identifyFlashes, 2);
-    for (final int ms in <int>[...on, ...off]) {
+    expect(dips, hasLength(FixtureRituals.identifyFlashes), reason: '$runs');
+    for (final int ms in dips) {
       expect(ms, inInclusiveRange(120, 180), reason: '$runs');
     }
-    expect(twin(rgb).scene.brightness, 120);
-    expect(twin(rgb).sleeping, isFalse);
+    expect(twin(basic).scene.brightness, 120);
+    expect(received(basic).$1, rx, reason: 'no SLEEP, WAKE or other line');
+    expect(twin(basic).takeSounds(), isEmpty);
 
-    // Asleep: woken for the show, asleep again after.
-    await session(rgb).setPower(on: false, origin: CommandOrigin.system);
+    // Asleep: nothing to show, nothing sent, still asleep.
+    await session(basic).setPower(on: false, origin: CommandOrigin.system);
     await run(const Duration(seconds: 1));
-    final Future<void> again = session(rgb).identify();
-    await run(const Duration(seconds: 2));
-    await again;
+    final (int rx2, int bin2) = received(basic);
+    await session(basic).identify();
     await run(const Duration(seconds: 1));
-    expect(twin(rgb).sleeping, isTrue);
-    expect(twin(rgb).scene.brightness, 120);
+    expect(received(basic), (rx2, bin2));
+    expect(twin(basic).sleeping, isTrue);
     want.release();
   });
 }

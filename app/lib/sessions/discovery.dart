@@ -117,6 +117,10 @@ final class Discovery {
   static const Duration forgetAfter = Duration(minutes: 2);
   static const Duration _forgetCheck = Duration(seconds: 10);
 
+  /// A nearby light is listed only while heard within this, during the
+  /// current scan; it goes this long after its last advert.
+  static const Duration nearbyFresh = Duration(seconds: 10);
+
   /// Devices never forgotten (the saved lights).
   bool Function(String id) keep = _keepNone;
   static bool _keepNone(String id) => false;
@@ -129,6 +133,11 @@ final class Discovery {
       StreamController<SeenDevice>.broadcast();
   final StreamController<String> _forgotten =
       StreamController<String>.broadcast();
+  final StreamController<String> _stale = StreamController<String>.broadcast();
+
+  /// Heard during the current scan within [nearbyFresh].
+  final Set<String> _fresh = <String>{};
+  Cancelable? _staleTimer;
   final List<Duration> _starts = <Duration>[];
 
   StreamSubscription<Advertisement>? _scan;
@@ -148,6 +157,15 @@ final class Discovery {
 
   /// Ids of devices forgotten (see [forgetAfter]).
   Stream<String> get forgotten => _forgotten.stream;
+
+  /// Ids of devices no longer [isFresh] (silent for [nearbyFresh], or the
+  /// scan restarted).
+  Stream<String> get stale => _stale.stream;
+
+  /// Heard in the last [nearbyFresh] of the current scan: what a nearby list
+  /// shows. It turns true with the first advert and false only after the
+  /// full [nearbyFresh] without one (or when the scan restarts).
+  bool isFresh(String id) => _fresh.contains(id);
   Iterable<SeenDevice> get devices => _seen.values;
   SeenDevice? seen(String id) => _seen[id];
   bool get isScanning => _scan != null;
@@ -194,6 +212,7 @@ final class Discovery {
     _deferred?.cancel();
     _duty?.cancel();
     _forgetTimer?.cancel();
+    _staleTimer?.cancel();
   }
 
   Future<void> dispose() async {
@@ -202,6 +221,7 @@ final class Discovery {
     await _scan?.cancel();
     unawaited(_updates.close());
     unawaited(_forgotten.close());
+    unawaited(_stale.close());
   }
 
   _ScanConfig? _wanted() {
@@ -286,6 +306,7 @@ final class Discovery {
   }
 
   void _stop() {
+    _dropFresh();
     _duty?.cancel();
     _duty = null;
     _forgetTimer?.cancel();
@@ -316,6 +337,42 @@ final class Discovery {
     _forgetTimer = _scheduler.after(_forgetCheck, _forget);
   }
 
+  /// A scan (re)start: what was heard before counts for nothing until heard
+  /// again.
+  void _dropFresh() {
+    _staleTimer?.cancel();
+    _staleTimer = null;
+    final List<String> was = _fresh.toList();
+    _fresh.clear();
+    if (_stale.isClosed) return;
+    for (final String id in was) {
+      _stale.add(id);
+    }
+  }
+
+  /// One timer, for the device that goes stale first.
+  void _armStale() {
+    if (_staleTimer != null || _fresh.isEmpty || _disposed) return;
+    Duration first = _scheduler.now + nearbyFresh;
+    for (final String id in _fresh) {
+      final Duration at = _seen[id]!.lastSeen + nearbyFresh;
+      if (at < first) first = at;
+    }
+    _staleTimer = _scheduler.after(first - _scheduler.now, () {
+      _staleTimer = null;
+      final Duration now = _scheduler.now;
+      final List<String> gone = <String>[
+        for (final String id in _fresh)
+          if (now - _seen[id]!.lastSeen >= nearbyFresh) id,
+      ];
+      for (final String id in gone) {
+        _fresh.remove(id);
+        _stale.add(id);
+      }
+      _armStale();
+    });
+  }
+
   void _onAdvert(Advertisement a) {
     final SeenDevice? old = _seen[a.id];
     final SeenDevice merged = SeenDevice(
@@ -330,6 +387,8 @@ final class Discovery {
       connectable: a.connectable,
     );
     _seen[a.id] = merged;
+    _fresh.add(a.id);
+    _armStale();
     _updates.add(merged);
   }
 }

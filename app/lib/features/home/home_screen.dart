@@ -38,6 +38,9 @@ bool debugShowDeveloperTools = kDebugMode;
 
 /// Home: every saved light with its type and state, plus lights nearby that
 /// are not added yet.
+/// How long Home's Identify waits for a light to connect.
+const Duration identifyConnectTimeout = Duration(seconds: 10);
+
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -48,6 +51,9 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   List<NearbyLight> _nearby = const <NearbyLight>[];
   final Map<String, Want> _wants = <String, Want>{};
+
+  /// Lights an Identify is connecting or flashing.
+  final Set<String> _identifying = <String>{};
   StreamSubscription<LayoutChange>? _layoutSub;
   FixtureRegistry? _registry;
 
@@ -178,13 +184,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           app.registry.update(f.copyWith(name: name));
         }
       case 'identify':
-        final Want w = app.ble.connections.want(f.id, WantReason.action);
-        final FixtureSession? s = app.ble.connections.session(f.id);
-        final FixtureStatus ready = await s!.statuses
-            .firstWhere((FixtureStatus x) => x.isReady)
-            .timeout(const Duration(seconds: 10), onTimeout: () => s.status);
-        if (ready.isReady) await s.identify();
-        w.release();
+        await _identify(app, f);
       case 'settings':
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
@@ -196,6 +196,100 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         await app.registry.forget(f.id);
     }
   }
+
+  /// Identifies [f], connecting it first if needed ("Connecting…"; gives
+  /// up after [identifyConnectTimeout]). A second tap while one runs does
+  /// nothing.
+  Future<void> _identify(AppSession app, Fixture f) async {
+    if (!_identifying.add(f.id)) return;
+    final Want w = app.ble.connections.want(f.id, WantReason.action);
+    try {
+      final FixtureSession? s = app.ble.connections.session(f.id);
+      if (s == null) return;
+      if (!s.status.isReady) {
+        final AppLocalizations l = AppLocalizations.of(context);
+        showGlassToast(context, l.presenceConnecting, icon: Icons.bluetooth);
+        if (!await _readyWithin(s, identifyConnectTimeout)) {
+          if (mounted) {
+            showGlassToast(
+              context,
+              l.identifyUnreachable(f.name),
+              icon: Icons.info_outline_rounded,
+            );
+          }
+          return;
+        }
+      }
+      await s.identify();
+    } finally {
+      w.release();
+      _identifying.remove(f.id);
+    }
+  }
+
+  /// Whether [s] is ready now or becomes ready within [limit].
+  static Future<bool> _readyWithin(FixtureSession s, Duration limit) async {
+    final Completer<bool> done = Completer<bool>();
+    final StreamSubscription<FixtureStatus> sub = s.statuses.listen((
+      FixtureStatus st,
+    ) {
+      if (st.isReady && !done.isCompleted) done.complete(true);
+    });
+    final Timer timer = Timer(limit, () {
+      if (!done.isCompleted) done.complete(false);
+    });
+    if (s.status.isReady && !done.isCompleted) done.complete(true);
+    final bool ready = await done.future;
+    timer.cancel();
+    unawaited(sub.cancel());
+    return ready;
+  }
+
+  /// A titled list of nearby lights (not added, or unsupported); a row
+  /// opens the add flow, which sends a legacy light to its firmware update.
+  Widget _nearbySection(
+    Color fg,
+    String title,
+    List<NearbyLight> lights, {
+    String? note,
+    double top = 0,
+  }) => SliverPadding(
+    padding: EdgeInsets.fromLTRB(Space.gutter, top, Space.gutter, 0),
+    sliver: SliverList.list(
+      children: <Widget>[
+        Semantics(
+          header: true,
+          child: Text(
+            title,
+            style: TextStyle(
+              color: fg,
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        if (note != null) ...<Widget>[
+          const SizedBox(height: 2),
+          Text(note, style: TextStyle(color: fg.withValues(alpha: 0.65))),
+        ],
+        const SizedBox(height: Space.s),
+        for (final NearbyLight n in lights)
+          Padding(
+            padding: const EdgeInsets.only(bottom: Space.s),
+            child: NearbyRow(
+              light: n,
+              onTap: () => unawaited(
+                Navigator.of(context).push(
+                  MaterialPageRoute<String>(
+                    builder: (_) => AddLightScreen(initial: n),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
 
   Future<String?> _askName(String current) => showNameDialog(
     context,
@@ -261,7 +355,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (TickerMode.valuesOf(context).enabled) {
       _nearby = ref.watch(nearbyProvider);
     }
-    final List<NearbyLight> nearby = _nearby;
+    // Lights on unsupported (legacy) firmware get their own section.
+    final List<NearbyLight> nearby = <NearbyLight>[
+      for (final NearbyLight n in _nearby)
+        if (!n.isLegacy) n,
+    ];
+    final List<NearbyLight> unsupported = <NearbyLight>[
+      for (final NearbyLight n in _nearby)
+        if (n.isLegacy) n,
+    ];
     if (app != null) {
       _syncWants(app, fixtures);
       _watchLayoutChanges(app);
@@ -402,36 +504,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
             ),
-            if (nearby.isNotEmpty)
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: Space.gutter),
-                sliver: SliverList.list(
-                  children: <Widget>[
-                    Text(
-                      l.nearbyTitle,
-                      style: TextStyle(
-                        color: fg,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: Space.s),
-                    for (final NearbyLight n in nearby)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: Space.s),
-                        child: NearbyRow(
-                          light: n,
-                          onTap: () => unawaited(
-                            Navigator.of(context).push(
-                              MaterialPageRoute<String>(
-                                builder: (_) => AddLightScreen(initial: n),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
+            if (nearby.isNotEmpty) _nearbySection(fg, l.nearbyTitle, nearby),
+            // Older firmware the app can't drive: last, apart from the rest.
+            if (unsupported.isNotEmpty)
+              _nearbySection(
+                fg,
+                l.unsupportedTitle,
+                unsupported,
+                note: l.unsupportedNote,
+                top: nearby.isEmpty ? 0 : Space.l,
               ),
             const SliverToBoxAdapter(child: SizedBox(height: 96)),
           ],

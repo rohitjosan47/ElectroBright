@@ -6,11 +6,12 @@ The Flutter app in `app/` (iOS and Android) controls every ElectroBright fixture
 - **Home** lists your saved lights. Each tile has:
   - a colour orb, the name, the **type badge** (e.g. "Tunable white" with one dot per LED) and a state line such as "On · 80 % · Fire";
   - a presence line (Connected, Connecting…, or Unavailable: off, out of range, or connected to another phone) and a power button.
-  - Long-press a tile for Rename, Identify, Light settings or Forget.
-- **Nearby — not added** shows lights that are advertising, with their type read from the Bluetooth name. A light on the original firmware shows "Update needed".
+  - Long-press a tile for Rename, Identify, Light settings or Forget. Identify on a light that isn't connected says "Connecting…", connects it and then identifies it; after 10 s it gives up and says so. Tapping it again meanwhile does nothing more.
+- **Nearby — not added** shows lights that are advertising, with their type read from the Bluetooth name: only lights heard in the last 10 s of scanning. A light appears with its first advert and leaves 10 s after its last one (so it doesn't flicker); when the scan starts again, nothing from before is shown until it is heard again. Lights are forgotten entirely after 2 minutes of scanning without an advert.
+- **Unsupported lights**, at the very bottom of Home, lists lights on the original firmware ("These lights run older firmware this app no longer supports."), with the same 10 s rule; they are never in the nearby list. Tapping one opens the firmware update screen.
 - **Add a light** has these steps:
   1. The app connects and reads the light's identity ("Found a Tunable white light · firmware 3.6.0").
-  2. **Flash it** blinks the light so you can find it.
+  2. **Flash it** identifies the light so you can find it.
   3. You name it.
   4. Save. Nothing is saved until Save, and Cancel always disconnects.
 - **Connection:**
@@ -44,7 +45,7 @@ On every type except W, **Channels** shows each LED's exact 0–255 value in its
 - Names and preview colours match the light. On CCT, Rainbow is "Temperature sweep" and TV plays in warm and cool whites.
 - The selected mode shows only its own sliders, with the firmware's names (e.g. "Stroke Tempo").
 - Fireworks, Club and Police have a colour-source toggle. It is worded per type: "Your colour / Auto palette", "Your white / Auto (warm & cool)" or "Your level / Auto flashes".
-- Police beacons are picked with the light's own colour controls.
+- Police beacons are picked with the light's own colour controls. On white-only lights (tunable white, single white) Police alternates two whites on its own: it has no colour source and no beacons.
 
 **Presets.**
 - The 15 slots on the light, with a preview in its colours; W shows the output %.
@@ -90,7 +91,7 @@ A group exists with two or more lights, and new lights join their group on their
 - **Broadcast, not sync:** the same commands go to every light, but each light runs its own effect clock. Two lights running Rainbow are not in step.
 - **Connection limits:** while a group is open, the app connects its lights, favourites first and then in Home's order, up to what this phone allows at once (8 on iOS, 5 on Android). Any others are reported as left out. Leaving the screen releases them after the normal idle grace (60 s).
 - **Catch-up:** a light that connects while the screen is open gets what the group was sent while the screen was open, as far as it applies to it: its look (its own from an applied preset), brightness (at its level), power, then the timer's remaining time (skipped if under 5 s). Nothing is replayed after you leave.
-- **Lights in this group:** each light's type, name, connection and state in the group, its level, **Flash it** (two quick blinks) and its switch. Excluded, own settings, levels and presets are remembered.
+- **Lights in this group:** each light's type, name, connection and state in the group, its level, **Flash it** (Identify) and its switch. Excluded, own settings, levels and presets are remembered.
 
 ## 4. Light settings
 - **Name**, **Favourite**, and **Type** (read from the firmware).
@@ -99,7 +100,7 @@ A group exists with two or more lights, and new lights join their group on their
   - effects "12 of 13", and why any are missing;
   - its presets, timer and sound;
   - the firmware model, version and raw capabilities (long-press to copy).
-- **Identify** blinks the light twice (150 ms on, 150 ms off).
+- **Identify** (Home, the add flow, **Flash it** in groups): a light whose firmware has IDENTIFY (3.6.1+) is sent just that; it flashes twice, chirps once and restores itself, also while asleep. Older firmware dips twice from its level to the lowest one and back (150 ms each) and gets its exact level again: never off, no power change, no sound, and nothing while it sleeps.
 - **Channel test** lights each LED on its own for 1.2 s, then restores the look. If the link drops during the test, the look is restored when the light returns within 60 s.
 - **Sound**, **Factory reset** (the confirmation shows the type's factory look; it also clears the preset names) and **Forget**.
 

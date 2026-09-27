@@ -154,8 +154,10 @@ final class NearbyLight {
   bool get isLegacy => seen.deviceClass == DeviceClass.legacyElectroBright;
 }
 
-/// Unsaved ElectroBright lights nearby, strongest first. Watching it keeps a
-/// fast scan running.
+/// Unsaved ElectroBright lights nearby (legacy ones included: see
+/// [NearbyLight.isLegacy]), strongest first: only those heard in the last
+/// [Discovery.nearbyFresh] of the current scan. Watching it keeps a fast
+/// scan running.
 final NotifierProvider<NearbyNotifier, List<NearbyLight>> nearbyProvider =
     NotifierProvider.autoDispose<NearbyNotifier, List<NearbyLight>>(
       NearbyNotifier.new,
@@ -176,7 +178,9 @@ final class NearbyNotifier extends Notifier<List<NearbyLight>> {
       final List<NearbyLight> out =
           <NearbyLight>[
             for (final SeenDevice s in d.devices)
-              if (!saved.contains(s.id) && s.deviceClass != DeviceClass.other)
+              if (!saved.contains(s.id) &&
+                  s.deviceClass != DeviceClass.other &&
+                  d.isFresh(s.id))
                 NearbyLight(s, EbFixtureCatalog.layoutFromBleName(s.name)),
           ]..sort(
             (NearbyLight a, NearbyLight b) =>
@@ -204,10 +208,14 @@ final class NearbyNotifier extends Notifier<List<NearbyLight>> {
     final StreamSubscription<String> forgotten = d.forgotten.listen(
       (_) => update(),
     );
+    final StreamSubscription<String> stale = d.stale.listen((String id) {
+      if (state.any((NearbyLight n) => n.seen.id == id)) update();
+    });
     ref.listen(fixturesProvider, (_, _) => update());
     ref.onDispose(() {
       unawaited(sub.cancel());
       unawaited(forgotten.cancel());
+      unawaited(stale.cancel());
       lease.release();
     });
     return compute();

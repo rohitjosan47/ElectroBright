@@ -120,6 +120,11 @@ final class ConnectionManager {
   late final StreamSubscription<SeenDevice> _advertSub;
   BleAdapterState _adapter = BleAdapterState.unknown;
   final Map<String, _Slot> _slots = <String, _Slot>{};
+
+  /// Device id -> the teardown of a light that was unregistered while it
+  /// was connected or connecting. A new connect to the same device waits
+  /// for it, so the old link can never close the new one.
+  final Map<String, Future<void>> _closing = <String, Future<void>>{};
   bool _inBackground = false;
   Cancelable? _backgroundTimer;
   int? _backgroundTask;
@@ -143,14 +148,31 @@ final class ConnectionManager {
     _slots[f.id] = _Slot(FixtureSession(f, scheduler: _scheduler));
   }
 
+  /// Forgets a light. Its slot goes at once; the link (or a connect still
+  /// in progress) is closed before the device is connected again.
   Future<void> unregister(String fixtureId) async {
     final _Slot? s = _slots.remove(fixtureId);
     if (s == null) return;
     s.retry?.cancel();
     s.idleTimer?.cancel();
-    await s.link?.disconnect();
-    await s.session.dispose();
+    s.cancelConnect();
+    final String deviceId = s.session.fixture.deviceId;
+    final Future<void> closed = _close(s);
+    _closing[deviceId] = closed;
+    try {
+      await closed;
+    } finally {
+      _closing.removeWhere((_, Future<void> f) => identical(f, closed));
+    }
     _evaluate();
+    await s.session.dispose();
+  }
+
+  /// Closes [s]'s link: what a new connect to the same light waits for.
+  static Future<void> _close(_Slot s) async {
+    // A connect in progress disconnects by itself once its slot is gone.
+    await s.connectDone;
+    await s.link?.disconnect();
   }
 
   /// Registers a reason to keep [fixtureId] connected.
@@ -363,7 +385,7 @@ final class ConnectionManager {
         s.session.setPhase(LinkPhase.waiting, detail: 'deferred');
         continue;
       }
-      unawaited(_connect(s));
+      s.connectDone = _connect(s);
     }
   }
 
@@ -433,6 +455,10 @@ final class ConnectionManager {
           })
         : null;
     try {
+      // The previous link to this light is still being torn down.
+      final Future<void>? closing = _closing[f.deviceId];
+      if (closing != null) await closing;
+      if (!identical(_slots[f.id], s) || s.wants.isEmpty) return;
       link = await _central.connect(
         f.deviceId,
         services: <String, List<String>>{
@@ -442,7 +468,10 @@ final class ConnectionManager {
         timeout: openEnded ? null : policy.connectTimeout,
         cancel: cancel?.future,
       );
-      if (_disposed || s.wants.isEmpty || _inBackground) {
+      if (_disposed ||
+          s.wants.isEmpty ||
+          _inBackground ||
+          !identical(_slots[f.id], s)) {
         await link.disconnect();
         return;
       }
@@ -575,6 +604,9 @@ final class _Slot {
 
   /// Completing it abandons the open-ended connect in progress.
   Completer<void>? cancel;
+
+  /// The latest connect attempt (done once it succeeded or failed).
+  Future<void>? connectDone;
 
   void cancelConnect() {
     final Completer<void>? c = cancel;

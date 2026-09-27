@@ -121,6 +121,50 @@ final class _World {
 }
 
 void main() {
+  for (final bool android in <bool>[false, true]) {
+    test('${android ? 'Android' : 'iOS'}: an unsaved candidate dropped and '
+        'the same light picked again at once connects, three times in a '
+        'row; the old link never closes the new one', () async {
+      final _World w = _World(android: android);
+      await w.run(const Duration(milliseconds: 500));
+      Want? want;
+      String? held;
+      for (int round = 1; round <= 3; round++) {
+        // Back without saving, then the same light again right away: the
+        // old candidate's link is still up when the new one is registered.
+        want?.release();
+        if (held != null) unawaited(w.manager.unregister(held));
+        final String id = 'candidate-$round';
+        w.manager.register(
+          Fixture(
+            id: id,
+            deviceId: 'dev0',
+            name: 'Candidate',
+            layout: ChannelLayout.rgbw,
+            driver: DriverKind.electroBright,
+            addedAt: DateTime(2026),
+          ),
+        );
+        want = w.manager.want(id, WantReason.screen);
+        held = id;
+        await w.run(const Duration(seconds: 5));
+        expect(
+          w.manager.session(id)!.status.isReady,
+          isTrue,
+          reason: 'round $round',
+        );
+        await w.run(const Duration(seconds: 5));
+        expect(
+          w.manager.session(id)!.status.isReady,
+          isTrue,
+          reason: 'round $round stays connected',
+        );
+      }
+      want?.release();
+      await w.dispose();
+    });
+  }
+
   test(
     'a want connects and handshakes; releasing it disconnects after the grace',
     () async {
@@ -504,6 +548,49 @@ void main() {
     await w.run(const Duration(seconds: 3));
     expect(w.central.fixtures.single.connected, isFalse);
     expect(w.central.connects, connects);
+    await w.dispose();
+  });
+
+  test('a device is fresh from its first advert until 10 s without one; a '
+      'scan restart forgets what was heard before', () async {
+    final _World w = _World(lights: 2);
+    final List<String> stale = <String>[];
+    final StreamSubscription<String> sub = w.discovery.stale.listen(stale.add);
+    ScanLease lease = w.discovery.acquire(ScanNeed.addFlow);
+    expect(w.discovery.isFresh('dev1'), isFalse);
+    await w.run(const Duration(milliseconds: 300));
+    expect(w.discovery.isFresh('dev1'), isTrue, reason: 'first advert');
+    // Advertising: it never drops out (no flicker).
+    for (int i = 0; i < 300; i++) {
+      await w.run(const Duration(milliseconds: 100));
+      expect(w.discovery.isFresh('dev1'), isTrue);
+    }
+    expect(stale, isEmpty);
+
+    // Switched off: listed for the full 10 s after its last advert, then not.
+    w.central.setAvailable('dev1', available: false);
+    await w.run(const Duration(milliseconds: 9500));
+    expect(w.discovery.isFresh('dev1'), isTrue);
+    await w.run(const Duration(milliseconds: 800));
+    expect(w.discovery.isFresh('dev1'), isFalse);
+    expect(stale, <String>['dev1']);
+    expect(w.discovery.seen('dev1'), isNotNull, reason: 'still remembered');
+    // Back on: fresh again with its first advert.
+    w.central.setAvailable('dev1', available: true);
+    await w.run(const Duration(milliseconds: 300));
+    expect(w.discovery.isFresh('dev1'), isTrue);
+
+    // The scan restarts: nothing from before until heard again.
+    lease.release();
+    expect(w.discovery.isFresh('dev0'), isFalse);
+    expect(w.discovery.isFresh('dev1'), isFalse);
+    lease = w.discovery.acquire(ScanNeed.addFlow);
+    expect(w.discovery.isFresh('dev1'), isFalse);
+    await w.run(const Duration(milliseconds: 300));
+    expect(w.discovery.isFresh('dev1'), isTrue);
+
+    lease.release();
+    await sub.cancel();
     await w.dispose();
   });
 

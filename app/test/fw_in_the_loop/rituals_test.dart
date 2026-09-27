@@ -5,6 +5,8 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:electrobright/core/model/channel_color.dart';
 import 'package:electrobright/core/model/fixture.dart';
@@ -161,25 +163,33 @@ void main() {
       }
     });
 
-    test('$name identify blinks and restores brightness and sleep', () async {
-      final _Rig r = await _Rig.start(fixture);
-      try {
-        await setUp(r);
-        await r.run(r.session.setPower(on: false));
-        final Future<void> t = r.session.identify();
-        // Mid first flash (150 ms on).
-        await r.wait(const Duration(milliseconds: 75));
-        final Map<String, Object?> lit = await r.link.deviceState();
-        expect(lit['sleeping'], 0, reason: 'woken for the show');
-        expect((lit['scene']! as Map<String, Object?>)['brightness'], 255);
-        await r.run(t);
-        await r.wait(const Duration(milliseconds: 500));
-        final Map<String, Object?> after = await r.link.deviceState();
-        expect((after['scene']! as Map<String, Object?>)['brightness'], 150);
-        expect(after['sleeping'], 1);
-      } finally {
-        await r.close();
-      }
-    });
+    test(
+      '$name identify sends IDENTIFY alone; the light keeps its state',
+      () async {
+        final _Rig r = await _Rig.start(fixture);
+        try {
+          await setUp(r);
+          await r.run(r.session.setPower(on: false));
+          await r.wait(const Duration(milliseconds: 500));
+          await r.link.sounds();
+          final int from = r.link.written.length;
+          await r.run(r.session.identify());
+          await r.wait(const Duration(milliseconds: 800));
+          expect(
+            <String>[
+              for (final Uint8List w in r.link.written.skip(from))
+                utf8.decode(w),
+            ],
+            <String>['IDENTIFY\n'],
+          );
+          final Map<String, Object?> after = await r.link.deviceState();
+          expect((after['scene']! as Map<String, Object?>)['brightness'], 150);
+          expect(after['sleeping'], 1);
+          expect(await r.link.sounds(), <String>['Identify']);
+        } finally {
+          await r.close();
+        }
+      },
+    );
   }
 }

@@ -503,7 +503,9 @@ void main() {
       ),
       findsNothing,
     );
-    final Set<int> a = <int>{}, b = <int>{};
+    // The light's own IDENTIFY flashes; its twin's never do.
+    final Set<bool?> a = <bool?>{}, b = <bool?>{};
+    final Set<int> levels = <int>{};
     await tapRow(t, d.id('Living room'));
     final Finder button = find.byKey(
       ValueKey<String>('flash-${d.id('Living room')}'),
@@ -512,11 +514,13 @@ void main() {
     await t.tap(button);
     for (int i = 0; i < 60; i++) {
       await t.pump(const Duration(milliseconds: 25));
-      a.add(d.twin('Living room').brightness);
-      b.add(d.twin('Reading lamp').brightness);
+      a.add(d.model('Living room').identifyFlash);
+      b.add(d.model('Reading lamp').identifyFlash);
+      levels.add(d.twin('Living room').brightness);
     }
-    expect(a, contains(0));
-    expect(b, hasLength(1));
+    expect(a, containsAll(<bool>[true, false]));
+    expect(b, <bool?>{null});
+    expect(levels, hasLength(1), reason: 'the level itself never changes');
     await DemoApp.shutDown(t);
   });
 

@@ -628,6 +628,10 @@ final class EbSession {
     return r;
   }
 
+  /// IDENTIFY (firmware with CAPS `IDENTIFY=1`): the light flashes twice,
+  /// chirps once and restores itself; no state changes.
+  Future<EbResult> identify() => _send(const Identify(), const <String>[]);
+
   /// Round-trip time of a PING, or null.
   Future<Duration?> ping() async {
     final Duration t0 = _scheduler.now;

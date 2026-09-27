@@ -14,7 +14,8 @@ import 'fixture_session.dart';
 extension FixtureRituals on FixtureSession {
   static const Duration restoreWindow = Duration(seconds: 60);
 
-  /// Identify's blinks and their timing.
+  /// Identify's blinks and their timing (the firmware's own IDENTIFY uses
+  /// the same).
   static const int identifyFlashes = 2;
   static const Duration identifyOn = Duration(milliseconds: 150);
   static const Duration identifyOff = Duration(milliseconds: 150);
@@ -30,40 +31,38 @@ extension FixtureRituals on FixtureSession {
       s.phase != EbPhase.closed &&
       status.phase == LinkPhase.ready;
 
-  /// Blinks the light twice (150 ms on, 150 ms off), then restores its look
-  /// (and sleep).
+  /// Makes the light show itself. Firmware with IDENTIFY does it alone: two
+  /// crisp flashes and a chirp, even asleep, then it restores itself.
+  ///
+  /// Older firmware dips twice from its level to the lowest one and back
+  /// ([identifyOff] low, [identifyOn] at its level), then gets its exact
+  /// level again. Never 0 (a release at 0 turns a light off, with its sleep
+  /// beep), no power change, no sound: a sleeping light shows nothing.
   Future<void> identify() async {
     final EbSession? s = session;
     if (s == null || !_live(s)) return;
-    final int brightness = s.view.state.scene.brightness;
-    final bool wasAsleep = s.view.state.sleeping;
-    // Frames never wake a sleeping light: wake it for the show.
-    if (wasAsleep) await s.setPower(on: true);
+    if (s.view.firmware?.capabilities.supportsIdentify ?? false) {
+      await s.identify();
+      return;
+    }
+    final int level = s.view.state.scene.brightness;
+    if (s.view.state.sleeping || level <= 0) return;
     s.beginGesture(EbKeys.brightness);
     try {
       for (int i = 0; i < identifyFlashes && _live(s); i++) {
-        s.setBrightness(255, live: true);
-        await _wait(identifyOn);
-        if (!_live(s)) break;
-        s.setBrightness(0, live: true);
+        s.setBrightness(1, live: true);
         await _wait(identifyOff);
+        if (!_live(s)) break;
+        s.setBrightness(level, live: true);
+        await _wait(identifyOn);
       }
     } finally {
       if (identical(session, s)) s.endGesture(EbKeys.brightness);
       setLook(
-        brightness: brightness > 0 ? brightness : 255,
+        brightness: level,
         keepOffline: restoreWindow,
         origin: CommandOrigin.system,
       );
-      if (wasAsleep) {
-        unawaited(
-          setPower(
-            on: false,
-            keepOffline: restoreWindow,
-            origin: CommandOrigin.system,
-          ),
-        );
-      }
     }
   }
 

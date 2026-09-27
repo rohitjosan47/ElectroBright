@@ -65,6 +65,8 @@
   "nearbyTitle": "Nearby — not added",
   "nearbyUnknownType": "ElectroBright light",
   "nearbyUpdate": "Update needed",
+  "unsupportedTitle": "Unsupported lights",
+  "unsupportedNote": "These lights run older firmware this app no longer supports.",
   "addLight": "Add light",
   "addTitle": "Add a light",
   "addHint": "Only one phone can be connected to a light at a time.",
@@ -440,5 +442,13 @@
   "factoryLook": "Factory look",
   "channelTestHint": "Lights each LED on its own, then puts your look back.",
   "identifyHint": "Blinks the light twice.",
+  "identifyUnreachable": "{name} didn't connect.",
+  "@identifyUnreachable": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "tools": "Tools"
 }

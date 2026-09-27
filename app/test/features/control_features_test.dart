@@ -1,8 +1,8 @@
 import 'package:electrobright/core/protocol/eb/eb_constants.dart';
 import 'package:electrobright/design/components/glass_controls.dart';
-import 'package:electrobright/design/controls/glass_slider.dart';
 import 'package:electrobright/features/control/control_screen.dart';
 import 'package:electrobright/features/control/timer_sheet.dart';
+import 'package:electrobright/features/control/effects/effect_colours.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -66,36 +66,39 @@ void main() {
     await DemoApp.shutDown(t);
   });
 
-  testWidgets('police beacons on a tunable-white light are whites', (
+  for (final String name in <String>['Kitchen', 'Hallway']) {
+    testWidgets('$name (white only): Police has no colour source and no '
+        'beacons', (WidgetTester t) async {
+      final DemoApp d = await open(t, name);
+      await t.tap(tab('Effects'));
+      await settle(t, 1);
+      await t.tap(find.byKey(const ValueKey<String>('mode-12')));
+      await settle(t);
+      expect(d.twin(name).mode, 12);
+      expect(find.byType(ColourSourceControl), findsNothing);
+      expect(find.byType(BeaconSwatch), findsNothing);
+      // Other colour-source effects keep theirs.
+      await t.tap(find.byKey(const ValueKey<String>('mode-9')));
+      await settle(t);
+      expect(find.byType(ColourSourceControl), findsOneWidget);
+      await DemoApp.shutDown(t);
+    });
+  }
+
+  testWidgets('a colour light keeps Police\'s colour source and beacons', (
     WidgetTester t,
   ) async {
-    final DemoApp d = await open(t, 'Kitchen');
+    final DemoApp d = await open(t, 'Desk strip');
     await t.tap(tab('Effects'));
     await settle(t, 1);
     await t.tap(find.byKey(const ValueKey<String>('mode-12')));
     await settle(t);
-    expect(d.twin('Kitchen').mode, 12);
-    // Its colour source in its own words; beacons need "Your white".
-    expect(find.text('Warm & cool'), findsOneWidget);
-    if (d.twin('Kitchen').policeColorMode != 0) {
-      await t.tap(find.text('Your white'));
+    expect(find.byType(ColourSourceControl), findsOneWidget);
+    if (d.twin('Desk strip').policeColorMode != 0) {
+      await t.tap(find.text('Your colours'));
       await settle(t);
     }
-    await t.tap(find.text('Beacon A'));
-    await settle(t, 1);
-    // Its editor's temperature to the warm end.
-    await t.drag(
-      find
-          .byWidgetPredicate(
-            (Widget w) =>
-                w is GlassSlider && w.semanticLabel == 'Colour temperature',
-          )
-          .last,
-      const Offset(-2000, 0),
-    );
-    await settle(t);
-    // Two values: cool and warm white.
-    expect(d.twin('Kitchen').policeA.values, <int>[0, 255]);
+    expect(find.byType(BeaconSwatch), findsNWidgets(2));
     await DemoApp.shutDown(t);
   });
 
