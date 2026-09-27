@@ -5,14 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/color/colour_engine.dart';
 import '../../../core/color/led_white_points.dart';
-import '../../../core/color/light_surfaces.dart';
 import '../../../core/model/channel_layout.dart';
 import '../../../core/model/light_capabilities.dart';
 import '../../../core/protocol/eb/eb_scene.dart';
 import '../../../core/protocol/eb/mode_catalog.dart';
 import '../../../design/components/glass_controls.dart';
-import '../../../design/components/name_dialog.dart';
-import '../../../design/glass/glass_surface.dart';
 import '../../../design/haptics/haptics.dart';
 import '../../../design/haptics/haptics_scope.dart';
 import '../../../design/tokens/tokens.dart';
@@ -22,9 +19,9 @@ import '../../../drivers/electrobright/eb_types.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../sessions/fixture_session.dart';
 import '../colour/colour_editor.dart';
-import '../effects/effects_grid.dart';
 import '../effects/mode_presentation.dart';
 import 'preset_meta.dart';
+import 'preset_slots.dart';
 
 /// The light's preset slots: tap to load, tap an empty slot to save the
 /// current look, long-press for rename / overwrite / clear. Previews use the
@@ -65,7 +62,6 @@ class PresetsPanel extends ConsumerWidget {
         : from != null && onLight.contains(from)
         ? l.presetModifiedFrom(_name(l, meta, from))
         : null;
-    final bool large = MediaQuery.textScalerOf(context).scale(1) > 1.5;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -78,40 +74,63 @@ class PresetsPanel extends ConsumerWidget {
               style: TextStyle(color: fg.withValues(alpha: 0.75), fontSize: 13),
             ),
           ),
-        GridView.count(
-          // 15 slots: 3 × 5, shaped like the effect tiles.
-          crossAxisCount: large ? 2 : effectColumns,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: Space.s,
-          crossAxisSpacing: Space.s,
-          childAspectRatio: large ? 1.2 : effectTileAspect,
-          children: <Widget>[
+        PresetSlotGrid(
+          slots: <Widget>[
             for (int slot = 0; slot < capabilities.presetSlots; slot++)
-              _SlotTile(
-                key: ValueKey<String>('preset-$slot'),
-                slot: slot,
-                filled: onLight.contains(slot),
+              _slotTile(
+                l,
+                meta,
+                slot,
                 active: slot == active,
-                name: _name(l, meta, slot),
-                preview: meta[slot]?.scene,
-                layout: capabilities.layout,
-                whitePoints: whitePoints,
                 fg: fg,
-                onTap: !enabled
-                    ? null
-                    : () => onLight.contains(slot)
-                          ? _load(context, ref, slot)
-                          : _save(context, ref, slot, ask: true),
-                onLongPress: !enabled || !onLight.contains(slot)
-                    ? null
-                    : () => _menu(context, ref, slot),
+                context: context,
+                ref: ref,
               ),
           ],
         ),
       ],
     );
   }
+
+  Widget _slotTile(
+    AppLocalizations l,
+    PresetMeta meta,
+    int slot, {
+    required bool active,
+    required Color fg,
+    required BuildContext context,
+    required WidgetRef ref,
+  }) {
+    final ChannelLayout layout = capabilities.layout;
+    final EbScene? preview = meta[slot]?.scene;
+    final EbScene? p = preview?.layout == layout ? preview : null;
+    return PresetSlotTile(
+      key: ValueKey<String>('preset-$slot'),
+      slot: slot,
+      filled: onLight.contains(slot),
+      active: active,
+      name: _name(l, meta, slot),
+      colours: <Color>[if (p != null) swatchOf(p.color, whitePoints)],
+      detail: p == null
+          ? null
+          : '${presentMode(EbModeCatalog.byId(p.mode), layout, whitePoints, l).name}'
+                ' · ${_level(p)} %',
+      fg: fg,
+      onTap: !enabled
+          ? null
+          : () => onLight.contains(slot)
+                ? _load(context, ref, slot)
+                : _save(context, ref, slot, ask: true),
+      onLongPress: !enabled || !onLight.contains(slot)
+          ? null
+          : () => _menu(context, ref, slot),
+    );
+  }
+
+  /// Brightness, or on a single-white light the real output.
+  static int _level(EbScene s) => s.layout == ChannelLayout.w
+      ? (ColourEngine.output(s.color[0], s.brightness) * 100).round()
+      : (s.brightness / 255 * 100).round();
 
   // A light on firmware before 3.6.0 may still hold presets from the old
   // format; they show as 'Preset N' without a preview until the light is
@@ -153,7 +172,7 @@ class PresetsPanel extends ConsumerWidget {
     if (s == null) return false;
     String? name;
     if (ask) {
-      name = await _askName(context, null);
+      name = await askPresetName(context, null);
       if (name == null || !context.mounted) return false;
     }
     final EbPresetResult r = await s.presetSave(slot);
@@ -174,50 +193,18 @@ class PresetsPanel extends ConsumerWidget {
 
   /// True when a load or overwrite from the menu succeeded.
   Future<bool> _menu(BuildContext context, WidgetRef ref, int slot) async {
-    final AppLocalizations l = AppLocalizations.of(context);
-    HapticsScope.of(context).play(HapticEvent.longPress);
-    final String? action = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (BuildContext ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            ListTile(
-              leading: const Icon(Icons.play_arrow_rounded),
-              title: Text(l.presetLoad),
-              onTap: () => Navigator.pop(ctx, 'load'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.edit_rounded),
-              title: Text(l.rename),
-              onTap: () => Navigator.pop(ctx, 'rename'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.save_rounded),
-              title: Text(l.presetOverwrite),
-              onTap: () => Navigator.pop(ctx, 'overwrite'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline_rounded),
-              title: Text(l.presetClear),
-              onTap: () => Navigator.pop(ctx, 'clear'),
-            ),
-          ],
-        ),
-      ),
-    );
+    final PresetAction? action = await showPresetMenu(context);
     if (!context.mounted || action == null) return false;
     switch (action) {
-      case 'load':
+      case PresetAction.load:
         return _load(context, ref, slot);
-      case 'rename':
+      case PresetAction.rename:
         final PresetMeta meta = ref.read(presetMetaProvider(fixtureId));
-        final String? name = await _askName(context, meta[slot]?.name);
+        final String? name = await askPresetName(context, meta[slot]?.name);
         if (name != null) _meta(ref).rename(slot, name);
-      case 'overwrite':
+      case PresetAction.overwrite:
         return _save(context, ref, slot, ask: false);
-      case 'clear':
+      case PresetAction.clear:
         final EbResult r = await session!.presetDelete(slot);
         if (!context.mounted) return false;
         if (r.isSuccess) {
@@ -238,173 +225,4 @@ class PresetsPanel extends ConsumerWidget {
       _ => l.errorGeneric,
     }, icon: Icons.error_outline_rounded);
   }
-
-  /// Name for a preset (null = cancelled), with suggestions.
-  static Future<String?> _askName(BuildContext context, String? current) {
-    final AppLocalizations l = AppLocalizations.of(context);
-    return showNameDialog(
-      context,
-      title: l.presetName,
-      current: current,
-      suggestions: <String>[
-        l.presetSuggestCozy,
-        l.presetSuggestCinema,
-        l.presetSuggestFocus,
-        l.presetSuggestParty,
-      ],
-    );
-  }
-}
-
-/// One preset slot: the same selection and press motion as the effect
-/// tiles, and a success pulse when a load or save through it succeeds (an
-/// empty slot only presses; a save that fills it pulses).
-class _SlotTile extends StatefulWidget {
-  const _SlotTile({
-    required this.slot,
-    required this.filled,
-    required this.active,
-    required this.name,
-    required this.preview,
-    required this.layout,
-    required this.whitePoints,
-    required this.fg,
-    required this.onTap,
-    required this.onLongPress,
-    super.key,
-  });
-
-  final int slot;
-  final bool filled;
-  final bool active;
-  final String name;
-  final EbScene? preview;
-  final ChannelLayout layout;
-  final LedWhitePoints whitePoints;
-  final Color fg;
-
-  /// Each returns true when the light carried it out.
-  final Future<bool> Function()? onTap;
-  final Future<bool> Function()? onLongPress;
-
-  @override
-  State<_SlotTile> createState() => _SlotTileState();
-}
-
-class _SlotTileState extends State<_SlotTile> {
-  int _pulse = 0;
-
-  VoidCallback? _run(Future<bool> Function()? action) => action == null
-      ? null
-      : () => unawaited(
-          action().then((bool ok) {
-            if (ok && mounted) setState(() => _pulse++);
-          }),
-        );
-
-  @override
-  Widget build(BuildContext context) {
-    final AppLocalizations l = AppLocalizations.of(context);
-    final int slot = widget.slot;
-    final bool filled = widget.filled;
-    final String name = widget.name;
-    final ChannelLayout layout = widget.layout;
-    final LedWhitePoints whitePoints = widget.whitePoints;
-    final Color fg = widget.fg;
-    final EbScene? preview = widget.preview;
-    final EbScene? p = preview?.layout == layout ? preview : null;
-    final String? detail = p == null
-        ? null
-        : '${presentMode(EbModeCatalog.byId(p.mode), layout, whitePoints, l).name}'
-              ' · ${_level(p)} %';
-    return Semantics(
-      button: true,
-      selected: widget.active,
-      label: filled ? name : '${l.presetEmpty}, ${l.presetSave}',
-      value: detail,
-      child: ChoiceFrame(
-        selected: widget.active,
-        pulse: _pulse,
-        onTap: _run(widget.onTap),
-        onLongPress: _run(widget.onLongPress),
-        child: GlassSurface(
-          radius: Radii.medium,
-          liquid: true,
-          quietGlint: true,
-          padding: const EdgeInsets.all(Space.s),
-          child: Opacity(
-            opacity: filled
-                ? 1
-                : LightSurfaces.dim(0.55, dark: fg == Colors.white),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Container(
-                      width: 22,
-                      height: 22,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: p != null
-                            ? swatchOf(p.color, whitePoints)
-                            : fg.withValues(alpha: 0.12),
-                      ),
-                      child: filled
-                          ? null
-                          : Icon(Icons.add_rounded, size: 16, color: fg),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '${slot + 1}',
-                      style: TextStyle(
-                        color: fg.withValues(
-                          alpha: LightSurfaces.dim(
-                            0.5,
-                            dark: fg == Colors.white,
-                          ),
-                        ),
-                        fontSize: 12,
-                        fontFeatures: const <FontFeature>[
-                          FontFeature.tabularFigures(),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const Spacer(),
-                Text(
-                  filled ? name : l.presetEmpty,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: fg,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-                if (filled && detail != null)
-                  Text(
-                    detail,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: fg.withValues(
-                        alpha: LightSurfaces.dim(0.6, dark: fg == Colors.white),
-                      ),
-                      fontSize: 11,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Brightness, or on a single-white light the real output.
-  int _level(EbScene s) => s.layout == ChannelLayout.w
-      ? (ColourEngine.output(s.color[0], s.brightness) * 100).round()
-      : (s.brightness / 255 * 100).round();
 }

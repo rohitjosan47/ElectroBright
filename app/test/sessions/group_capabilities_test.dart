@@ -44,9 +44,6 @@ void main() {
       ];
       final String name = lights.map((GroupLight l) => l.layout.wire).join('+');
       final GroupCapabilities g = GroupCapabilities(GroupKind.colour, lights);
-      expect(g.surface, ColourSurface.colour, reason: name);
-      expect(g.surfaceLayout, ChannelLayout.rgb, reason: name);
-      expect(g.colourIds, <String>[for (final GroupLight l in lights) l.id]);
       expect(g.tunableIds, isEmpty, reason: name);
       expect(g.hasTunable || g.hasFixedWhite, isFalse, reason: name);
 
@@ -71,8 +68,6 @@ void main() {
       light('w1', ChannelLayout.w),
       light('w2', ChannelLayout.w, modeMask: 0x1DFF),
     ]);
-    expect(g.surface, isNull);
-    expect(g.surfaceLayout, isNull);
     expect(g.hasTunable, isFalse);
     expect(g.hasFixedWhite, isTrue);
     expect(g.fixedWhiteIds, <String>['w1', 'w2']);
@@ -103,17 +98,11 @@ void main() {
       <GroupLight>[narrow, wide, w],
     ]) {
       final GroupCapabilities g = GroupCapabilities(GroupKind.white, lights);
-      expect(g.surface, ColourSurface.tunableWhite);
-      expect(g.surfaceLayout, ChannelLayout.cct);
       expect(g.hasTunable, isTrue);
       expect(g.hasFixedWhite, lights.contains(w));
       expect(g.tunableIds, <String>['cct-narrow', 'cct-wide']);
-      expect(g.colourIds, isEmpty);
       expect(g.whitePoints.wwK, 2200);
       expect(g.whitePoints.cwK, 6500);
-      expect(g.limitedCount(2500), 1);
-      expect(g.limitedCount(4000), 0);
-      expect(g.limitedCount(6000), 1);
     }
     expect(
       GroupCapabilities.temperatureFor(2500, narrow),
@@ -130,7 +119,7 @@ void main() {
     expect(GroupCapabilities.temperatureFor(4000, w), isNull);
   });
 
-  test('value-equal; none has no controls', () {
+  test('value-equal; none has no lights', () {
     List<GroupLight> lights() => <GroupLight>[
       light('a', ChannelLayout.rgb),
       light('b', ChannelLayout.rgbw),
@@ -143,7 +132,7 @@ void main() {
       GroupCapabilities(GroupKind.colour, lights()),
       isNot(GroupCapabilities(GroupKind.white, lights())),
     );
-    expect(const GroupCapabilities.none(GroupKind.colour).surface, isNull);
-    expect(const GroupCapabilities.none(GroupKind.white).surface, isNull);
+    expect(const GroupCapabilities.none(GroupKind.colour).lights, isEmpty);
+    expect(const GroupCapabilities.none(GroupKind.white).hasTunable, isFalse);
   });
 }

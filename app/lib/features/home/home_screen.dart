@@ -20,9 +20,9 @@ import '../../sessions/fixture_registry.dart';
 import '../../sessions/fixture_session.dart';
 import '../../sessions/rituals.dart';
 import '../add_fixture/add_light_screen.dart';
-import '../all_lights/all_lights_screen.dart';
+import '../groups/group_screen.dart';
 import '../control/control_screen.dart';
-import 'all_lights_card.dart';
+import 'groups_card.dart';
 import '../../sessions/group_capabilities.dart';
 import '../../sessions/group_session.dart';
 import 'light_tile.dart';
@@ -132,9 +132,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// A group (from its card): connects the group while it is open,
   /// releases it after.
   void _openGroup(GroupKind kind) => unawaited(
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => AllLightsScreen(kind: kind)),
-    ),
+    Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => GroupScreen(kind: kind))),
   );
 
   Future<void> _more(Fixture f) async {
@@ -278,7 +277,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final bool dark = ToneScope.darkOf(context);
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
     final bool bigText = MediaQuery.textScalerOf(context).scale(1) > 1.4;
-    // All Lights once there is more than one light.
+    // Groups with 2 or more lights.
     final List<GroupKind> groups = <GroupKind>[
       if (app != null)
         for (final GroupKind k in GroupKind.values)
@@ -371,7 +370,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ),
               ),
-            for (final GroupKind kind in groups)
+            if (groups.isNotEmpty)
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(
                   Space.gutter,
@@ -380,10 +379,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   0,
                 ),
                 sliver: SliverToBoxAdapter(
-                  child: AllLightsCard(
-                    kind: kind,
-                    onOpen: () => _openGroup(kind),
-                  ),
+                  child: GroupsCard(kinds: groups, onOpen: _openGroup),
                 ),
               ),
             SliverPadding(

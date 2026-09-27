@@ -84,8 +84,6 @@
   "addIdentify": "Flash it",
   "addName": "Name",
   "mixed": "Mixed",
-  "allLightsTitle": "All Lights",
-  "allLightsSubtitle": "Same settings on every light",
   "groupConnected": "{ready} of {total} connected",
   "@groupConnected": {
     "placeholders": {
@@ -93,6 +91,31 @@
         "type": "int"
       },
       "total": {
+        "type": "int"
+      }
+    }
+  },
+  "groupsTitle": "Groups",
+  "groupSubtitle": "Same settings on every light",
+  "groupColourTitle": "Colour lights",
+  "groupWhiteTitle": "White lights",
+  "wLightsKeepWhite": "W lights keep their white",
+  "groupPresetSavedSome": "Saved {saved} of {total} lights",
+  "@groupPresetSavedSome": {
+    "placeholders": {
+      "saved": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "groupPresetNothing": "No connected light to save",
+  "groupPresetLights": "{count, plural, =1{1 light} other{{count} lights}}",
+  "@groupPresetLights": {
+    "placeholders": {
+      "count": {
         "type": "int"
       }
     }
@@ -126,33 +149,6 @@
   },
   "timersDiffer": "Timers differ",
   "groupLights": "Lights in this group",
-  "scopeTemperature": "Temperature · {count} of {total} lights",
-  "@scopeTemperature": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      },
-      "total": {
-        "type": "int"
-      }
-    }
-  },
-  "whitesKeepTheirWhite": "{count, plural, =1{1 white light keeps its white} other{{count} white lights keep their white}}",
-  "@whitesKeepTheirWhite": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "lightsAtLimit": "{count, plural, =1{1 light at its limit} other{{count} lights at their limit}}",
-  "@lightsAtLimit": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
   "noLightsConnected": "No lights connected",
   "groupExcluded": "Excluded",
   "groupOwnSettings": "Own settings",
@@ -175,15 +171,7 @@
   },
   "rejoinAll": "Rejoin all",
   "includeLights": "Include lights",
-  "groupNoneFollowing": "No light follows All Lights right now. Bring them back to set them together.",
-  "openLight": "Open {name}",
-  "@openLight": {
-    "placeholders": {
-      "name": {
-        "type": "String"
-      }
-    }
-  },
+  "groupNoneFollowing": "No light follows this group right now. Bring them back to set them together.",
   "groupOrb": "Colours of {count} connected lights",
   "@groupOrb": {
     "placeholders": {
@@ -200,7 +188,7 @@
       }
     }
   },
-  "groupIncludeLight": "Include {name} in All Lights",
+  "groupIncludeLight": "Include {name} in the group",
   "@groupIncludeLight": {
     "placeholders": {
       "name": {
@@ -434,6 +422,6 @@
   "version": "Version",
   "factoryLook": "Factory look",
   "channelTestHint": "Lights each LED on its own, then puts your look back.",
-  "identifyHint": "Blinks the light three times.",
+  "identifyHint": "Blinks the light twice.",
   "tools": "Tools"
 }

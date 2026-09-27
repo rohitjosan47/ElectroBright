@@ -55,34 +55,39 @@ On every type except W, **Channels** shows each LED's exact 0–255 value in its
 
 **Sound.** Turns the light's buzzer on or off.
 
-## 3. All Lights
-With two or more saved lights, Home shows an **All Lights** card at the top: the only way in. It opens one control surface for the saved lights, whatever their types, including several lights of the same type and firmware.
+## 3. Groups
+Every light belongs to exactly one of two automatic groups, by its LEDs:
 
-- **What it does:** power, brightness, colour, effects (with their speed and frequency) and the sleep timer, sent at the same moment to every light that follows the group.
-- **Adaptive controls:** the colour controls are those of a single light with the group's mix of LEDs, built the same way as a light's own screen:
-  - colour and tunable white give Colour | White;
-  - colour with an RGBW light gives the wheel and a White LED slider;
-  - colour only gives the wheel;
-  - tunable whites only give a **White** tab;
-  - single whites only give no colour tab: Effects are shown directly.
-- **Where each control goes:**
-  - A colour goes only to lights with colour LEDs.
-  - A temperature goes to tunable whites (each stops at its own warm and cool LEDs) and colour lights (which match it).
-  - Single-white lights keep their white and get only power, brightness, effects and the timer.
-  - A caption says when a control reaches part of the group ("Colour · 3 of 5 lights", "White LED · 1 of 5", "Temperature · 4 of 5 lights", "1 white light keeps its white", "1 light at its limit").
-  - With tunable and single-white lights together, **Match W lights · 4000 K** sets the tunable ones to the single whites' temperature.
-- **Effects:** every mode at least one connected light has. A mode only some lights have shows "3/5" and goes only to those; the app then says "Applied to 3 of 5 lights". When the lights differ, the controls say so ("Mixed", "Timers differ") until you set them all.
-- **Level in group (trim):** tap a light in the list to set its level in the group, from 5 to 100 %. It gets the group brightness times its level, never 0 while the group is on; the group at 0 turns every light off. A trimmed light doesn't make the brightness read "Mixed", and a collapsed row shows its level ("Level 50 %").
+- **Colour lights:** RGB, RGBW and RGB+CCT.
+- **White lights:** tunable white (CCT) and single white (W).
+
+A group exists with two or more lights, and new lights join their group on their own. Home shows one **Groups** card at the top: a half per group (**Colour lights** | **White lights**), each with its first lights' colours and "3 of 4 connected". With one group, it fills the card; with none, there is no card. The card connects nothing; it is the only way in. Only one group is open at a time.
+
+- **Common controls:** power, brightness, effects (with their speed and frequency) and the sleep timer, sent at the same moment to every light that follows the group and can take them. When the lights differ, the controls say so ("Mixed", "Timers differ") until you set them all.
+- **Colour lights: Colour | Effects | Presets.** The Colour tab is the wheel alone. A pick goes to every light with its white LEDs off (RGBW's W, RGB+CCT's cool and warm white at 0), so all the lights match. The group sends no white or temperature.
+- **White lights: White | Effects | Presets** (W lights only: Effects | Presets).
+  - The White tab is the colour temperature alone, over the union of the tunable lights' ranges; each light stops at its own warm and cool LEDs.
+  - There is no level slider: the brightness pill dims them.
+  - W lights never get a colour or temperature. With any present, the tab says "W lights keep their white"; they get power, brightness, effects and the timer.
+- **Effects:** every mode some light of the group has. A mode only some lights have shows "n/m" and goes only to those; the app then says "Applied to n of m lights".
+- **Group presets:** 15 slots per group, kept on this phone. They never use the lights' own preset slots, so each light's presets stay untouched.
+  - An empty slot saves each connected, following light's look (colour, effect with speed and frequency, on or off) and the group brightness. If some lights were missing, it says "Saved n of m lights".
+  - A filled slot applies it. For each light in the preset: colour, then effect, then the group brightness at that light's level, then power. Lights not in it are untouched, and lights on their own settings or left out are skipped. A light that connects later gets its look when it does.
+  - The last applied slot is marked until the next group command (not the sleep timer, which is never part of a preset). Long-press to Load / Rename / Overwrite / Clear.
+  - A forgotten light is dropped from every preset; a preset left with no lights becomes empty.
+- **Level in group (trim):** tap a light in the list to set its level in the group, from 5 to 100 %.
+  - It gets the group brightness times its level, never 0 while the group is on; the group at 0 turns every light off.
+  - A trimmed light doesn't make the brightness read "Mixed", and a collapsed row shows its level ("Level 50 %").
+  - Changing a level never detaches a light.
 - **Own settings:**
-  - A light that has followed a group command and is then changed on its own screen (colour, brightness, effect, power, preset) keeps its own settings. Group commands skip it until it rejoins.
-  - The timer, renaming, Identify and sound don't detach a light; neither do changes from another phone or a power cycle.
+  - A light that has followed a group command and is then changed on its own screen or its Home tile (colour, brightness, effect, power, preset) keeps its own settings. Group commands skip it until it rejoins.
+  - The timer, levels, renaming, Identify and sound don't detach a light; neither do changes from another phone or a power cycle.
   - In the list, the switch is on while a light follows. Off, the row says **Own settings** or **Excluded**; turning it on rejoins the light and catches it up. **Rejoin all** brings every light back.
   - With no light following, the controls give way to a message and **Rejoin all** / **Include lights**. With none connected, the controls are off and the status says "No lights connected".
 - **Broadcast, not sync:** the same commands go to every light, but each light runs its own effect clock. Two lights running Rainbow are not in step.
-- **Connection limits:** while All Lights is open, the app connects the lights in the group, favourites first and then in Home's order, up to what this phone allows at once (8 on iOS, 5 on Android). Any others are reported as left out. Leaving the screen releases them after the normal idle grace (60 s).
-- **Catch-up:** a light that connects while the screen is open, or rejoins, gets what the group was sent while the screen was open, as far as it applies to it. The order is look, brightness (at its level), power, then the timer's remaining time (skipped if under 5 s). Nothing is replayed after you leave.
-- **Lights in this group:** each light's type, name, connection and state in the group, its level, **Flash it**, a way to its own screen, and its switch. Excluded, own settings and levels are remembered.
-- **Why no presets:** presets live on each light (15 slots per light, in its own colours and channels), so there is no single preset every light can load.
+- **Connection limits:** while a group is open, the app connects its lights, favourites first and then in Home's order, up to what this phone allows at once (8 on iOS, 5 on Android). Any others are reported as left out. Leaving the screen releases them after the normal idle grace (60 s).
+- **Catch-up:** a light that connects while the screen is open, or rejoins, gets what the group was sent while the screen was open, as far as it applies to it: its look (its own from an applied preset), brightness (at its level), power, then the timer's remaining time (skipped if under 5 s). Nothing is replayed after you leave.
+- **Lights in this group:** each light's type, name, connection and state in the group, its level, **Flash it** (two quick blinks) and its switch. Excluded, own settings, levels and presets are remembered.
 
 ## 4. Light settings
 - **Name**, **Favourite**, and **Type** (read from the firmware).
@@ -91,7 +96,7 @@ With two or more saved lights, Home shows an **All Lights** card at the top: the
   - effects "12 of 13", and why any are missing;
   - its presets, timer and sound;
   - the firmware model, version and raw capabilities (long-press to copy).
-- **Identify** blinks the light three times.
+- **Identify** blinks the light twice (150 ms on, 150 ms off).
 - **Channel test** lights each LED on its own for 1.2 s, then restores the look. If the link drops during the test, the look is restored when the light returns within 60 s.
 - **Sound**, **Factory reset** (the confirmation shows the type's factory look; it also clears the preset names) and **Forget**.
 
@@ -113,10 +118,10 @@ With two or more saved lights, Home shows an **All Lights** card at the top: the
 | `core/color` | Colour engine (HSV / Kelvin / raw per layout), LED white points, display colour |
 | `core/store` | Atomic JSON store and the one-time import of the old app's data |
 | `drivers/electrobright` | Session: handshake, command lane, stream lane, reconciliation |
-| `sessions` | Connection manager, discovery, per-light session, registry, All Lights group, identify / channel test |
+| `sessions` | Connection manager, discovery, per-light session, registry, colour and white groups with their presets, identify / channel test |
 | `sim` | Firmware twin and simulated Bluetooth (demo lights and tests) |
 | `design` | Tokens, theme, glass, controls, haptics, gallery |
-| `features` | Onboarding, Home, add light, control screen, All Lights, light settings, firmware update, diagnostics |
+| `features` | Onboarding, Home, add light, control screen, groups, light settings, firmware update, diagnostics |
 
 ## 7. Run and test
 ```bash

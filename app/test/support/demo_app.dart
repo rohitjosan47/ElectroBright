@@ -31,7 +31,7 @@ final class DemoApp {
         'Hallway': ('demo-w', ChannelLayout.w),
       };
 
-  /// All Lights: an RGB, two identical RGBW lights (same type and
+  /// The groups: an RGB, two identical RGBW lights (same type and
   /// firmware), a tunable white and a single white.
   static const Map<String, (String, ChannelLayout)> groupLights =
       <String, (String, ChannelLayout)>{

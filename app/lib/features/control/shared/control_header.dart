@@ -6,7 +6,7 @@ import '../../../design/tokens/tokens.dart';
 import '../../../l10n/app_localizations.dart';
 
 /// Back, title with a line under it, and the power button (a light's screen,
-/// All Lights).
+/// a group).
 class ControlHeader extends StatelessWidget {
   const ControlHeader({
     required this.title,

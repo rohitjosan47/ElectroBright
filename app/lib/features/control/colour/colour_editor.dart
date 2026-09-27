@@ -317,31 +317,19 @@ class _ColourEditorState extends State<ColourEditor> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            _Labelled(
-              label: l.temperature,
-              value: l.kelvinValue((k / 10).round() * 10),
-              child: GlassSlider(
-                elevated: false,
-                value: k,
-                min: range.min,
-                max: range.max,
-                semanticLabel: l.temperature,
-                enabled: widget.enabled,
-                valueText: (double v) => l.kelvinValue(v.round()),
-                // Warm on the left, cool on the right, in the LEDs' own
-                // colours.
-                track: <Color>[
-                  ledColor(ChannelRole.ww, widget.whitePoints),
-                  ledColor(ChannelRole.cw, widget.whitePoints),
-                ],
-                onChangeStart: (_) {
-                  _start();
-                  _toFullRange(k, w.level);
-                },
-                onChanged: (double v) =>
-                    _apply(WhiteIntent(v, _whiteLevel), live: true),
-                onChangeEnd: (_) => _end(),
-              ),
+            KelvinSlider(
+              kelvin: k,
+              min: range.min,
+              max: range.max,
+              whitePoints: widget.whitePoints,
+              enabled: widget.enabled,
+              onChangeStart: () {
+                _start();
+                _toFullRange(k, w.level);
+              },
+              onChanged: (double v) =>
+                  _apply(WhiteIntent(v, _whiteLevel), live: true),
+              onChangeEnd: (_) => _end(),
             ),
           ],
         );
@@ -402,6 +390,56 @@ class _Channels extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// A colour temperature from [min] to [max] K, warm on the left and cool on
+/// the right in the LEDs' own colours, with its name and value above.
+class KelvinSlider extends StatelessWidget {
+  const KelvinSlider({
+    required this.kelvin,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+    this.whitePoints = const LedWhitePoints(),
+    this.enabled = true,
+    this.onChangeStart,
+    this.onChangeEnd,
+    super.key,
+  });
+
+  final double kelvin;
+  final double min;
+  final double max;
+  final LedWhitePoints whitePoints;
+  final bool enabled;
+  final VoidCallback? onChangeStart;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChangeEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppLocalizations l = AppLocalizations.of(context);
+    return _Labelled(
+      label: l.temperature,
+      value: l.kelvinValue((kelvin / 10).round() * 10),
+      child: GlassSlider(
+        elevated: false,
+        value: kelvin,
+        min: min,
+        max: max,
+        semanticLabel: l.temperature,
+        enabled: enabled,
+        valueText: (double v) => l.kelvinValue(v.round()),
+        track: <Color>[
+          ledColor(ChannelRole.ww, whitePoints),
+          ledColor(ChannelRole.cw, whitePoints),
+        ],
+        onChangeStart: (_) => onChangeStart?.call(),
+        onChanged: onChanged,
+        onChangeEnd: onChangeEnd,
       ),
     );
   }

@@ -72,10 +72,6 @@ final class GroupCapabilities {
       if (test(l)) l.id,
   ];
 
-  /// Lights the colour wheel reaches (the colour group's).
-  List<String> get colourIds =>
-      kind == GroupKind.colour ? _ids((GroupLight l) => l.hasColour) : const [];
-
   /// Lights a colour temperature reaches (the white group's CCT lights).
   List<String> get tunableIds =>
       kind == GroupKind.white ? _ids((GroupLight l) => l.tunable) : const [];
@@ -86,23 +82,7 @@ final class GroupCapabilities {
   bool get hasTunable => tunableIds.isNotEmpty;
   bool get hasFixedWhite => fixedWhiteIds.isNotEmpty;
 
-  /// The group's colour controls; null when it has none (only W lights).
-  ColourSurface? get surface => switch (kind) {
-    GroupKind.colour when lights.isNotEmpty => ColourSurface.colour,
-    GroupKind.white when hasTunable => ColourSurface.tunableWhite,
-    _ => null,
-  };
-
-  /// The layout whose own controls are [surface] (the colour editor's
-  /// value layout).
-  ChannelLayout? get surfaceLayout => switch (surface) {
-    ColourSurface.colour => ChannelLayout.rgb,
-    ColourSurface.tunableWhite => ChannelLayout.cct,
-    _ => null,
-  };
-
-  /// For the colour editor: the temperature range is the union of the CCT
-  /// lights' ranges.
+  /// The temperature slider's range: the union of the CCT lights' ranges.
   LedWhitePoints get whitePoints {
     final List<GroupLight> tunable = <GroupLight>[
       for (final GroupLight l in lights)
@@ -114,16 +94,6 @@ final class GroupCapabilities {
       cwK: tunable.map((GroupLight l) => l.whitePoints.cwK).max,
     );
   }
-
-  /// CCT lights that cannot reach [kelvin] (they stop at their end).
-  int limitedCount(double kelvin) => lights
-      .where(
-        (GroupLight l) =>
-            kind == GroupKind.white &&
-            l.tunable &&
-            (kelvin < l.whitePoints.wwK || kelvin > l.whitePoints.cwK),
-      )
-      .length;
 
   /// Every effect some light has, in the catalog's order.
   List<int> get effects =>

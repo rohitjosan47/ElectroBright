@@ -160,7 +160,7 @@ enum CommandOrigin {
   /// The user, on this light's own controls.
   user,
 
-  /// All Lights.
+  /// A group (Colour lights or White lights).
   group,
 
   /// The app itself: identify, channel test, catch-up, resync.
@@ -219,7 +219,7 @@ final class FixtureSession {
   Stream<EbEvent> get events => _events.stream;
 
   /// The setting ([EbKeys]) of each look change the user makes on this
-  /// light's own controls (not All Lights, not the app's own writes), as it
+  /// light's own controls (not a group, not the app's own writes), as it
   /// is made, also while the light is reconnecting.
   Stream<String> get userLookChanges => _userLook.stream;
 

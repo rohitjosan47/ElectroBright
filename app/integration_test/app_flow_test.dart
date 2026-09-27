@@ -1,6 +1,7 @@
 // End-to-end on a simulator or device with the demo lights: onboarding,
 // adding one light of every type through the real add flow, and each
-// type's controls checked against its firmware twin, then All Lights.
+// type's controls checked against its firmware twin, then the colour and
+// white groups.
 //
 //   flutter test integration_test -d <simulator id>
 import 'package:electrobright/app.dart';
@@ -12,9 +13,9 @@ import 'package:electrobright/design/components/glass_controls.dart';
 import 'package:electrobright/design/controls/glass_slider.dart';
 import 'package:electrobright/design/controls/hue_wheel.dart';
 import 'package:electrobright/features/add_fixture/add_light_screen.dart';
-import 'package:electrobright/features/all_lights/all_lights_screen.dart';
 import 'package:electrobright/features/control/control_screen.dart';
 import 'package:electrobright/features/firmware_update/firmware_update_screen.dart';
+import 'package:electrobright/features/groups/group_screen.dart';
 import 'package:electrobright/sim/eb_device_model.dart';
 import 'package:electrobright/sim/sim_central.dart';
 import 'package:flutter/material.dart';
@@ -177,16 +178,60 @@ void main() {
     expect(bedroom.color.values, <int>[0, 0, 0, 0, 255]);
     await back();
 
-    // The colour group: its lights at once, then back to Home.
-    await t.scrollUntilVisible(
-      find.byKey(const ValueKey<String>('group-card-colour')),
-      -300,
-      scrollable: find.byType(Scrollable).first,
+    // The colour group: brightness, colour and a preset.
+    Finder groupTab(String name) => find.descendant(
+      of: find.byWidgetPredicate(
+        (Widget w) => w.runtimeType.toString() == 'GlassSegmented<_GroupTab>',
+      ),
+      matching: find.text(name),
     );
-    await t.tap(find.byKey(const ValueKey<String>('group-card-colour')));
-    await waitFor(t, find.byType(AllLightsScreen));
-    await waitFor(t, find.text('3 of 3 connected'), seconds: 20);
-    const List<String> devices = <String>[
+    Future<void> openGroupCard(String kind) async {
+      final Finder card = find.byKey(ValueKey<String>('group-card-$kind'));
+      await t.scrollUntilVisible(
+        card,
+        -300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await t.tap(card);
+      await waitFor(t, find.byType(GroupScreen));
+    }
+
+    Finder groupList() => find
+        .descendant(
+          of: find.byType(GroupScreen),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+
+    /// Scrolls the group screen back to its tabs and opens [name].
+    Future<void> showTab(String name) async {
+      await t.scrollUntilVisible(groupTab(name), -200, scrollable: groupList());
+      await t.tap(groupTab(name));
+      await wait(t, 800);
+    }
+
+    /// Back to Home from the top of the group screen.
+    Future<void> leaveGroup() async {
+      await t.scrollUntilVisible(
+        find.descendant(
+          of: find.byType(GroupScreen),
+          matching: find.byIcon(Icons.chevron_left_rounded),
+        ),
+        -300,
+        scrollable: groupList(),
+      );
+      await back();
+    }
+
+    Finder onGroup(String text) => find.descendant(
+      of: find.byType(GroupScreen),
+      matching: find.text(text),
+    );
+
+    await openGroupCard('colour');
+    expect(onGroup('Colour lights'), findsOneWidget);
+    await waitFor(t, onGroup('3 of 3 connected'), seconds: 20);
+    const List<String> colourLights = <String>[
       'demo-rgb',
       'demo-rgbcct',
       'demo-rgbw',
@@ -197,59 +242,85 @@ void main() {
       const Offset(-80, 0),
     );
     await wait(t);
-    final int level = twin(devices.first).scene.brightness;
+    final int level = twin(colourLights.first).scene.brightness;
     expect(level, lessThan(255));
-    for (final String id in devices) {
+    for (final String id in colourLights) {
       expect(twin(id).scene.brightness, level, reason: id);
     }
-    // Colour: a hue on the wheel's ring reaches both colour lights alike.
-    if (find.byType(HueWheel).evaluate().isEmpty) {
-      await t.tap(find.text('Colour').last);
-      await wait(t, 800);
+    // Colour: a hue on the wheel's ring reaches every light alike, white
+    // LEDs off.
+    Future<void> ring(double side) async {
+      await t.ensureVisible(find.byType(HueWheel));
+      await wait(t, 300);
+      // The wheel is a square as tall as the widget, centred in it.
+      final Rect wheel = t.getRect(find.byType(HueWheel));
+      await t.tapAt(
+        wheel.center + Offset(side * (wheel.shortestSide / 2 - 14), 0),
+      );
+      await wait(t);
     }
-    final Rect wheel = t.getRect(find.byType(HueWheel));
-    await t.tapAt(wheel.center + Offset(wheel.width / 2 - 14, 0));
+
+    // The lights start white: full saturation first (the square's top
+    // right), then a hue on the ring.
+    final Rect square = t.getRect(find.byType(HueWheel));
+    await t.tapAt(
+      square.center + Offset(square.shortestSide, -square.shortestSide) * 0.2,
+    );
     await wait(t);
+    await ring(1);
     final List<int> rgb = twin('demo-rgb').scene.color.values;
     expect(
       rgb.reduce((int a, int b) => a > b ? a : b) -
           rgb.reduce((int a, int b) => a < b ? a : b),
       greaterThan(100),
     );
-    expect(twin('demo-rgbw').scene.color.values.take(3), rgb);
-    // An effect every light has.
-    await t.tap(find.text('Effects').first);
+    expect(twin('demo-rgbw').scene.color.values, <int>[...rgb, 0]);
+    expect(twin('demo-rgbcct').scene.color.values, <int>[...rgb, 0, 0]);
+    // Saved as a preset on the phone.
+    final Finder slot = find.byKey(const ValueKey<String>('group-preset-0'));
+    await t.tap(groupTab('Presets'));
     await wait(t, 800);
-    await t.tap(find.byKey(const ValueKey<String>('mode-3')));
-    await wait(t);
-    for (final String id in devices) {
-      expect(twin(id).scene.mode, 3, reason: id);
-    }
-    // Sleep timer on every light, then cancelled.
-    await t.tap(find.byKey(const ValueKey<String>('timer-button')));
+    await t.ensureVisible(slot);
+    await wait(t, 300);
+    await t.tap(slot);
     await wait(t, 800);
-    await t.tap(find.byKey(const ValueKey<String>('timer-start')));
+    await t.enterText(find.byType(TextField), 'Evening');
+    await t.tap(find.text('Save'));
     await wait(t);
-    for (final String id in devices) {
-      expect(twin(id).timerActive, isTrue, reason: id);
-    }
-    await t.tap(find.byKey(const ValueKey<String>('timer-button')));
-    await wait(t, 800);
-    await t.tap(find.byKey(const ValueKey<String>('timer-cancel')));
+    expect(onGroup('Evening'), findsOneWidget);
+    // Another colour; applying the preset brings the first one back.
+    await showTab('Colour');
+    await ring(-1);
+    expect(twin('demo-rgb').scene.color.values, isNot(rgb));
+    await showTab('Presets');
+    await t.ensureVisible(slot);
+    await wait(t, 300);
+    await t.tap(slot);
     await wait(t);
-    for (final String id in devices) {
-      expect(twin(id).timerActive, isFalse, reason: id);
-    }
-    await back();
-    expect(find.byType(AllLightsScreen), findsNothing);
+    expect(twin('demo-rgb').scene.color.values, rgb);
+    expect(onGroup('Current look: Evening'), findsOneWidget);
+    await leaveGroup();
+
+    // The white group: a temperature on the tunable white only.
+    await openGroupCard('white');
+    expect(onGroup('White lights'), findsOneWidget);
+    await waitFor(t, onGroup('2 of 2 connected'), seconds: 20);
+    final EbScene kitchenBefore = twin('demo-cct').scene;
+    final EbScene hallwayBefore = twin('demo-w').scene;
+    await slideTemperature(t, warm: false);
+    await wait(t);
+    expect(twin('demo-cct').scene.color, isNot(kitchenBefore.color));
+    expect(twin('demo-w').scene.color, hallwayBefore.color);
+    await leaveGroup();
+    expect(find.byType(GroupScreen), findsNothing);
     // Back on Home, at its card.
-    expect(
-      find.byKey(const ValueKey<String>('group-card-colour')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey<String>('groups-card')), findsOneWidget);
 
     // The light with the original firmware leads to the update screen.
     await scrollTo(t, find.text('Update needed'));
+    // Clear of the Add light button.
+    await t.ensureVisible(find.text('Update needed'));
+    await wait(t, 300);
     await t.tap(find.text('Update needed'));
     await waitFor(t, find.byType(FirmwareUpdateScreen));
   });
