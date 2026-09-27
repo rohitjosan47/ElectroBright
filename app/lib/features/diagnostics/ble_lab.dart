@@ -35,6 +35,10 @@ class _BleLabScreenState extends ConsumerState<BleLabScreen> {
   final List<SeenDevice> _found = <SeenDevice>[];
   FixtureSession? _session;
   Want? _want;
+
+  /// The light the lab registered (not a saved one): unregistered when the
+  /// lab connects another or closes, so it never outlives the lab.
+  String? _labId;
   FixtureStatus? _status;
   final List<String> _log = <String>[];
   bool _busy = false;
@@ -48,6 +52,10 @@ class _BleLabScreenState extends ConsumerState<BleLabScreen> {
     unawaited(_statusSub?.cancel());
     _lease?.release();
     _want?.release();
+    // Fields only (no ref while unmounting); the slot goes at once.
+    final String? id = _labId;
+    final BleStack? ble = _ble;
+    if (id != null && ble != null) unawaited(ble.connections.unregister(id));
     super.dispose();
   }
 
@@ -93,7 +101,8 @@ class _BleLabScreenState extends ConsumerState<BleLabScreen> {
   Future<void> _connect(SeenDevice d) async {
     final BleStack ble = _ble!;
     _want?.release();
-    await _statusSub?.cancel();
+    // Replaced below; nothing to wait for.
+    unawaited(_statusSub?.cancel());
     // A hint from the advertised name; the handshake confirms it.
     final ChannelLayout hint =
         EbFixtureCatalog.layoutFromBleName(d.name) ?? ChannelLayout.rgbw;
@@ -106,7 +115,12 @@ class _BleLabScreenState extends ConsumerState<BleLabScreen> {
       addedAt: DateTime.now(),
       whitePoints: EbFixtureCatalog.whitePointsFor(layout: hint),
     );
+    final String? previous = _labId;
+    if (previous != null && previous != f.id) {
+      unawaited(ble.connections.unregister(previous));
+    }
     ble.connections.register(f);
+    _labId = f.id;
     final FixtureSession s = ble.connections.session(f.id)!;
     _statusSub = s.statuses.listen(
       (FixtureStatus st) => setState(() => _status = st),
