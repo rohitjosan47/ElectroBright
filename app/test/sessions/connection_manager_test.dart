@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:electrobright/core/ble/ble_central.dart';
 import 'package:electrobright/core/ble/ble_link.dart';
@@ -63,6 +64,67 @@ final class _RefusingCentral implements BleCentral {
   Future<void> clearCache(String deviceId) => inner.clearCache(deviceId);
 }
 
+/// Links whose disconnect() fails in the plugin (and leaves the link up).
+final class _ThrowingCentral implements BleCentral {
+  _ThrowingCentral(this.inner);
+  final SimCentral inner;
+  int failedDisconnects = 0;
+
+  @override
+  Stream<BleAdapterState> get adapterState => inner.adapterState;
+  @override
+  BleAdapterState get currentAdapterState => inner.currentAdapterState;
+  @override
+  Stream<Advertisement> scan({
+    List<String> services = const <String>[],
+    ScanIntensity intensity = ScanIntensity.balanced,
+  }) => inner.scan(services: services, intensity: intensity);
+  @override
+  Future<BleLink> connect(
+    String deviceId, {
+    required Map<String, List<String>> services,
+    Duration? timeout,
+    Future<void>? cancel,
+  }) async => _ThrowingLink(
+    this,
+    await inner.connect(
+      deviceId,
+      services: services,
+      timeout: timeout,
+      cancel: cancel,
+    ),
+  );
+
+  @override
+  Future<void> clearCache(String deviceId) => inner.clearCache(deviceId);
+}
+
+final class _ThrowingLink implements BleLink {
+  _ThrowingLink(this._central, this._inner);
+  final _ThrowingCentral _central;
+  final BleLink _inner;
+
+  @override
+  String get deviceId => _inner.deviceId;
+  @override
+  int get mtu => _inner.mtu;
+  @override
+  Future<LinkLossReason> get closed => _inner.closed;
+  @override
+  Stream<Uint8List> subscribe(GattRef ref) => _inner.subscribe(ref);
+  @override
+  Future<void> write(
+    GattRef ref,
+    Uint8List value, {
+    required bool withResponse,
+  }) => _inner.write(ref, value, withResponse: withResponse);
+  @override
+  Future<void> disconnect() async {
+    _central.failedDisconnects++;
+    throw StateError('plugin disconnect failed');
+  }
+}
+
 final class _World {
   _World({bool android = false, int lights = 1}) {
     central = SimCentral(
@@ -121,6 +183,86 @@ final class _World {
 }
 
 void main() {
+  test('a disconnect() that throws never stops the cleanup: unregister and '
+      'dispose finish, sessions, links and leases are all released', () async {
+    final ManualScheduler clock = ManualScheduler();
+    final SimCentral sim = SimCentral(
+      scheduler: clock,
+      fixtures: <SimFixture>[
+        SimFixture.electroBright(id: 'dev0'),
+        SimFixture.electroBright(id: 'dev1'),
+      ],
+    );
+    final _ThrowingCentral radio = _ThrowingCentral(sim);
+    final Discovery discovery = Discovery(
+      central: radio,
+      scheduler: clock,
+      isAndroid: false,
+    );
+    final ConnectionManager manager = ConnectionManager(
+      central: radio,
+      discovery: discovery,
+      scheduler: clock,
+      policy: ConnectionPolicy(isAndroid: false),
+    );
+    Future<void> run(Duration d) async {
+      const Duration step = Duration(milliseconds: 10);
+      for (Duration t = Duration.zero; t < d; t += step) {
+        await _pump(5);
+        clock.advance(step);
+      }
+      await _pump();
+    }
+
+    final Map<String, bool> closed = <String, bool>{};
+    for (int i = 0; i < 2; i++) {
+      manager.register(
+        Fixture(
+          id: 'f$i',
+          deviceId: 'dev$i',
+          name: 'Light $i',
+          layout: ChannelLayout.rgbw,
+          driver: DriverKind.electroBright,
+          addedAt: DateTime(2026),
+        ),
+      );
+      // The statuses stream closes when the session is disposed.
+      manager
+          .session('f$i')!
+          .statuses
+          .listen((_) {}, onDone: () => closed['f$i'] = true);
+    }
+    final Want w0 = manager.want('f0', WantReason.screen);
+    final Want w1 = manager.want('f1', WantReason.screen);
+    await run(const Duration(seconds: 2));
+    expect(manager.session('f0')!.status.isReady, isTrue);
+    expect(manager.session('f1')!.status.isReady, isTrue);
+
+    // Unregister: completes (nothing thrown at the caller), the slot and its
+    // session are gone even though the plugin failed to disconnect.
+    w0.release();
+    await manager.unregister('f0');
+    expect(radio.failedDisconnects, 1);
+    expect(manager.session('f0'), isNull);
+    expect(manager.manages('dev0'), isFalse);
+    await _pump();
+    expect(closed['f0'], isTrue, reason: 'session disposed');
+
+    // A lost light keeps a reconnect scan going; dispose releases it and
+    // every session, whatever disconnect() does.
+    sim.setAvailable('dev1', available: false);
+    await run(const Duration(seconds: 1));
+    expect(discovery.strongestNeed, ScanNeed.reconnect);
+    await manager.dispose();
+    w1.release();
+    expect(manager.sessions, isEmpty);
+    await _pump();
+    expect(closed['f1'], isTrue, reason: 'session disposed');
+    expect(discovery.strongestNeed, isNull, reason: 'no lease left');
+    await discovery.dispose();
+    sim.dispose();
+  });
+
   for (final bool android in <bool>[false, true]) {
     test('${android ? 'Android' : 'iOS'}: an unsaved candidate dropped and '
         'the same light picked again at once connects, three times in a '

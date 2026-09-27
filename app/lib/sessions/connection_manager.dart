@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:math';
 
 import '../core/ble/ble_central.dart';
@@ -163,16 +164,45 @@ final class ConnectionManager {
       await closed;
     } finally {
       _closing.removeWhere((_, Future<void> f) => identical(f, closed));
+      _evaluate();
+      await s.session.dispose();
     }
-    _evaluate();
-    await s.session.dispose();
   }
 
   /// Closes [s]'s link: what a new connect to the same light waits for.
+  /// Never throws, so what follows it (the session's disposal) always runs.
   static Future<void> _close(_Slot s) async {
     // A connect in progress disconnects by itself once its slot is gone.
-    await s.connectDone;
-    await s.link?.disconnect();
+    try {
+      await s.connectDone;
+    } on Object catch (e, st) {
+      _logCleanupError('connect', e, st);
+    }
+    await _disconnect(s.link);
+  }
+
+  /// Closes [link]. A plugin error is logged (debug builds) and swallowed:
+  /// the cleanup after a disconnect must always run, and its callers
+  /// (screens being torn down, dispose) have nothing to do with it.
+  static Future<void> _disconnect(BleLink? link) async {
+    if (link == null) return;
+    try {
+      await link.disconnect();
+    } on Object catch (e, st) {
+      _logCleanupError('disconnect', e, st);
+    }
+  }
+
+  static void _logCleanupError(String what, Object e, StackTrace st) {
+    assert(() {
+      developer.log(
+        '$what failed during cleanup',
+        name: 'ConnectionManager',
+        error: e,
+        stackTrace: st,
+      );
+      return true;
+    }());
   }
 
   /// Registers a reason to keep [fixtureId] connected.
@@ -204,7 +234,7 @@ final class ConnectionManager {
   /// "unresponsive" recovery).
   Future<void> reconnect(String fixtureId) async {
     final _Slot? s = _slots[fixtureId];
-    await s?.link?.disconnect();
+    await _disconnect(s?.link);
   }
 
   /// Tries a light again that was given up on (e.g. "Firmware update needed"
@@ -256,7 +286,7 @@ final class ConnectionManager {
       s.retry = null;
       // A waiting connect would take the light the moment it appears.
       s.cancelConnect();
-      await s.link?.disconnect();
+      await _disconnect(s.link);
     }
     await _endBackgroundTask();
   }
@@ -291,7 +321,7 @@ final class ConnectionManager {
     for (final _Slot s in _slots.values) {
       s.retry?.cancel();
       s.idleTimer?.cancel();
-      await s.link?.disconnect();
+      await _disconnect(s.link);
       await s.session.dispose();
     }
     _slots.clear();
@@ -336,7 +366,7 @@ final class ConnectionManager {
       if (s.wants.isEmpty && s.link != null && s.idleTimer == null) {
         s.idleTimer = _scheduler.after(policy.idleGrace, () {
           s.idleTimer = null;
-          if (s.wants.isEmpty) unawaited(s.link?.disconnect());
+          if (s.wants.isEmpty) unawaited(_disconnect(s.link));
         });
       }
       if (s.wants.isEmpty && s.link == null && !s.connecting) {
@@ -422,7 +452,7 @@ final class ConnectionManager {
             .toList()
           ..sort((_Slot a, _Slot b) => a.lastUsed.compareTo(b.lastUsed));
     if (idle.isEmpty) return false;
-    unawaited(idle.first.link!.disconnect());
+    unawaited(_disconnect(idle.first.link));
     return false; // room appears once the link has closed
   }
 
@@ -472,7 +502,7 @@ final class ConnectionManager {
           s.wants.isEmpty ||
           _inBackground ||
           !identical(_slots[f.id], s)) {
-        await link.disconnect();
+        await _disconnect(link);
         return;
       }
       s.link = link;
@@ -488,7 +518,7 @@ final class ConnectionManager {
       // the user retries it.
       s.link = null;
       await s.session.linkClosed();
-      await link?.disconnect();
+      await _disconnect(link);
       s.session.setPhase(
         LinkPhase.incompatible,
         incompatibility: e.kind,
@@ -513,7 +543,7 @@ final class ConnectionManager {
         _failed(s);
       }
     } on Object {
-      await link?.disconnect();
+      await _disconnect(link);
       _failed(s);
     } finally {
       honest?.cancel();
@@ -528,7 +558,7 @@ final class ConnectionManager {
     unawaited(s.eventSub?.cancel());
     s.eventSub = s.session.events.listen((EbEvent e) {
       // The light stopped answering: drop and reconnect.
-      if (e is EbUnresponsive) unawaited(s.link?.disconnect());
+      if (e is EbUnresponsive) unawaited(_disconnect(s.link));
     });
   }
 
