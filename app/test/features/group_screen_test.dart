@@ -14,6 +14,7 @@ import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/design/tone/tone_scope.dart';
 import 'package:electrobright/features/control/colour/colour_editor.dart';
 import 'package:electrobright/features/control/control_screen.dart';
+import 'package:electrobright/features/control/shared/brightness_pill_slider.dart';
 import 'package:electrobright/features/control/effects/effect_colours.dart';
 import 'package:electrobright/features/groups/group_screen.dart';
 import 'package:electrobright/l10n/app_localizations.dart';
@@ -243,6 +244,50 @@ void main() {
     for (final String n in colourLights) {
       expect(d.twin(n).brightness, b, reason: n);
     }
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('mixed shows the group\'s last master, never a value derived '
+      'from the lights; after Rejoin all it is not mixed', (
+    WidgetTester t,
+  ) async {
+    final DemoApp d = await open(t);
+    double pill() =>
+        t.widget<BrightnessPillSlider>(find.byType(BrightnessPillSlider)).value;
+    // No master yet: "Mixed" over a full pill (the master every level is
+    // relative to), never the lights' mean or half way.
+    d.session('Desk strip').setBrightness(60, origin: CommandOrigin.system);
+    await DemoApp.settle(t, 1);
+    expect(find.text('Mixed'), findsOneWidget);
+    expect(pill(), 1);
+
+    final GroupSession group = groupOf(t);
+    await group.setBrightness(200);
+    await DemoApp.settle(t, 1);
+    expect(find.text('Mixed'), findsNothing);
+    expect(pill(), 200 / 255);
+    // Lights that differ: still the master (not their mean, not half way).
+    d.session('Desk strip').setBrightness(30, origin: CommandOrigin.system);
+    d.session('Living room').setBrightness(90, origin: CommandOrigin.system);
+    await DemoApp.settle(t, 1);
+    expect(find.text('Mixed'), findsOneWidget);
+    expect(pill(), 200 / 255);
+
+    // A change on a light's own controls, then Rejoin all: it takes the
+    // group's look, and nothing reads as mixed.
+    d.session('Reading lamp').setBrightness(20);
+    await DemoApp.settle(t, 1);
+    await t.ensureVisible(find.byKey(const ValueKey<String>('rejoin-all')));
+    await t.tap(find.byKey(const ValueKey<String>('rejoin-all')));
+    await DemoApp.settle(t, 2);
+    group.rejoin(d.id('Desk strip'));
+    group.rejoin(d.id('Living room'));
+    await DemoApp.settle(t, 2);
+    for (final String n in colourLights) {
+      expect(d.twin(n).brightness, 200, reason: n);
+    }
+    expect(find.text('Mixed'), findsNothing);
+    expect(pill(), 200 / 255);
     await DemoApp.shutDown(t);
   });
 
@@ -531,7 +576,7 @@ void main() {
     await DemoApp.shutDown(t);
   });
 
-  testWidgets('a drag on the open slider moves only that light, on release', (
+  testWidgets('a drag on the open slider moves only that light, live', (
     WidgetTester t,
   ) async {
     final DemoApp d = await open(t);
@@ -539,11 +584,28 @@ void main() {
     await tapRow(t, id);
     final Finder trim = find.byKey(ValueKey<String>('trim-$id'));
     final int other = d.twin('Living room').brightness;
-    await t.drag(trim, const Offset(-120, 0));
+    final Rect r = t.getRect(trim);
+    final TestGesture g = await t.startGesture(
+      Offset(r.right - 4, r.center.dy),
+    );
+    final List<int> seen = <int>[];
+    for (int i = 0; i < 3; i++) {
+      await g.moveBy(Offset(-r.width * 0.2, 0));
+      await DemoApp.settle(t, 1);
+      seen.add(d.twin('Reading lamp').brightness);
+      expect(d.twin('Living room').brightness, other);
+    }
+    // It follows the finger before the release, and is saved only then.
+    expect(seen.first, lessThan(255));
+    expect(seen, orderedEquals(<int>[...seen]..sort((int a, int b) => b - a)));
+    expect(seen.toSet().length, 3);
+    expect(groupOf(t).trimOf(id), 1);
+    await g.up();
     await DemoApp.settle(t, 1);
     expect(groupOf(t).trimOf(id), lessThan(1));
-    expect(d.twin('Reading lamp').brightness, lessThan(255));
+    expect(d.twin('Reading lamp').brightness, lessThan(seen.first));
     expect(d.twin('Living room').brightness, other);
+    expect(groupOf(t).isOwn(id), isFalse);
     await DemoApp.shutDown(t);
   });
 

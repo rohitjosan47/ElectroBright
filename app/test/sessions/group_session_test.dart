@@ -645,27 +645,171 @@ void main() {
   });
 
   test(
-    'rejoining with nothing to catch up does not make a light follow',
+    'rejoining with no group look stored does not make a light follow',
     () async {
       await build();
       await activate(colour());
-      await settle(colour().setBrightness(150));
-      session(a).setBrightness(70);
       colour().setExcluded(b, excluded: true);
-      await run(const Duration(seconds: 1));
-      expect(colour().isOwn(a), isTrue);
       colour().deactivate();
       colour().rejoinAll();
       await run(const Duration(seconds: 1));
-      for (final String id in <String>[a, b]) {
-        expect(colour().isOwn(id) || colour().isExcluded(id), isFalse);
-        expect(colour().isFollowing(id), isFalse, reason: id);
-      }
-      session(a).setBrightness(40);
-      await run(const Duration(seconds: 1));
-      expect(colour().isOwn(a), isFalse);
+      expect(colour().isExcluded(b), isFalse);
+      expect(colour().isFollowing(b), isFalse);
+      expect(store.read(GroupSession.lookKey(GroupKind.colour)), isNull);
     },
   );
+
+  /// A new GroupSessions on the same store: the app restarted.
+  void restart() {
+    groups.dispose();
+    groups = GroupSessions(
+      registry: registry,
+      connections: manager,
+      store: store,
+      scheduler: clock,
+    );
+  }
+
+  test('colour group: rejoining in a fresh activation applies the stored '
+      'look, then the master at its trim, then power', () async {
+    await build();
+    await activate(colour());
+    const HsvIntent blue = HsvIntent(Hsv(240, 1, 1));
+    await settle(colour().setColour(blue));
+    await settle(colour().setMode(3));
+    await settle(colour().setSpeed(3, 8));
+    await settle(colour().setFrequency(3, 2));
+    await settle(colour().setColorMode(EbColorModeKind.club, 1));
+    await settle(colour().setBrightness(150));
+    colour().setTrim(a, 0.5);
+    await run(const Duration(seconds: 1));
+    // The user takes Shelf elsewhere on its own screen.
+    session(a).setColor(encoded(a, const HsvIntent(Hsv(0, 1, 1))));
+    unawaited(session(a).setMode(5));
+    session(a).setBrightness(40);
+    await run(const Duration(seconds: 2));
+    expect(colour().isOwn(a), isTrue);
+    colour().deactivate();
+    restart();
+
+    await activate(colour());
+    // Own lights don't count toward the group's look.
+    expect(colour().look.brightness, const Common<int>.of(150));
+    expect(colour().look.master, 150);
+    colour().rejoin(a);
+    await run(const Duration(seconds: 3));
+    expect(twin(a).scene.color, encoded(a, blue));
+    expect(twin(a).scene.mode, 3);
+    expect(twin(a).scene.speeds[2], 8);
+    expect(twin(a).scene.frequencies[2], 2);
+    expect(twin(a).scene.clubColorMode, 1);
+    expect(twin(a).scene.brightness, GroupSession.trimmed(150, 0.5));
+    expect(twin(a).sleeping, isFalse);
+    expect(colour().isFollowing(a), isTrue);
+    expect(colour().isOwn(a), isFalse);
+    // It matches the group at once: nothing reads as mixed.
+    expect(colour().look.brightness, const Common<int>.of(150));
+    expect(colour().look.mode, const Common<int>.of(3));
+    expect(colour().look.colour, const Common<ColourIntent>.of(blue));
+  });
+
+  test('white group: rejoining in a fresh activation applies the stored '
+      'temperature, mode and master', () async {
+    await build(ids: <String>[cct, cct2, w]);
+    await activate(white());
+    await settle(white().setTemperature(3000));
+    await settle(white().setMode(2));
+    await settle(white().setBrightness(120));
+    await settle(white().setPower(on: false));
+    session(cct).setBrightness(30);
+    unawaited(session(cct).setMode(4));
+    await run(const Duration(seconds: 2));
+    expect(white().isOwn(cct), isTrue);
+    white().deactivate();
+    restart();
+
+    await activate(white());
+    white().rejoin(cct);
+    await run(const Duration(seconds: 3));
+    expect(twin(cct).scene.color, twin(cct2).scene.color);
+    expect(twin(cct).scene.mode, 2);
+    expect(twin(cct).scene.brightness, 120);
+    expect(twin(cct).sleeping, isTrue, reason: 'power comes last');
+    expect(white().isFollowing(cct), isTrue);
+    expect(white().look.brightness, const Common<int>.of(120));
+    expect(white().look.mode, const Common<int>.of(2));
+  });
+
+  test('Rejoin all updates every rejoined light\'s actual state; a light '
+      'not connected gets it when it connects with the group open', () async {
+    await build();
+    await activate(colour());
+    await settle(colour().setBrightness(200));
+    colour().setExcluded(b, excluded: true);
+    await settle(colour().setMode(rainbow));
+    await settle(colour().setBrightness(90));
+    unawaited(session(a).setMode(5));
+    unawaited(session(x).setMode(6));
+    await run(const Duration(seconds: 2));
+    expect(colour().isOwn(a) && colour().isOwn(x), isTrue);
+    available(x, on: false);
+    await run(const Duration(seconds: 3));
+    colour().deactivate();
+    restart();
+
+    colour().activate();
+    await run(const Duration(seconds: 10));
+    expect(colour().status.ready, 2, reason: 'b is left out, x is away');
+    colour().rejoinAll();
+    await run(const Duration(seconds: 3));
+    for (final String id in <String>[rgb, a, b]) {
+      expect(twin(id).scene.mode, rainbow, reason: id);
+      expect(twin(id).scene.brightness, 90, reason: id);
+      expect(colour().isFollowing(id), isTrue, reason: id);
+    }
+    expect(twin(x).scene.mode, 6, reason: 'not connected yet');
+    expect(colour().isFollowing(x), isFalse);
+    expect(store.read(GroupSession.rejoiningKey), <Object?>[x]);
+
+    available(x, on: true);
+    await run(const Duration(seconds: 20));
+    expect(session(x).status.isReady, isTrue);
+    expect(twin(x).scene.mode, rainbow);
+    expect(twin(x).scene.brightness, 90);
+    expect(colour().isFollowing(x), isTrue);
+    expect(store.read(GroupSession.rejoiningKey), isEmpty);
+    expect(colour().look.brightness, const Common<int>.of(90));
+    expect(colour().look.mode, const Common<int>.of(rainbow));
+  });
+
+  test('a live level drag sends intermediate values to that light only; '
+      'the release saves it', () async {
+    await build();
+    await activate(colour());
+    await settle(colour().setBrightness(200));
+    final Map<String, int> before = <String, int>{
+      for (final String id in colourDefaults) id: twin(id).scene.brightness,
+    };
+    final List<int> seen = <int>[];
+    colour().beginTrim(a);
+    for (final double t in <double>[0.8, 0.6, 0.4, 0.3]) {
+      colour().setTrim(a, t, live: true);
+      await run(const Duration(milliseconds: 200));
+      seen.add(twin(a).scene.brightness);
+      expect(colour().trimOf(a), 1, reason: 'not saved mid-drag');
+    }
+    expect(seen, <int>[160, 120, 80, 60]);
+    colour().setTrim(a, 0.3);
+    colour().endTrim(a);
+    await run(const Duration(seconds: 1));
+    expect(colour().trimOf(a), 0.3);
+    expect(twin(a).scene.brightness, 60);
+    for (final String id in colourDefaults.where((String id) => id != a)) {
+      expect(twin(id).scene.brightness, before[id], reason: id);
+    }
+    expect(colour().isOwn(a), isFalse, reason: 'a trim never detaches');
+    expect(colour().isFollowing(a), isTrue);
+  });
 
   test('own, following, excluded and trims of both groups survive a restart; '
       'a forgotten light leaves every list', () async {

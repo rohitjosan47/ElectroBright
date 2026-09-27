@@ -194,9 +194,16 @@ final class GroupLook {
     this.policeColorMode = const Common<int>.none(),
     this.policeA = const Common<Rgb>.none(),
     this.policeB = const Common<Rgb>.none(),
+    this.master,
   });
 
+  /// The lights' master brightness, as they show it; "Mixed" when they
+  /// differ (then [master] is what the pill shows).
   final Common<int> brightness;
+
+  /// The group's last master brightness (its reference look); null before
+  /// the first group brightness or preset.
+  final int? master;
   final bool anyOn;
   final Common<int> mode;
   final Common<ColourIntent> colour;
@@ -241,9 +248,11 @@ final class GroupLook {
       other.clubColorMode == clubColorMode &&
       other.policeColorMode == policeColorMode &&
       other.policeA == policeA &&
-      other.policeB == policeB;
+      other.policeB == policeB &&
+      other.master == master;
   @override
   int get hashCode => Object.hash(
+    master,
     brightness,
     anyOn,
     mode,
@@ -327,6 +336,130 @@ final class _PresetLook extends _Look {
   final GroupPreset preset;
 }
 
+/// The group's reference look (persisted per group): what every light the
+/// group drives shows, as far as group commands and presets set it. A light
+/// that rejoins gets it, so it matches the group at once, also in a later
+/// session.
+final class _Reference {
+  _Reference(this._store, this._key) {
+    if (_store.read(_key) case final Map<String, Object?> j) _read(j);
+  }
+
+  final JsonStore _store;
+  final String _key;
+
+  /// Colour group: the colour; white group: the temperature (full level).
+  ColourIntent? colour;
+  int? mode;
+  final Map<int, int> speeds = <int, int>{};
+  final Map<int, int> frequencies = <int, int>{};
+  final Map<EbColorModeKind, int> colorModes = <EbColorModeKind, int>{};
+  final Map<EbPoliceSlot, HsvIntent> police = <EbPoliceSlot, HsvIntent>{};
+  int? master;
+  bool? power;
+
+  /// The preset last applied (each light's own look); later commands apply
+  /// on top of it.
+  GroupPreset? preset;
+
+  bool get isEmpty =>
+      colour == null &&
+      mode == null &&
+      speeds.isEmpty &&
+      frequencies.isEmpty &&
+      colorModes.isEmpty &&
+      police.isEmpty &&
+      master == null &&
+      power == null &&
+      preset == null;
+
+  /// A preset replaces the whole look.
+  void applied(GroupPreset p) {
+    colour = null;
+    mode = null;
+    speeds.clear();
+    frequencies.clear();
+    colorModes.clear();
+    police.clear();
+    power = null;
+    master = p.master;
+    preset = p;
+  }
+
+  /// Drops the lights not in [ids] from the preset it keeps.
+  void prune(Set<String> ids) {
+    final GroupPreset? p = preset;
+    if (p == null) return;
+    final GroupPreset? kept = p.keeping(ids);
+    if (identical(kept, p)) return;
+    preset = kept;
+    save();
+  }
+
+  void save() => _store.write(_key, <String, Object?>{
+    if (colour case WhiteIntent(:final double kelvin)) 'kelvin': kelvin,
+    if (colour case final HsvIntent c) 'colour': GroupPresetLight.pickJson(c),
+    if (mode case final int m) 'mode': m,
+    if (speeds.isNotEmpty) 'speeds': _intMap(speeds),
+    if (frequencies.isNotEmpty) 'frequencies': _intMap(frequencies),
+    if (colorModes.isNotEmpty)
+      'colorModes': <String, Object?>{
+        for (final MapEntry<EbColorModeKind, int> e in colorModes.entries)
+          e.key.name: e.value,
+      },
+    if (police.isNotEmpty)
+      'police': <String, Object?>{
+        for (final MapEntry<EbPoliceSlot, HsvIntent> e in police.entries)
+          e.key.name: GroupPresetLight.pickJson(e.value),
+      },
+    if (master case final int m) 'master': m,
+    if (power case final bool p) 'power': p,
+    if (preset case final GroupPreset p) 'preset': p.toJson(),
+  });
+
+  static Map<String, Object?> _intMap(Map<int, int> m) => <String, Object?>{
+    for (final int k in m.keys.toList()..sort()) '$k': m[k],
+  };
+
+  void _read(Map<String, Object?> j) {
+    colour = switch (j) {
+      {'kelvin': final num k} => WhiteIntent(k.toDouble(), 1),
+      {'colour': final Object c} => switch (GroupPresetLight.pickFromJson(c)) {
+        final HsvIntent i => i,
+        _ => null,
+      },
+      _ => null,
+    };
+    if (j['mode'] case final int m) mode = m;
+    void ints(Object? raw, Map<int, int> into) {
+      if (raw is! Map<String, Object?>) return;
+      for (final MapEntry<String, Object?> e in raw.entries) {
+        if ((int.tryParse(e.key), e.value) case (final int k, final int v)) {
+          into[k] = v;
+        }
+      }
+    }
+
+    ints(j['speeds'], speeds);
+    ints(j['frequencies'], frequencies);
+    if (j['colorModes'] case final Map<String, Object?> m) {
+      for (final EbColorModeKind k in EbColorModeKind.values) {
+        if (m[k.name] case final int v) colorModes[k] = v;
+      }
+    }
+    if (j['police'] case final Map<String, Object?> m) {
+      for (final EbPoliceSlot s in EbPoliceSlot.values) {
+        if (GroupPresetLight.pickFromJson(m[s.name]) case final HsvIntent i) {
+          police[s] = i;
+        }
+      }
+    }
+    if (j['master'] case final int m) master = m;
+    if (j['power'] case final bool p) power = p;
+    preset = GroupPreset.fromJson(j['preset']);
+  }
+}
+
 /// The per-light group keys, shared by both groups: a light is in one group
 /// only, so they stay unambiguous.
 final class _GroupMemory {
@@ -334,6 +467,7 @@ final class _GroupMemory {
     excluded = _readIds(GroupSession.excludedKey);
     following = _readIds(GroupSession.followingKey);
     own = _readIds(GroupSession.ownKey);
+    rejoining = _readIds(GroupSession.rejoiningKey);
     trim = <String, double>{
       if (_store.read(GroupSession.trimKey) case final Map<String, Object?> m)
         for (final MapEntry<String, Object?> e in m.entries)
@@ -346,6 +480,10 @@ final class _GroupMemory {
   late Set<String> excluded;
   late Set<String> following;
   late Set<String> own;
+
+  /// Rejoined while not connected: they get the reference look when they
+  /// connect with the group open.
+  late Set<String> rejoining;
   late Map<String, double> trim;
 
   Set<String> _readIds(String key) => <String>{
@@ -361,6 +499,7 @@ final class _GroupMemory {
       ...excluded,
       ...following,
       ...own,
+      ...rejoining,
       ...trim.keys,
     ].any((String id) => !ids.contains(id))) {
       return;
@@ -368,6 +507,7 @@ final class _GroupMemory {
     excluded = excluded.where(ids.contains).toSet();
     following = following.where(ids.contains).toSet();
     own = own.where(ids.contains).toSet();
+    rejoining = rejoining.where(ids.contains).toSet();
     trim.removeWhere((String id, _) => !ids.contains(id));
     save();
   }
@@ -376,6 +516,7 @@ final class _GroupMemory {
     _store.write(GroupSession.excludedKey, excluded.toList()..sort());
     _store.write(GroupSession.followingKey, following.toList()..sort());
     _store.write(GroupSession.ownKey, own.toList()..sort());
+    _store.write(GroupSession.rejoiningKey, rejoining.toList()..sort());
     _store.write(GroupSession.trimKey, <String, Object?>{
       for (final String id in trim.keys.toList()..sort()) id: trim[id],
     });
@@ -440,6 +581,7 @@ final class GroupSession {
     required this._onActivate,
   }) {
     _presets = GroupPresets.read(_store, kind);
+    _ref = _Reference(_store, lookKey(kind));
     _regSub = _registry.changes.listen((_) => _onFixtures());
     _onFixtures();
   }
@@ -454,6 +596,13 @@ final class GroupSession {
 
   /// Lights detached by a change on their own controls (persisted).
   static const String ownKey = 'group.own';
+
+  /// Lights rejoined while not connected (persisted).
+  static const String rejoiningKey = 'group.rejoining';
+
+  /// The group's reference look (persisted): `group.look.colour` and
+  /// `group.look.white`.
+  static String lookKey(GroupKind kind) => 'group.look.${kind.name}';
 
   /// Per-light brightness trim, id -> 0.05..1 (persisted; 1 when absent).
   static const String trimKey = 'group.trim';
@@ -486,6 +635,10 @@ final class GroupSession {
   bool _disposed = false;
   late List<GroupPreset?> _presets;
   int? _activePreset;
+  late final _Reference _ref;
+
+  /// A level-in-group drag: the light and the master it trims.
+  (String, int)? _trimDrag;
 
   // What the user sent in this activation (never persisted).
   _Look? _look;
@@ -555,9 +708,9 @@ final class GroupSession {
   }
 
   /// Takes a light back into the group (from its own settings or from being
-  /// left out). While the group is active it catches up with what the group
-  /// was sent; it follows the group again only once a group command or that
-  /// catch-up reaches it.
+  /// left out) and gives it the group's reference look: at once if it is
+  /// connected, otherwise when it connects with the group open. It follows
+  /// the group again once that look (or a group command) reaches it.
   void rejoin(String id) => _rejoin(<String>[id]);
 
   /// [rejoin] for every light of the group.
@@ -569,43 +722,83 @@ final class GroupSession {
     for (final String id in known) {
       _memory.own.remove(id);
       _memory.excluded.remove(id);
+      if (!_ref.isEmpty) _memory.rejoining.add(id);
     }
     _memory.save();
-    if (_active) {
-      _allocate();
-      for (final String id in known) {
-        if (_ready.contains(id)) _catchUp(id);
-      }
+    if (_active) _allocate();
+    for (final String id in known) {
+      if (_ready.contains(id)) _applyReference(id);
     }
     _emit();
   }
 
+  /// Starts a level-in-group drag on light [id] (that light alone).
+  void beginTrim(String id) {
+    final FixtureSession? s = _trimTarget(id);
+    if (s == null) return;
+    _trimDrag = (id, _trimMaster(id, s.status.state!));
+    s.beginGesture(EbKeys.brightness);
+  }
+
+  /// Ends it: the final value comes with [setTrim].
+  void endTrim(String id) {
+    if (_trimDrag?.$1 != id) return;
+    _trimDrag = null;
+    _connections.session(id)?.endGesture(EbKeys.brightness);
+  }
+
   /// Sets a light's brightness trim; it applies to that light at once (as a
-  /// group change: it never detaches the light).
-  void setTrim(String id, double trim) {
+  /// group change: it never detaches the light). [live]: a frame of a drag,
+  /// sent to that light only and not saved; the release saves it.
+  void setTrim(String id, double trim, {bool live = false}) {
     if (!_isMine(id)) return;
     final double t = _clampTrim(trim);
     final double old = trimOf(id);
-    if (t == old) return;
-    if (t == 1) {
-      _memory.trim.remove(id);
-    } else {
-      _memory.trim[id] = t;
+    final bool dragged = _trimDrag?.$1 == id;
+    if (!live && t != old) {
+      if (t == 1) {
+        _memory.trim.remove(id);
+      } else {
+        _memory.trim[id] = t;
+      }
+      _memory.save();
     }
-    _memory.save();
+    if (t != old || dragged) {
+      final FixtureSession? s = _trimTarget(id);
+      if (s != null) {
+        final int master = dragged
+            ? _trimDrag!.$2
+            : _trimMaster(id, s.status.state!, trim: old);
+        s.setBrightness(
+          trimmed(master, t),
+          live: live,
+          origin: CommandOrigin.group,
+        );
+      }
+    }
+    if (!live) _emit();
+  }
+
+  /// The light a trim moves: ready, driven by the group and on.
+  FixtureSession? _trimTarget(String id) {
     final FixtureSession? s = _connections.session(id);
     final EbDeviceState? st = s?.status.state;
-    if (s != null &&
-        st != null &&
-        !st.sleeping &&
-        _ready.contains(id) &&
-        _drives(id)) {
-      final int master =
-          _masterFor(id) ?? math.min(255, (st.scene.brightness / old).round());
-      s.setBrightness(trimmed(master, t), origin: CommandOrigin.group);
+    if (s == null ||
+        st == null ||
+        st.sleeping ||
+        !_ready.contains(id) ||
+        !_drives(id)) {
+      return null;
     }
-    _emit();
+    return s;
   }
+
+  /// The master a light's trim applies to: the last one sent, else the
+  /// group's reference, else its brightness at its [trim].
+  int _trimMaster(String id, EbDeviceState st, {double? trim}) =>
+      _masterFor(id) ??
+      _ref.master ??
+      math.min(255, (st.scene.brightness / (trim ?? trimOf(id))).round());
 
   static double _clampTrim(double t) => t.clamp(minTrim, 1.0);
 
@@ -687,6 +880,7 @@ final class GroupSession {
   Future<GroupResult> setPower({required bool on}) {
     _command();
     _power = on;
+    _remember(() => _ref.power = on);
     // Turning off cancels the sleep timers.
     if (!on) _timer = null;
     return _send(
@@ -699,6 +893,7 @@ final class GroupSession {
   Future<GroupResult> setBrightness(int v, {bool live = false}) {
     _command();
     _brightness = v;
+    _remember(() => _ref.master = v, save: !live);
     return _send((FixtureSession s, _) {
       s.setBrightness(
         trimmed(v, trimOf(s.fixture.id)),
@@ -739,6 +934,7 @@ final class GroupSession {
     }
     _command();
     _look = _ColourLook(intent);
+    _remember(() => _ref.colour = intent, save: !live);
     return _send(
       (FixtureSession s, _) {
         _sendColour(s, _colourFor(s.fixture, intent)!, live: live);
@@ -757,6 +953,7 @@ final class GroupSession {
   Future<GroupResult> setMode(int mode) {
     _command();
     _look = _ModeLook(mode);
+    _remember(() => _ref.mode = mode);
     return _send(
       (FixtureSession s, _) => s.setMode(mode, origin: CommandOrigin.group),
       supported: (_, LightCapabilities c) => c.supportsMode(mode),
@@ -769,6 +966,7 @@ final class GroupSession {
     if (l is _ModeLook && l.mode == mode) {
       _look = _ModeLook(mode, speed: v, frequency: l.frequency);
     }
+    _remember(() => _ref.speeds[mode] = v);
     return _send(
       (FixtureSession s, _) => s.setSpeed(mode, v, origin: CommandOrigin.group),
       supported: (_, LightCapabilities c) => c.supportsMode(mode),
@@ -781,6 +979,7 @@ final class GroupSession {
     if (l is _ModeLook && l.mode == mode) {
       _look = _ModeLook(mode, speed: l.speed, frequency: v);
     }
+    _remember(() => _ref.frequencies[mode] = v);
     return _send(
       (FixtureSession s, _) =>
           s.setFrequency(mode, v, origin: CommandOrigin.group),
@@ -797,6 +996,7 @@ final class GroupSession {
     }
     _command();
     _colorModes[k] = v;
+    _remember(() => _ref.colorModes[k] = v);
     return _send(
       (FixtureSession s, _) =>
           s.setColorMode(k, v, origin: CommandOrigin.group),
@@ -813,6 +1013,7 @@ final class GroupSession {
     _command();
     final HsvIntent i = GroupCapabilities.colourPick(pick);
     _police[slot] = i;
+    _remember(() => _ref.police[slot] = i);
     return _send(
       (FixtureSession s, _) => s.setPoliceColor(
         slot,
@@ -836,6 +1037,13 @@ final class GroupSession {
       (FixtureSession s, _) => s.setTimer(seconds),
       supported: (_, LightCapabilities c) => c.hasTimer,
     );
+  }
+
+  /// Updates the reference look; [save]: also persist it (a drag saves on
+  /// release).
+  void _remember(void Function() change, {bool save = true}) {
+    change();
+    if (save) _ref.save();
   }
 
   /// A look command: the applied preset is no longer the group's look.
@@ -928,6 +1136,7 @@ final class GroupSession {
     _colorModes.clear();
     _police.clear();
     _activePreset = slot;
+    _remember(() => _ref.applied(p));
     _emit();
     return _send((FixtureSession s, LightCapabilities c) {
       final String id = s.fixture.id;
@@ -1128,6 +1337,7 @@ final class GroupSession {
     }
     // Every group key and preset forgets lights that are gone.
     _memory.prune(all);
+    _ref.prune(all);
     final List<GroupPreset?> kept = <GroupPreset?>[
       for (final GroupPreset? p in _presets) p?.keeping(all),
     ];
@@ -1152,7 +1362,9 @@ final class GroupSession {
     final bool ready = st.isReady;
     final bool became = ready && _ready.add(id);
     if (!ready) _ready.remove(id);
-    if (became && _active && _drives(id)) _catchUp(id);
+    if (became && _active && _drives(id)) {
+      _memory.rejoining.contains(id) ? _applyReference(id) : _catchUp(id);
+    }
     _emit();
   }
 
@@ -1273,18 +1485,94 @@ final class GroupSession {
         sent = true;
       }
     }
+    sent |= _catchUpTimer(s, caps);
+    if (sent && _memory.following.add(id)) _memory.save();
+  }
+
+  /// The sleep timer sent in this activation, as the time it has left.
+  bool _catchUpTimer(FixtureSession s, LightCapabilities caps) {
     final (Duration?,)? timer = _timer;
-    if (timer != null && caps.hasTimer) {
-      final Duration? deadline = timer.$1;
-      if (deadline == null) {
-        if (s.status.state?.timerDeadline != null) unawaited(s.setTimer(0));
-      } else {
-        final Duration left = deadline - _scheduler.now;
-        if (left >= minCatchUpTimer) unawaited(s.setTimer(left.inSeconds));
-      }
+    if (timer == null || !caps.hasTimer) return false;
+    final Duration? deadline = timer.$1;
+    if (deadline == null) {
+      if (s.status.state?.timerDeadline != null) unawaited(s.setTimer(0));
+    } else {
+      final Duration left = deadline - _scheduler.now;
+      if (left >= minCatchUpTimer) unawaited(s.setTimer(left.inSeconds));
+    }
+    return true;
+  }
+
+  /// A rejoined light that is ready gets the group's reference look, as far
+  /// as it applies to it: its own look from the applied preset, then the
+  /// colour (or temperature), mode with speeds and frequencies, colour
+  /// sources and beacons set since, then the master at its trim, then
+  /// power (and the activation's timer). It follows the group once that
+  /// reached it; with no reference look nothing is sent.
+  void _applyReference(String id) {
+    final FixtureSession? s = _connections.session(id);
+    _memory.rejoining.remove(id);
+    if (s == null || !_drives(id)) return _memory.save();
+    final Fixture f = s.fixture;
+    final LightCapabilities caps = _capabilities(s);
+    const CommandOrigin origin = CommandOrigin.system;
+    bool sent = false;
+    final GroupPresetLight? inPreset = _ref.preset?.lights[id];
+    if (inPreset != null) {
+      unawaited(
+        _sendPresetLight(
+          s,
+          caps,
+          inPreset,
+          brightness: null,
+          on: null,
+          origin: origin,
+        ),
+      );
       sent = true;
     }
-    if (sent && _memory.following.add(id)) _memory.save();
+    if (_ref.colour case final ColourIntent c) {
+      if (_colourFor(f, c) case final ColourIntent mine) {
+        _sendColour(s, mine, live: false, origin: origin);
+        sent = true;
+      }
+    }
+    if (_ref.mode case final int m when caps.supportsMode(m)) {
+      unawaited(s.setMode(m, origin: origin));
+      sent = true;
+    }
+    for (final MapEntry<int, int> e in _ref.speeds.entries) {
+      if (!caps.supportsMode(e.key)) continue;
+      unawaited(s.setSpeed(e.key, e.value, origin: origin));
+      sent = true;
+    }
+    for (final MapEntry<int, int> e in _ref.frequencies.entries) {
+      if (!caps.supportsMode(e.key)) continue;
+      unawaited(s.setFrequency(e.key, e.value, origin: origin));
+      sent = true;
+    }
+    for (final MapEntry<EbColorModeKind, int> e in _ref.colorModes.entries) {
+      if (!caps.supportsMode(e.key.mode)) continue;
+      unawaited(s.setColorMode(e.key, e.value, origin: origin));
+      sent = true;
+    }
+    if (caps.supportsMode(EbColorModeKind.police.mode)) {
+      for (final MapEntry<EbPoliceSlot, HsvIntent> e in _ref.police.entries) {
+        unawaited(s.setPoliceColor(e.key, _encode(f, e.value), origin: origin));
+        sent = true;
+      }
+    }
+    if (_ref.master case final int m) {
+      s.setBrightness(trimmed(m, trimOf(id)), origin: origin);
+      sent = true;
+    }
+    if (_ref.power ?? inPreset?.on case final bool on) {
+      unawaited(s.setPower(on: on, origin: origin));
+      sent = true;
+    }
+    if (_active) sent |= _catchUpTimer(s, caps);
+    if (sent) _memory.following.add(id);
+    _memory.save();
   }
 
   // ---- what the UI shows -------------------------------------------------------------
@@ -1397,6 +1685,7 @@ final class GroupSession {
       policeColorMode: colorMode(EbColorModeKind.police),
       policeA: police(EbPoliceSlot.a),
       policeB: police(EbPoliceSlot.b),
+      master: _ref.master,
     );
   }
 

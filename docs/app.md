@@ -63,7 +63,7 @@ Every light belongs to exactly one of two automatic groups, by its LEDs:
 
 A group exists with two or more lights, and new lights join their group on their own. Home shows one **Groups** card at the top: a half per group (**Colour lights** | **White lights**), each with its first lights' colours and "3 of 4 connected". With one group, it fills the card; with none, there is no card. The card connects nothing; it is the only way in. Only one group is open at a time.
 
-- **Common controls:** power, brightness, effects (with their speed and frequency) and the sleep timer, sent at the same moment to every light that follows the group and can take them. When the lights differ, the controls say so ("Mixed", "Timers differ") until you set them all.
+- **Common controls:** power, brightness, effects (with their speed and frequency) and the sleep timer, sent at the same moment to every light that follows the group and can take them. When the lights differ, the controls say so ("Mixed", "Timers differ") until you set them all. A mixed brightness pill keeps showing the group's last brightness (full before the first one), never a value worked out from the lights.
 - **Colour lights: Colour | Effects | Presets.** The Colour tab is the wheel alone. A pick goes to every light with its white LEDs off (RGBW's W, RGB+CCT's cool and warm white at 0), so all the lights match. The group sends no white or temperature.
   - Fireworks, Club and Police show their **Colours** source, and Police on "Your colours" shows beacons A and B, as on a single light. They go to every light whose firmware has the effect; beacon colours go with every white LED off. When the lights differ, no source is selected and the beacon swatch is split, until the first change sets them all.
 - **White lights: White | Effects | Presets** (W lights only: Effects | Presets).
@@ -77,18 +77,19 @@ A group exists with two or more lights, and new lights join their group on their
   - A filled slot applies it. For each light in the preset: colour, then effect, then the group brightness at that light's level, then power. Lights not in it are untouched, and lights on their own settings or left out are skipped. A light that connects later gets its look when it does.
   - The last applied slot is marked until the next group command (not the sleep timer, which is never part of a preset). Long-press to Load / Rename / Overwrite / Clear.
   - A forgotten light is dropped from every preset; a preset left with no lights becomes empty.
-- **Level in group (trim):** every row shows its level in a small pill (sun, "100 %", chevron). Tap the pill or the row to set it with a slider, from 5 to 100 %; tap again to close.
+- **Level in group (trim):** every row shows its level in a small pill (sun, "100 %", chevron). Tap the pill or the row to set it with a slider, from 5 to 100 %; tap again to close. The light follows the slider while you drag (that light only); the level is saved when you let go.
   - It gets the group brightness times its level, never 0 while the group is on; the group at 0 turns every light off.
   - A trimmed light doesn't make the brightness read "Mixed".
   - Changing a level never detaches a light.
 - **Own settings:**
   - A light that has followed a group command and is then changed on its own screen or its Home tile (colour, brightness, effect, colour source, police beacon, power, preset) keeps its own settings. Group commands skip it until it rejoins.
   - The timer, levels, renaming, Identify and sound don't detach a light; neither do changes from another phone or a power cycle.
-  - In the list, the switch is on while a light follows. Off, the row says **Own settings** or **Excluded**; turning it on rejoins the light and catches it up. **Rejoin all** brings every light back.
+  - In the list, the switch is on while a light follows. Off, the row says **Own settings** or **Excluded**; turning it on rejoins the light. **Rejoin all** brings every light back.
+  - **Rejoining matches the group at once**, also in a later session: each group remembers its look (colour or temperature, effect with speeds and frequencies, colour sources and police beacons, the applied preset, brightness and power). A rejoined light gets that look, then the group brightness at its level, then power: straight away if it is connected, otherwise when it connects while the group is open. It follows the group again once the look has reached it.
   - With no light following, the controls give way to a message and **Rejoin all** / **Include lights**. With none connected, the controls are off and the status says "No lights connected".
 - **Broadcast, not sync:** the same commands go to every light, but each light runs its own effect clock. Two lights running Rainbow are not in step.
 - **Connection limits:** while a group is open, the app connects its lights, favourites first and then in Home's order, up to what this phone allows at once (8 on iOS, 5 on Android). Any others are reported as left out. Leaving the screen releases them after the normal idle grace (60 s).
-- **Catch-up:** a light that connects while the screen is open, or rejoins, gets what the group was sent while the screen was open, as far as it applies to it: its look (its own from an applied preset), brightness (at its level), power, then the timer's remaining time (skipped if under 5 s). Nothing is replayed after you leave.
+- **Catch-up:** a light that connects while the screen is open gets what the group was sent while the screen was open, as far as it applies to it: its look (its own from an applied preset), brightness (at its level), power, then the timer's remaining time (skipped if under 5 s). Nothing is replayed after you leave.
 - **Lights in this group:** each light's type, name, connection and state in the group, its level, **Flash it** (two quick blinks) and its switch. Excluded, own settings, levels and presets are remembered.
 
 ## 4. Light settings

@@ -55,7 +55,7 @@ final class GroupPresetLight {
     'on': on,
     'layout': colour.layout.wire,
     'colour': colour.toJson(),
-    if (_pickJson(pick) case final Map<String, Object?> p) 'pick': p,
+    if (pickJson(pick) case final Map<String, Object?> p) 'pick': p,
     'mode': mode,
     'speed': speed,
     'frequency': frequency,
@@ -91,7 +91,7 @@ final class GroupPresetLight {
     return GroupPresetLight(
       on: json['on'] != false,
       colour: colour,
-      pick: _pickFromJson(json['pick']),
+      pick: pickFromJson(json['pick']),
       mode: mode,
       speed: speed,
       frequency: frequency,
@@ -101,7 +101,8 @@ final class GroupPresetLight {
     );
   }
 
-  static Map<String, Object?>? _pickJson(ColourIntent? pick) => switch (pick) {
+  /// A colour or white pick as JSON; null for none or a raw colour.
+  static Map<String, Object?>? pickJson(ColourIntent? pick) => switch (pick) {
     HsvIntent(:final Hsv hsv, :final double white) => <String, Object?>{
       'hsv': <double>[hsv.h, hsv.s, hsv.v],
       'white': white,
@@ -113,7 +114,8 @@ final class GroupPresetLight {
     RawIntent() || null => null,
   };
 
-  static ColourIntent? _pickFromJson(Object? json) => switch (json) {
+  /// The pick [pickJson] wrote, or null.
+  static ColourIntent? pickFromJson(Object? json) => switch (json) {
     {'hsv': [final num h, final num s, final num v], 'white': final num w} =>
       HsvIntent(
         Hsv(h.toDouble(), s.toDouble(), v.toDouble()),

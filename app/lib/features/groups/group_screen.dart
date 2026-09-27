@@ -568,7 +568,9 @@ class _GroupToolbar extends ConsumerWidget {
   }
 }
 
-/// The lights' common brightness, or "Mixed" until a drag sets them all.
+/// The lights' common brightness; while they differ, "Mixed" over the
+/// group's last master, full before the first one (never a value derived
+/// from the lights).
 class _GroupBrightness extends ConsumerWidget {
   const _GroupBrightness({
     required this.group,
@@ -583,9 +585,10 @@ class _GroupBrightness extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final Common<int> b = ref.watch(groupBrightnessProvider(group.kind));
     final bool anyOn = ref.watch(groupAnyOnProvider(group.kind));
+    final int? master = ref.watch(groupMasterProvider(group.kind));
+    final int shown = (b.mixed ? master ?? 255 : b.value) ?? 0;
     return BrightnessPillSlider(
-      // Mixed: the fill rests half way (no light's value).
-      value: b.mixed ? 0.5 : (anyOn ? (b.value ?? 0) / 255 : 0),
+      value: anyOn ? shown / 255 : 0,
       mixed: b.mixed,
       enabled: enabled,
       fg: fg,
@@ -1313,8 +1316,8 @@ class _GroupLightRow extends ConsumerWidget {
     );
   }
 
-  /// The light's level in the group, sent once on release (it moves that
-  /// light alone).
+  /// The light's level in the group, live while dragging (it moves that
+  /// light alone; the release saves it).
   Widget _trim(AppLocalizations l, TextStyle small, double trim) => GlassSlider(
     key: ValueKey<String>('trim-${fixture.id}'),
     value: trim,
@@ -1332,8 +1335,12 @@ class _GroupLightRow extends ConsumerWidget {
         fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
       ),
     ),
-    onChanged: (_) {},
-    onChangeEnd: (double v) => group.setTrim(fixture.id, v),
+    onChangeStart: (_) => group.beginTrim(fixture.id),
+    onChanged: (double v) => group.setTrim(fixture.id, v, live: true),
+    onChangeEnd: (double v) {
+      group.setTrim(fixture.id, v);
+      group.endTrim(fixture.id);
+    },
   );
 }
 

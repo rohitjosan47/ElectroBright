@@ -306,6 +306,14 @@ final ProviderFamily<Common<int>, GroupKind> groupBrightnessProvider =
       ),
     );
 
+/// The group's last master brightness (null before the first one): what
+/// its pill shows while the lights read as mixed.
+final ProviderFamily<int?, GroupKind> groupMasterProvider =
+    Provider.family<int?, GroupKind>(
+      (Ref ref, GroupKind kind) =>
+          ref.watch(_groupLookProvider(kind).select((GroupLook l) => l.master)),
+    );
+
 /// Whether any ready light is on.
 final ProviderFamily<bool, GroupKind> groupAnyOnProvider =
     Provider.family<bool, GroupKind>(
