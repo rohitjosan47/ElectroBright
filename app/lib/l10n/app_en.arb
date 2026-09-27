@@ -161,15 +161,31 @@
       }
     }
   },
-  "levelPill": "Level in group, {percent} percent",
-  "@levelPill": {
+  "groupLightRow": "{name}, {type}, level {percent} percent, {state}",
+  "@groupLightRow": {
     "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "type": {
+        "type": "String"
+      },
       "percent": {
         "type": "int"
+      },
+      "state": {
+        "type": "String"
       }
     }
   },
-  "levelPillHint": "Double tap to adjust",
+  "groupRowFollowing": "following",
+  "groupRowOwn": "own settings",
+  "groupRowExcluded": "excluded",
+  "groupRowExpandHint": "Double tap to expand",
+  "groupRowCollapseHint": "Double tap to collapse",
+  "groupRowUnavailable": "Unavailable",
+  "groupRowPhoneLimit": "Phone limit",
+  "groupFlash": "Flash",
   "rejoinAll": "Rejoin all",
   "includeLights": "Include lights",
   "groupNoneFollowing": "No light follows this group right now. Bring them back to set them together.",

@@ -105,7 +105,7 @@ class ModeSettingsSwitcher extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool reduced = Motion.reduced(context);
     final EbModeSpec? current = mode;
-    return _GrowUnlessReduced(
+    return GrowUnlessReduced(
       reduced: reduced,
       child: AnimatedSwitcher(
         duration: reduced ? Duration.zero : Motion.medium,
@@ -215,8 +215,12 @@ class ModeSliders extends StatelessWidget {
 /// Grows and shrinks [child]'s height into place (Motion.medium); under
 /// Reduce Motion it just takes the new height (a zero-length AnimatedSize
 /// would finish inside its own layout).
-class _GrowUnlessReduced extends StatelessWidget {
-  const _GrowUnlessReduced({required this.reduced, required this.child});
+class GrowUnlessReduced extends StatelessWidget {
+  const GrowUnlessReduced({
+    required this.reduced,
+    required this.child,
+    super.key,
+  });
   final bool reduced;
   final Widget child;
 

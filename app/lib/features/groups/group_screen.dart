@@ -37,7 +37,6 @@ import '../control/shared/brightness_pill_slider.dart';
 import '../control/shared/control_header.dart';
 import '../control/shared/tab_switcher.dart';
 import '../control/timer_sheet.dart';
-import '../home/presence.dart';
 import 'group_presets_tab.dart';
 
 enum _GroupTab { colour, white, effects, presets }
@@ -395,6 +394,33 @@ class _GroupOrb extends ConsumerWidget {
   }
 }
 
+/// A light's steady colour as the rest of the app shows it (null before its
+/// first status), and whether it is on.
+({Color? colour, bool on}) _lightSwatch(WidgetRef ref, String id) {
+  final ({ChannelColor? color, bool on}) s = ref.watch(
+    fixtureStatusProvider(id).select(
+      (FixtureStatus s) => (
+        color: s.state?.scene.color,
+        on:
+            s.state != null &&
+            !s.state!.sleeping &&
+            s.state!.scene.brightness > 0,
+      ),
+    ),
+  );
+  final LedWhitePoints wp = ref.watch(
+    fixtureProvider(id)
+        .select((Fixture? f) => f?.whitePoints ?? const LedWhitePoints()),
+  );
+  final ChannelColor? c = s.color;
+  return (
+    colour: c == null
+        ? null
+        : swatchOf(c, wp, steady: ref.watch(steadyLevelsProvider(id))),
+    on: s.on,
+  );
+}
+
 /// One light's colour as a still orb (dim while it is off).
 class _MiniOrb extends ConsumerWidget {
   const _MiniOrb({required this.id});
@@ -403,30 +429,11 @@ class _MiniOrb extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final String? id = this.id;
-    Color colour = const Color(0xFFFFF4E6);
-    bool on = false;
-    if (id != null) {
-      final ({ChannelColor? color, bool on}) s = ref.watch(
-        fixtureStatusProvider(id).select(
-          (FixtureStatus s) => (
-            color: s.state?.scene.color,
-            on:
-                s.state != null &&
-                !s.state!.sleeping &&
-                s.state!.scene.brightness > 0,
-          ),
-        ),
-      );
-      final LedWhitePoints wp = ref.watch(
-        fixtureProvider(id)
-            .select((Fixture? f) => f?.whitePoints ?? const LedWhitePoints()),
-      );
-      final ChannelColor? c = s.color;
-      if (c != null) {
-        colour = swatchOf(c, wp, steady: ref.watch(steadyLevelsProvider(id)));
-      }
-      on = s.on;
-    }
+    final ({Color? colour, bool on}) s = id == null
+        ? (colour: null, on: false)
+        : _lightSwatch(ref, id);
+    final Color colour = s.colour ?? const Color(0xFFFFF4E6);
+    final bool on = s.on;
     return Opacity(
       opacity: on ? 1 : 0.3,
       child: Container(
@@ -987,16 +994,27 @@ class _NoneFollowing extends ConsumerWidget {
   }
 }
 
-/// The group's lights: type, name, connection and state in the group, its
-/// level in the group, Identify, and whether it follows the group.
-class _GroupLights extends ConsumerWidget {
+/// The group's lights, one compact row each: colour, name, type and level
+/// (or state), and whether it follows the group. A tapped row opens its
+/// level in the group and Flash; one row at a time.
+class _GroupLights extends ConsumerStatefulWidget {
   const _GroupLights({required this.group, required this.fg});
   final GroupSession group;
   final Color fg;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_GroupLights> createState() => _GroupLightsState();
+}
+
+class _GroupLightsState extends ConsumerState<_GroupLights> {
+  /// The open row's light.
+  String? _open;
+
+  @override
+  Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
+    final GroupSession group = widget.group;
+    final Color fg = widget.fg;
     // The group's lights only (a light is in one group).
     final List<Fixture> fixtures = ref.watch(
       fixturesProvider.select(
@@ -1035,144 +1053,218 @@ class _GroupLights extends ConsumerWidget {
                 ),
             ],
           ),
-          for (final Fixture f in fixtures)
-            Padding(
-              padding: const EdgeInsets.only(top: Space.s),
-              child: _GroupLightRow(
-                key: ValueKey<String>('group-light-${f.id}'),
-                fixture: f,
-                group: group,
-                fg: fg,
+          const SizedBox(height: Space.xxs),
+          for (int i = 0; i < fixtures.length; i++) ...<Widget>[
+            if (i > 0)
+              Divider(
+                height: 1,
+                thickness: 0.5,
+                color: fg.withValues(alpha: 0.12),
+              ),
+            _GroupLightRow(
+              key: ValueKey<String>('group-light-${fixtures[i].id}'),
+              fixture: fixtures[i],
+              group: group,
+              fg: fg,
+              open: _open == fixtures[i].id,
+              onToggle: () => setState(
+                () => _open = _open == fixtures[i].id ? null : fixtures[i].id,
               ),
             ),
+          ],
         ],
       ),
     );
   }
 }
 
-/// What a row shows of the light's place in the group.
-typedef _RowState = ({bool included, bool own, double trim});
+/// What a group row shows in place of the light's level: why the group does
+/// not drive it, or its connection; null for a connected, following light
+/// (it shows its level).
+@visibleForTesting
+String? groupRowStatus(
+  AppLocalizations l,
+  LinkPhase phase, {
+  required bool included,
+  required bool own,
+  required bool limitedOut,
+}) {
+  if (!included || own) return own ? l.groupOwnSettings : l.groupExcluded;
+  if (limitedOut) return l.groupRowPhoneLimit;
+  return switch (phase) {
+    LinkPhase.ready => null,
+    LinkPhase.connecting ||
+    LinkPhase.handshaking ||
+    LinkPhase.waiting => l.presenceConnecting,
+    LinkPhase.unavailable ||
+    LinkPhase.incompatible ||
+    LinkPhase.bluetoothOff => l.groupRowUnavailable,
+    LinkPhase.idle => l.presenceIdle,
+  };
+}
 
-class _GroupLightRow extends ConsumerStatefulWidget {
+/// What a row shows of the light's place in the group.
+typedef _RowState = ({bool included, bool own, bool limitedOut, double trim});
+
+/// One light, on one line: its colour, name, type and level in the group
+/// (or why it is not driven), the chevron and the include switch. Open, it
+/// shows the level slider and Flash.
+class _GroupLightRow extends ConsumerWidget {
   const _GroupLightRow({
     required this.fixture,
     required this.group,
     required this.fg,
+    required this.open,
+    required this.onToggle,
     super.key,
   });
   final Fixture fixture;
   final GroupSession group;
   final Color fg;
-
-  @override
-  ConsumerState<_GroupLightRow> createState() => _GroupLightRowState();
-}
-
-class _GroupLightRowState extends ConsumerState<_GroupLightRow> {
-  /// Its level in the group is shown.
-  bool _open = false;
+  final bool open;
+  final VoidCallback onToggle;
 
   static String _percent(double t) => '${(t * 100).round()} %';
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
-    final Fixture fixture = widget.fixture;
-    final GroupSession group = widget.group;
-    final Color fg = widget.fg;
     final String id = fixture.id;
-    final (LinkPhase, EbIncompatibility?) p = ref.watch(
-      fixtureStatusProvider(id)
-          .select((FixtureStatus s) => (s.phase, s.incompatibility)),
+    final LinkPhase phase = ref.watch(
+      fixtureStatusProvider(id).select((FixtureStatus s) => s.phase),
     );
     final _RowState g = ref.watch(
-      groupStatusProvider(widget.group.kind).select((GroupStatus s) {
+      groupStatusProvider(group.kind).select((GroupStatus s) {
         final GroupMember? m = s.members
             .where((GroupMember m) => m.id == id)
             .firstOrNull;
-        return (included: m != null, own: m?.own ?? false, trim: m?.trim ?? 1);
+        return (
+          included: m != null,
+          own: m?.own ?? false,
+          limitedOut: m?.limitedOut ?? false,
+          trim: m?.trim ?? 1,
+        );
       }),
     );
     final FixtureSession? session = ref.watch(fixtureSessionProvider(id));
-    final bool ready = p.$1 == LinkPhase.ready;
+    final bool ready = phase == LinkPhase.ready;
     final bool following = g.included && !g.own;
-    final String presence = presenceOf(l, p.$1, p.$2);
-    final String state = following
-        ? presence
-        : '$presence · ${g.own ? l.groupOwnSettings : l.groupExcluded}';
+    final int percent = (g.trim * 100).round();
+    final String type = fixtureTypeName(l, fixture.layout);
+    // In place of the level when it matters; a connected, following light
+    // shows its level.
+    final String? status = groupRowStatus(
+      l,
+      phase,
+      included: g.included,
+      own: g.own,
+      limitedOut: g.limitedOut,
+    );
     final TextStyle small = TextStyle(
       color: fg.withValues(alpha: 0.6),
       fontSize: 12,
     );
-    void toggle() => setState(() => _open = !_open);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         Row(
           children: <Widget>[
             Expanded(
-              child: GestureDetector(
-                key: ValueKey<String>('row-$id'),
-                behavior: HitTestBehavior.opaque,
-                onTap: toggle,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Semantics(
-                      label: fixture.name,
-                      value: state,
-                      child: ExcludeSemantics(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            // Shrinks only when the row is too narrow.
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: FixtureTypeBadge(
-                                layout: fixture.layout,
-                                whitePoints: fixture.whitePoints,
-                              ),
+              child: Semantics(
+                container: true,
+                button: true,
+                expanded: open,
+                label: l.groupLightRow(
+                  fixture.name,
+                  type,
+                  percent,
+                  following
+                      ? l.groupRowFollowing
+                      : g.own
+                      ? l.groupRowOwn
+                      : l.groupRowExcluded,
+                ),
+                hint: open ? l.groupRowCollapseHint : l.groupRowExpandHint,
+                onTap: onToggle,
+                child: ExcludeSemantics(
+                  child: GestureDetector(
+                    key: ValueKey<String>('row-$id'),
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onToggle,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: Space.xs),
+                      child: Row(
+                        children: <Widget>[
+                          _LightDot(
+                            key: ValueKey<String>('dot-$id'),
+                            id: ready ? id : null,
+                            fg: fg,
+                          ),
+                          const SizedBox(width: Space.s),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                Text(
+                                  fixture.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: fg,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Text.rich(
+                                  TextSpan(
+                                    children: <InlineSpan>[
+                                      TextSpan(text: '$type · '),
+                                      if (status == null) ...<InlineSpan>[
+                                        WidgetSpan(
+                                          alignment:
+                                              PlaceholderAlignment.middle,
+                                          child: Icon(
+                                            Icons.wb_sunny_rounded,
+                                            size: 12,
+                                            color: small.color,
+                                          ),
+                                        ),
+                                        TextSpan(text: ' $percent %'),
+                                      ] else
+                                        TextSpan(text: status),
+                                    ],
+                                  ),
+                                  key: ValueKey<String>('row-subtitle-$id'),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: small.copyWith(
+                                    fontFeatures: const <FontFeature>[
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: Space.xxs),
-                            Text(
-                              fixture.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: fg,
-                                fontWeight: FontWeight.w600,
-                              ),
+                          ),
+                          AnimatedRotation(
+                            turns: open ? 0.5 : 0,
+                            duration: Motion.reduced(context)
+                                ? Duration.zero
+                                : Motion.fast,
+                            child: Icon(
+                              Icons.expand_more_rounded,
+                              size: 18,
+                              color: small.color,
                             ),
-                            Text(state, style: small),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: Space.xxs),
-                    _LevelPill(
-                      key: ValueKey<String>('level-pill-$id'),
-                      trim: g.trim,
-                      open: _open,
-                      fg: fg,
-                      onTap: toggle,
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
-            GlassIconButton(
-              key: ValueKey<String>('identify-$id'),
-              icon: Icons.flare_rounded,
-              label: l.groupIdentify(fixture.name),
-              size: 36,
-              tier: GlassTier.panel,
-              onPressed: ready && session != null
-                  ? () => unawaited(session.identify())
-                  : null,
-            ),
-            const SizedBox(width: Space.xs),
+            const SizedBox(width: Space.xxs),
             Semantics(
               label: l.groupIncludeLight(fixture.name),
               child: Switch.adaptive(
@@ -1185,103 +1277,94 @@ class _GroupLightRowState extends ConsumerState<_GroupLightRow> {
             ),
           ],
         ),
-        if (_open)
-          Padding(
-            padding: const EdgeInsets.only(top: Space.xs),
-            child: GlassSlider(
-              key: ValueKey<String>('trim-$id'),
-              value: g.trim,
-              min: GroupSession.minTrim,
-              height: 36,
-              elevated: false,
-              semanticLabel: l.levelInGroupFor(fixture.name),
-              valueText: _percent,
-              leadingBuilder: (double v, double width) =>
-                  Text(l.levelInGroup, style: small.copyWith(color: fg)),
-              trailingBuilder: (double v, double width) => Text(
-                _percent(v),
-                style: small.copyWith(
-                  color: fg,
-                  fontFeatures: const <FontFeature>[
-                    FontFeature.tabularFigures(),
-                  ],
-                ),
-              ),
-              // Sent once, on release (it moves that light alone).
-              onChanged: (_) {},
-              onChangeEnd: (double v) => group.setTrim(id, v),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-/// A row's level in the group, always shown: tap it (or the row) to adjust
-/// it with the slider below; the chevron turns while that is open.
-class _LevelPill extends StatelessWidget {
-  const _LevelPill({
-    required this.trim,
-    required this.open,
-    required this.fg,
-    required this.onTap,
-    super.key,
-  });
-  final double trim;
-  final bool open;
-  final Color fg;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final AppLocalizations l = AppLocalizations.of(context);
-    final int percent = (trim * 100).round();
-    final Color ink = fg.withValues(
-      alpha: LightSurfaces.dim(0.75, dark: fg == Colors.white),
-    );
-    return Semantics(
-      container: true,
-      button: true,
-      expanded: open,
-      label: l.levelPill(percent),
-      hint: l.levelPillHint,
-      onTap: onTap,
-      child: ExcludeSemantics(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(Space.xs, 2, Space.xxs, 2),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(Radii.small),
-              color: fg.withValues(alpha: 0.08),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Icon(Icons.wb_sunny_rounded, size: 13, color: ink),
-                const SizedBox(width: Space.xxs),
-                Text(
-                  '$percent %',
-                  style: TextStyle(
-                    color: ink,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    fontFeatures: const <FontFeature>[
-                      FontFeature.tabularFigures(),
+        GrowUnlessReduced(
+          reduced: Motion.reduced(context),
+          child: !open
+              ? const SizedBox(width: double.infinity)
+              : Padding(
+                  padding: const EdgeInsets.only(bottom: Space.xs),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(child: _trim(l, small, g.trim)),
+                      const SizedBox(width: Space.xs),
+                      TextButton.icon(
+                        key: ValueKey<String>('flash-$id'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: fg,
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: Space.xs,
+                          ),
+                        ),
+                        onPressed: ready && session != null
+                            ? () => unawaited(session.identify())
+                            : null,
+                        icon: const Icon(Icons.flare_rounded, size: 18),
+                        label: Text(
+                          l.groupFlash,
+                          semanticsLabel: l.groupIdentify(fixture.name),
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                AnimatedRotation(
-                  turns: open ? 0.5 : 0,
-                  duration: Motion.reduced(context)
-                      ? Duration.zero
-                      : Motion.fast,
-                  child: Icon(Icons.expand_more_rounded, size: 16, color: ink),
-                ),
-              ],
-            ),
-          ),
+        ),
+      ],
+    );
+  }
+
+  /// The light's level in the group, sent once on release (it moves that
+  /// light alone).
+  Widget _trim(AppLocalizations l, TextStyle small, double trim) => GlassSlider(
+    key: ValueKey<String>('trim-${fixture.id}'),
+    value: trim,
+    min: GroupSession.minTrim,
+    height: 36,
+    elevated: false,
+    semanticLabel: l.levelInGroupFor(fixture.name),
+    valueText: _percent,
+    leadingBuilder: (double v, double width) =>
+        Text(l.levelInGroup, style: small.copyWith(color: fg)),
+    trailingBuilder: (double v, double width) => Text(
+      _percent(v),
+      style: small.copyWith(
+        color: fg,
+        fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+      ),
+    ),
+    onChanged: (_) {},
+    onChangeEnd: (double v) => group.setTrim(fixture.id, v),
+  );
+}
+
+/// A row's light as a small still dot in its steady colour (dim while it
+/// is off); neutral grey while it is not connected ([id] null).
+class _LightDot extends ConsumerWidget {
+  const _LightDot({required this.id, required this.fg, super.key});
+  final String? id;
+  final Color fg;
+
+  static const double _size = 28;
+
+  /// Not connected: a neutral grey, readable in both themes.
+  static const Color _grey = Color(0xFF8E8E8E);
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final String? id = this.id;
+    final ({Color? colour, bool on}) s = id == null
+        ? (colour: null, on: false)
+        : _lightSwatch(ref, id);
+    final Color? colour = s.colour;
+    return Opacity(
+      opacity: colour == null || s.on ? 1 : 0.35,
+      child: Container(
+        width: _size,
+        height: _size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: colour ?? _grey,
+          border: Border.all(color: fg.withValues(alpha: 0.14), width: 0.5),
         ),
       ),
     );
