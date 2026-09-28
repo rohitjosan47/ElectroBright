@@ -1,77 +1,51 @@
 # ElectroBright
 
-ElectroBright is an ambient lighting system. An ESP32-C3 drives a 12 V / 24 V LED strip, and a Flutter app controls it over Bluetooth Low Energy. One universal firmware (3.7.0+) holds every fixture type; the light stores its type and the app can change it. Each sketch installs that firmware and only sets the type a new light gets:
+ElectroBright is a Bluetooth lighting system with three parts:
+- **Hardware:** an ESP32-C3 on a small MOSFET board drives a 12 V / 24 V LED strip ([wiring guide](docs/wiring_guide.md)).
+- **Firmware:** one universal image (3.8.1) for all five fixture types (RGBW, RGB, RGBCCT, CCT and W). The light stores its type, and lights update wirelessly from the app ([firmware](firmware/README.md)).
+- **App:** a Flutter app for iOS and Android that talks to the lights directly over Bluetooth, with no server or cloud ([app guide](docs/app.md)).
 
-| Fixture type | Channels | Sketch (default type) |
-|---|---|---|
-| RGBW | red, green, blue, white | `firmware/fixtures/ElectroBright_RGBW` |
-| RGB | red, green, blue | `firmware/fixtures/ElectroBright_RGB` |
-| RGBCCT | red, green, blue, cool white, warm white | `firmware/fixtures/ElectroBright_RGBCCT` |
-| CCT | cool white, warm white | `firmware/fixtures/ElectroBright_CCT` |
-| W | single white | `firmware/fixtures/ElectroBright_W` |
+<p>
+  <img src="app/test/goldens/home_badge_dark.png" alt="Home screen" width="260">
+  <img src="app/test/goldens/control_rgbcct_dark_1x.png" alt="Control screen of an RGBCCT light" width="260">
+</p>
 
-## Repository Structure
+*Screenshots are the app's golden test images (`app/test/goldens/`), rendered from demo lights.*
+
+## Repository layout
 
 ```
 ElectroBright/
-├── firmware/                      # ESP32-C3 firmware family (Arduino IDE)
-│   ├── core/ElectroBrightCore/    # shared core library: effects, BLE protocol, presets, timer, sound
-│   ├── fixtures/                  # one sketch per default type (RGBW, RGB, RGBCCT, CCT, W)
-│   ├── test/                      # host unit, simulation and golden tests (make)
-│   └── tools/                     # IDE setup, build script, conformance suite, gamma-table generator
-├── app/                           # Flutter app (iOS, Android)
-└── docs/
-    ├── architecture.md            # system, app and firmware layers, update pipeline
-    ├── design_decisions.md        # why things are the way they are
-    ├── firmware.md                # build, flash, update images, versioning
-    ├── testing.md                 # automated suites and hardware checklists
-    ├── troubleshooting.md         # symptoms, causes, fixes; Diagnostics fields
-    ├── release.md                 # release procedure
-    ├── security.md                # current security state
-    ├── app.md                     # app features, controls per light type, code layout
-    ├── protocol.md                # BLE protocol contract for every fixture (layouts, frames, STATUS)
-    ├── wiring_guide.md            # circuit, MOSFETs, buck converter and pinout (all fixtures)
-    └── backup_power.md            # supercapacitor ride-through for the controller
+├── app/        Flutter app (iOS, Android): lib/, test/, integration_test/, tool/ (check, bundle firmware)
+├── firmware/   ESP32-C3 firmware
+│   ├── core/ElectroBrightCore/   shared core library (all fixture types)
+│   ├── fixtures/                 one sketch per default type
+│   ├── update/                   the type-neutral wireless-update image
+│   ├── test/                     host tests, simulator (fwsim), golden baseline
+│   └── tools/                    build, flash, update-image, IDE setup, conformance
+├── docs/       all documentation (index: docs/README.md)
+└── CHANGELOG.md
 ```
 
-## Quick Start
+## Quick start
 
-### 1. Firmware (ESP32-C3)
-1. In the Arduino IDE, install the **esp32** board package (≥ 3.0) and the **NimBLE-Arduino** 2.x library.
-2. Once: run `firmware/tools/install_ide_core.sh`. It makes the shared core library visible to the IDE. Then restart the IDE.
-3. Click **File → Open...** and select the sketch of your fixture's type, e.g. `firmware/fixtures/ElectroBright_RGB/ElectroBright_RGB.ino` (a light that already has a type keeps it).
-4. Select Board: **ESP32C3 Dev Module**, Partition Scheme **Default 4MB with spiffs** (see [docs/firmware.md](docs/firmware.md)), select your USB port and click **Upload**.
-
-Or from a terminal (macOS/Linux, with the Arduino IDE installed): `firmware/tools/flash.sh RGB` builds that sketch, flashes the one connected board (at least 4 MB of flash) and prints the version it reports. Once flashed, lights update wirelessly from the app (firmware 3.8.0+; the current firmware is 3.8.1, bundled into the app by `app/tool/bundle_firmware.sh` from `firmware/tools/build_update_image.sh`).
-
-The [firmware README](firmware/README.md) covers:
-- the architecture;
-- every lighting mode;
-- the BLE protocol;
-- the tests and on-device diagnostics.
-
-### 2. Mobile App (Flutter)
+**Try the app without hardware (demo mode):**
 ```bash
 cd app
-flutter run                              # simulator: choose "Try demo lights"
-flutter run --release -d <iphone-id>     # install on an iPhone (Developer Mode on)
+flutter run          # on a simulator or phone, choose "Try demo lights"
 ```
-Details, including every control per light type, are in [docs/app.md](docs/app.md).
 
-### 3. Tests
+**Build and flash a light** (macOS/Linux, with the Arduino IDE installed; see [docs/firmware.md](docs/firmware.md) for the IDE route and exact settings):
 ```bash
-make -C firmware/test                # firmware: host unit, simulation and golden tests
-make -C firmware/test conformance    # protocol conformance of every fixture against the simulator
-app/tool/check.sh                    # format, analyze, firmware host tests, all app tests (not conformance)
+firmware/tools/install_ide_core.sh   # once: makes the shared core visible to the IDE
+firmware/tools/flash.sh RGB          # build the RGB sketch, flash the connected board, print its version
 ```
+After that, the app adds the light and keeps its firmware up to date wirelessly.
+
+**Run the tests:** `app/tool/check.sh` (details in [docs/testing.md](docs/testing.md)).
 
 ## Documentation
-* [Firmware](firmware/README.md) — covers:
-  - architecture and lighting modes, with what each slider does;
-  - the BLE protocol;
-  - build, test and diagnostics.
-* [BLE Protocol](docs/protocol.md) — the contract every fixture implements and the app speaks.
-* [Hardware Wiring Guide](docs/wiring_guide.md) — circuit schematics, parts, resistor values and ESP32-C3 pin connections.
-* [App](docs/app.md) — every app feature and control, per light type; code layout; how to run and test.
-* [Backup Power](docs/backup_power.md) — keeping the controller alive through short power cuts.
-* [Architecture](docs/architecture.md), [Design decisions](docs/design_decisions.md), [Firmware build & flash](docs/firmware.md), [Testing](docs/testing.md), [Troubleshooting](docs/troubleshooting.md), [Release](docs/release.md), [Security](docs/security.md), [Changelog](CHANGELOG.md).
+
+- [docs/README.md](docs/README.md): index of every document, reading order and glossary
+- [docs/user_guide.md](docs/user_guide.md): for people using the lights
+- [CHANGELOG.md](CHANGELOG.md): app and firmware history

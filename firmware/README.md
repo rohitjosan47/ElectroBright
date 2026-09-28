@@ -1,6 +1,6 @@
 # ElectroBright Firmware (ESP32-C3)
 
-Build, flashing, update images and versioning are summarised in [docs/firmware.md](../docs/firmware.md); this README is the firmware reference.
+Build, flashing, update images and versioning are summarised in [docs/firmware.md](../docs/firmware.md); every document is listed in [docs/README.md](../docs/README.md). This README is the firmware reference.
 
 Firmware for ElectroBright BLE light fixtures. One **shared core** holds everything the fixtures have in common:
 - all 13 modes and effects;
