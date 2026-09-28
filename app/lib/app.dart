@@ -79,6 +79,8 @@ class _RootState extends ConsumerState<_Root> {
       final AppSession? app = ref.read(appSessionProvider);
       app?.ble.discovery.paused = false;
       unawaited(app?.ble.connections.onForeground());
+      // Back from Settings, perhaps with Location Services switched on.
+      unawaited(app?.bluetooth?.checkLocation());
     },
   );
 

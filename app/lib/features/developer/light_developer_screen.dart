@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/app_session.dart';
+import '../../app/bluetooth_access.dart';
 import '../../app/providers.dart';
 import '../../core/color/led_white_points.dart';
 import '../../core/model/channel_layout.dart';
@@ -264,9 +265,9 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
     final bool needsUsb = status.view?.firmware?.needsUsbInstall ?? false;
     // The finished update's transfer, measured (no pacing depends on it).
     final UpdateStats? stats = ref.watch(
-      updateProgressProvider(widget.fixtureId).select(
-        (UpdateProgress? p) => p == null || p.running ? null : p.stats,
-      ),
+      updateProgressProvider(
+        widget.fixtureId,
+      ).select((UpdateProgress? p) => p == null || p.running ? null : p.stats),
     );
 
     if (status.isReady && !setup && !_diagAsked) {
@@ -297,7 +298,7 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
             setup
                 ? l.setupBody(f.name)
                 : '${fixtureTypeDescription(l, f.layout)} · '
-                      '${presenceText(l, status)}',
+                      '${presenceText(l, status, bluetooth: ref.watch(bluetoothIssueProvider))}',
             style: detail,
           ),
         ),

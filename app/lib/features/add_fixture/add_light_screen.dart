@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/app_session.dart';
+import '../../app/bluetooth_access.dart';
 import '../../app/providers.dart';
 import '../../core/model/channel_layout.dart';
 import '../../core/model/fixture.dart';
@@ -23,6 +24,7 @@ import '../../sessions/connection_manager.dart';
 import '../../sessions/fixture_session.dart';
 import '../../sessions/rituals.dart';
 import '../firmware_update/firmware_update_screen.dart';
+import '../home/bluetooth_notice.dart';
 
 enum _Step { pick, connecting, found, failed }
 
@@ -362,7 +364,12 @@ class _PickList extends ConsumerWidget {
       children: <Widget>[
         Text(l.addHint, style: TextStyle(color: fg.withValues(alpha: 0.7))),
         const SizedBox(height: Space.m),
-        if (lights.isEmpty) _Busy(text: l.addSearching),
+        // Nothing can be found while Bluetooth can't be used: say why
+        // instead of searching forever.
+        if (ref.watch(bluetoothIssueProvider) != null)
+          const BluetoothNotice()
+        else if (lights.isEmpty)
+          _Busy(text: l.addSearching),
         for (final NearbyLight n in lights)
           Padding(
             padding: const EdgeInsets.only(bottom: Space.s),

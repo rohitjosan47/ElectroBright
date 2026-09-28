@@ -9,7 +9,10 @@
 | Light shows **Firmware update needed** / is under **Unsupported** | Pre-3.x firmware. | Flash current firmware over USB ([firmware.md](firmware.md)). |
 | Light not found on the add screen | Off, out of range, connected to another phone (only one phone at a time), or hidden as **Not mine**. | Power it, come closer, close the app on other phones, tap **Show hidden lights**. Lights appear only after an advert in the last 10 s. |
 | **Unavailable** on Home | Same as above; a lost link retries with backoff (0.5 s up to 30 s). | Wait, or open the light to retry now. |
-| **Bluetooth is off** / **Bluetooth permission needed** | Phone setting. | Turn Bluetooth on; allow the permission in system Settings. |
+| **Bluetooth is off** | Phone setting. | Android: **Turn on Bluetooth** on the notice. iOS: Control Centre or Settings. |
+| **Bluetooth permission needed** | The app's Bluetooth permission was refused. | **Open settings** on the notice and allow Bluetooth (Android 12+: "Nearby devices"; Android 11 and older: location). |
+| **Location Services are off** | Android 11 and older need them to find Bluetooth lights. | **Open settings** on the notice and switch Location on. The app never reads your location. |
+| **Bluetooth not supported** | The device has no Bluetooth Low Energy. | Only demo lights work on it. |
 | **Setup needed** on a tile | 3.7.0+ firmware with no stored type. | Open it → **Find the right type** → choose the type. |
 | Wrong controls for a light (e.g. colour wheel on a white strip) | The stored fixture type doesn't match the wiring. | Settings → Advanced → Developer tools on, then the light's **Developer** page → **Find the right type** → **Change type**. Presets are cleared. |
 | Update failed | See the message: the light keeps its firmware in every case before install. Link lost or stalled → move closer and tap **Update** again; it resumes. "Couldn't save" → power-cycle the light first. "Damaged in this app" → reinstall the app. | |

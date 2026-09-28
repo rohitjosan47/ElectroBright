@@ -303,32 +303,32 @@ void main() {
       w.manager.want('f0', WantReason.screen);
       await w.run(const Duration(seconds: 1));
       expect(w.phase(0), LinkPhase.bluetoothOff);
+      expect(w.central.connects, 0);
+      w.central.setAdapterState(BleAdapterState.ready);
+      await w.run(const Duration(seconds: 2));
+      expect(w.phase(0), LinkPhase.ready);
       await w.dispose();
     },
-    skip:
-        'lib bug: ConnectionManager only sets bluetoothOff for lights wanted '
-        'when the adapter state changes (_onAdapter); a want registered '
-        'while off hits _evaluate\'s early return and the light stays idle',
   );
 
-  test(
-    'Bluetooth going off during a connect attempt leaves the light '
-    'bluetoothOff',
-    () async {
-      final _World w = _World(lights: 1);
-      await w.run(const Duration(milliseconds: 100));
-      w.manager.want('f0', WantReason.screen);
-      await w.run(const Duration(milliseconds: 40)); // connecting (90 ms)
-      expect(w.phase(0), LinkPhase.connecting);
-      w.central.setAdapterState(BleAdapterState.poweredOff);
-      await w.run(const Duration(seconds: 2));
-      expect(w.phase(0), LinkPhase.bluetoothOff);
-      await w.dispose();
-    },
-    skip:
-        'lib bug: the connect fails with ConnectException("bluetooth off") '
-        'after _onAdapter set bluetoothOff; _connect treats it as an '
-        'ordinary failure (_failed) and the light shows waiting (and a '
-        'backoff retry is armed) while Bluetooth is off',
-  );
+  test('Bluetooth going off during a connect attempt leaves the light '
+      'bluetoothOff', () async {
+    final _World w = _World(lights: 1);
+    await w.run(const Duration(milliseconds: 100));
+    w.manager.want('f0', WantReason.screen);
+    await w.run(const Duration(milliseconds: 40)); // connecting (90 ms)
+    expect(w.phase(0), LinkPhase.connecting);
+    w.central.setAdapterState(BleAdapterState.poweredOff);
+    await w.run(const Duration(seconds: 2));
+    expect(w.phase(0), LinkPhase.bluetoothOff);
+    expect(w.s(0).status.attempt, 0, reason: 'not counted as a failure');
+    final int connects = w.central.connects;
+    await w.run(const Duration(seconds: 30));
+    expect(w.central.connects, connects, reason: 'no retries while off');
+    expect(w.phase(0), LinkPhase.bluetoothOff);
+    w.central.setAdapterState(BleAdapterState.ready);
+    await w.run(const Duration(seconds: 2));
+    expect(w.phase(0), LinkPhase.ready);
+    await w.dispose();
+  });
 }

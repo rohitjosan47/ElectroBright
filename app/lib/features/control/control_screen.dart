@@ -5,6 +5,7 @@ import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/app_session.dart';
+import '../../app/bluetooth_access.dart';
 import '../../app/providers.dart';
 import '../../core/color/colour_engine.dart';
 import '../../core/color/light_tone.dart';
@@ -512,7 +513,11 @@ class _OfflineNote extends ConsumerWidget {
     return Text(
       known
           ? l.offlineNote
-          : presenceText(l, ref.watch(fixtureStatusProvider(fixtureId))),
+          : presenceText(
+              l,
+              ref.watch(fixtureStatusProvider(fixtureId)),
+              bluetooth: ref.watch(bluetoothIssueProvider),
+            ),
       key: const ValueKey<String>('offline-note'),
       textAlign: TextAlign.center,
       style: TextStyle(color: fg.withValues(alpha: 0.7), fontSize: 13),

@@ -48,14 +48,19 @@ final class AppServices {
     PlatformBridge? platform,
     Haptics? haptics,
     Scheduler? scheduler,
+    BleCentral Function()? radio,
   }) : platform = platform ?? PlatformBridge(),
        haptics = haptics ?? Haptics(),
-       scheduler = scheduler ?? SystemScheduler();
+       scheduler = scheduler ?? SystemScheduler(),
+       _radio = radio ?? ReactiveBleCentral.new;
 
   final Scheduler scheduler;
   final PlatformBridge platform;
   final Haptics haptics;
   final BleTrace trace = BleTrace();
+
+  /// Makes the real radio (tests pass a simulated one).
+  final BleCentral Function() _radio;
   BleStack? _ble;
   bool _demo = false;
 
@@ -115,7 +120,7 @@ final class AppServices {
           )
         : null;
     _demoLights = sim;
-    final BleCentral inner = sim ?? ReactiveBleCentral();
+    final BleCentral inner = sim ?? _radio();
     // Traced for the BLE Lab, which only debug builds show.
     final BleCentral central = kDebugMode
         ? _TracingCentral(inner, trace)

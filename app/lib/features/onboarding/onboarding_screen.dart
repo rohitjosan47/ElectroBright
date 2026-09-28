@@ -9,7 +9,7 @@ import '../../design/glass/glass_surface.dart';
 import '../../design/tokens/tokens.dart';
 import '../../l10n/app_localizations.dart';
 
-/// First launch: real lights (this is when iOS asks for Bluetooth) or demo
+/// First launch: real lights (this is when the phone asks for Bluetooth) or demo
 /// lights of every type, to try the app without hardware.
 class OnboardingScreen extends ConsumerWidget {
   const OnboardingScreen({super.key});
@@ -43,7 +43,7 @@ class OnboardingScreen extends ConsumerWidget {
                 ),
                 const Spacer(),
                 FilledButton(
-                  onPressed: () => unawaited(c.start(demo: false)),
+                  onPressed: () => unawaited(c.useMyLights()),
                   child: Text(l.useMyLights),
                 ),
                 const SizedBox(height: Space.s),

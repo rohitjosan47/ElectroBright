@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/app_session.dart';
+import '../../app/bluetooth_access.dart';
 import '../../app/providers.dart';
 import '../../core/model/fixture.dart';
 import '../../design/canvas/ambient_canvas.dart';
@@ -26,6 +27,7 @@ import '../control/control_screen.dart';
 import 'groups_card.dart';
 import '../../sessions/group_capabilities.dart';
 import '../../sessions/group_session.dart';
+import 'bluetooth_notice.dart';
 import 'light_tile.dart';
 import 'updates_banner.dart';
 import '../developer/developer_screen.dart';
@@ -370,7 +372,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (!mounted || action == null) return;
     switch (action) {
       case 'mode':
-        await ref.read(appSessionProvider.notifier).start(demo: !app.demo);
+        final AppController c = ref.read(appSessionProvider.notifier);
+        await (app.demo ? c.useMyLights() : c.start(demo: true));
       case 'lab':
         await Navigator.of(
           context,
@@ -411,6 +414,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final bool dark = ToneScope.darkOf(context);
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
     final List<String> updates = ref.watch(lightsWithUpdateProvider);
+    final bool bluetoothIssue = ref.watch(bluetoothIssueProvider) != null;
     final bool bigText = MediaQuery.textScalerOf(context).scale(1) > 1.4;
     // Groups with 2 or more lights.
     final List<GroupKind> groups = <GroupKind>[
@@ -506,6 +510,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
             ),
+            if (bluetoothIssue)
+              const SliverPadding(
+                padding: EdgeInsets.fromLTRB(
+                  Space.gutter,
+                  Space.s,
+                  Space.gutter,
+                  0,
+                ),
+                sliver: SliverToBoxAdapter(child: BluetoothNotice()),
+              ),
             if (updates.isNotEmpty)
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(

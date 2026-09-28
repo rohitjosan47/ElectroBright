@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/bluetooth_access.dart';
 import '../../app/providers.dart';
 import '../../core/color/colour_engine.dart';
 import '../../core/color/led_white_points.dart';
@@ -37,6 +38,7 @@ import '../control/shared/brightness_pill_slider.dart';
 import '../control/shared/control_header.dart';
 import '../control/shared/tab_switcher.dart';
 import '../control/timer_sheet.dart';
+import '../home/bluetooth_notice.dart';
 import 'group_presets_tab.dart';
 
 enum _GroupTab { colour, white, effects, presets }
@@ -169,6 +171,10 @@ class _GroupScreenState extends ConsumerState<GroupScreen> {
               const SizedBox(height: Space.s),
               _StatusLine(kind: group.kind, budget: group.budget, fg: fg),
               const SizedBox(height: Space.s),
+              if (ref.watch(bluetoothIssueProvider) != null) ...<Widget>[
+                const BluetoothNotice(),
+                const SizedBox(height: Space.s),
+              ],
               if (g.driven == 0)
                 _NoneFollowing(group: group, fg: fg)
               else ...<Widget>[

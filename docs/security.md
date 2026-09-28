@@ -12,6 +12,7 @@ The honest state as of app 2.0.0 / firmware 3.8.2. **ElectroBright is not yet re
 - **Firmware images are not signed.** The 64-byte identity block (`firmware/core/ElectroBrightCore/src/ota/ImageIdentity.h`: magic `EBIMGID1`, product, kind, version) only proves an image *says* it is an ElectroBright image. Anyone can build one with the public sources, or copy the block into their own image, and a light will install it.
 - **No link encryption at the application level.** Traffic can be observed with a Bluetooth sniffer.
 - **The app's own data** (light list, names, presets, group looks) is stored unencrypted in the app's private storage on the phone.
+- **A connected phone holds the light until it disconnects.** A light accepts one connection and stops advertising while it has one; it never drops an idle peer. A phone (or any Bluetooth device) that connects and stays connected keeps every other phone out, which then shows the light as unavailable ("connected to another phone"). The app lets go after 20 s in the background, but another app, a second phone left on a light's screen, or a deliberate client can hold it indefinitely. To be addressed together with ownership (below): only the owner's phones may hold a light, and an idle peer is disconnected after a time.
 
 ## What is protected
 

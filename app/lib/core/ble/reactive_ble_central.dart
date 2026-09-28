@@ -53,8 +53,11 @@ final class ReactiveBleCentral implements BleCentral {
           ScanIntensity.balanced => ScanMode.balanced,
           ScanIntensity.lowLatency => ScanMode.lowLatency,
         },
-        // BLUETOOTH_SCAN is declared neverForLocation (Android 12+); older
-        // versions are checked by the permission layer before scanning.
+        // Android 12+: BLUETOOTH_SCAN is declared neverForLocation, so no
+        // Location Services. Android 11 and older need them to find anything;
+        // the radio then reports locationServicesDisabled and BluetoothAccess
+        // (app/bluetooth_access.dart) asks for the permissions and shows the
+        // user what is missing. Scans are not refused here either way.
         requireLocationServicesEnabled: false,
       )
       .map(

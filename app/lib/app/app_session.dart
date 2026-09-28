@@ -13,6 +13,7 @@ import '../core/store/preset_reset.dart';
 import '../sessions/firmware_update.dart';
 import '../sessions/fixture_registry.dart';
 import '../sessions/group_session.dart';
+import 'bluetooth_access.dart';
 
 /// Everything that exists once the user chose real or demo lights.
 final class AppSession {
@@ -23,6 +24,7 @@ final class AppSession {
     required this.registry,
     required this.groups,
     required this.updates,
+    this.bluetooth,
     this.firmware,
   });
 
@@ -39,6 +41,9 @@ final class AppSession {
 
   /// The firmware bundled with the app (null if it has none).
   final FirmwareBundle? firmware;
+
+  /// Permission and Bluetooth prompts (real lights only).
+  final BluetoothAccess? bluetooth;
 }
 
 /// Reads the bundled firmware's manifest (tests override it).
@@ -81,6 +86,7 @@ final class _Runtime {
     session = null;
     if (s == null) return;
     unawaited(s.updates.dispose());
+    unawaited(s.bluetooth?.dispose());
     s.groups.dispose();
     unawaited(
       s.registry.saveAll().whenComplete(() async {
@@ -133,6 +139,13 @@ final class AppController extends Notifier<AppSession?> {
         : <String, Object?>{};
   }
 
+  /// "Use my lights": starts with real lights and asks for what Bluetooth
+  /// needs (Android: the permission, then switching it on).
+  Future<void> useMyLights() async {
+    await start(demo: false);
+    await state?.bluetooth?.ensure();
+  }
+
   /// Starts the Bluetooth stack with real lights (this is what shows the iOS
   /// permission prompt) or with demo lights.
   Future<void> start({required bool demo}) {
@@ -147,6 +160,7 @@ final class AppController extends Notifier<AppSession?> {
     if (old != null) {
       state = _runtime.session = null;
       await old.updates.dispose();
+      await old.bluetooth?.dispose();
       old.groups.dispose();
       await old.registry.saveAll();
       await old.registry.dispose();
@@ -196,6 +210,9 @@ final class AppController extends Notifier<AppSession?> {
         onRunning: (bool on) => services.platform.setKeepAwake(on: on),
       ),
       firmware: firmware,
+      bluetooth: demo
+          ? null
+          : BluetoothAccess(platform: services.platform, central: ble.central),
     );
   }
 

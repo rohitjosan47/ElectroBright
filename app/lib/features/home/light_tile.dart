@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/app_session.dart';
+import '../../app/bluetooth_access.dart';
 import '../../app/providers.dart';
 import '../../core/color/color_science.dart';
 import '../../core/color/light_tone.dart';
@@ -64,7 +65,13 @@ class LightTile extends ConsumerWidget {
         f.setupNeeded || incompatibility == EbIncompatibility.setupNeeded;
     final String presence = setup
         ? l.presenceSetupNeeded
-        : presenceOf(l, phase, incompatibility, updating: updating);
+        : presenceOf(
+            l,
+            phase,
+            incompatibility,
+            updating: updating,
+            bluetooth: ref.watch(bluetoothIssueProvider),
+          );
     final EbScene? scene = setup ? null : state?.scene;
     final bool sleeping = state?.sleeping ?? false;
     final bool dark = ToneScope.darkOf(context);

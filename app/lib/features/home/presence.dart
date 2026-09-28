@@ -1,3 +1,4 @@
+import '../../app/bluetooth_access.dart';
 import '../../core/color/colour_engine.dart';
 import '../../core/model/channel_layout.dart';
 import '../../core/protocol/eb/eb_scene.dart';
@@ -6,9 +7,19 @@ import '../../l10n/app_localizations.dart';
 import '../../sessions/fixture_session.dart';
 
 /// Where a light is ("Connected", "Unavailable — …", "Firmware update needed",
-/// "Updating…").
-String presenceText(AppLocalizations l, FixtureStatus s) =>
-    presenceOf(l, s.phase, s.incompatibility, updating: s.updating);
+/// "Updating…"). [bluetooth]: why Bluetooth can't be used, which a light
+/// that can't connect for that reason names.
+String presenceText(
+  AppLocalizations l,
+  FixtureStatus s, {
+  BluetoothIssue? bluetooth,
+}) => presenceOf(
+  l,
+  s.phase,
+  s.incompatibility,
+  updating: s.updating,
+  bluetooth: bluetooth,
+);
 
 /// [presenceText] from the only fields it reads.
 String presenceOf(
@@ -16,6 +27,7 @@ String presenceOf(
   LinkPhase phase,
   EbIncompatibility? incompatibility, {
   bool updating = false,
+  BluetoothIssue? bluetooth,
 }) => updating
     ? l.presenceUpdating
     : switch (phase) {
@@ -24,7 +36,12 @@ String presenceOf(
         LinkPhase.handshaking ||
         LinkPhase.waiting => l.presenceConnecting,
         LinkPhase.unavailable => l.presenceUnavailable,
-        LinkPhase.bluetoothOff => l.presenceBluetoothOff,
+        LinkPhase.bluetoothOff => switch (bluetooth) {
+          BluetoothIssue.denied => l.presencePermission,
+          BluetoothIssue.unsupported => l.presenceBluetoothUnsupported,
+          BluetoothIssue.locationOff => l.presenceLocationOff,
+          BluetoothIssue.off || null => l.presenceBluetoothOff,
+        },
         LinkPhase.incompatible => switch (incompatibility) {
           EbIncompatibility.legacyFirmware => l.presenceUpdateNeeded,
           EbIncompatibility.unknownLayout => l.presenceNewerApp,

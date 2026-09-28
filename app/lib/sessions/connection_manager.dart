@@ -404,7 +404,18 @@ final class ConnectionManager {
   void _evaluate() {
     if (_disposed) return;
     _updateReconnectLease();
-    if (_adapter != BleAdapterState.ready) return;
+    if (_adapter != BleAdapterState.ready) {
+      // A light wanted while Bluetooth is already unusable says so (not
+      // before the first report: that would flash at start-up).
+      if (_adapter != BleAdapterState.unknown) {
+        for (final _Slot s in _slots.values) {
+          if (s.wants.isNotEmpty && s.link == null && !s.connecting) {
+            s.session.setPhase(LinkPhase.bluetoothOff);
+          }
+        }
+      }
+      return;
+    }
     if (_inBackground) return _evaluateInBackground();
 
     // Release lights nobody wants (after a grace period).
@@ -624,6 +635,10 @@ final class ConnectionManager {
         s.session.setPhase(
           s.wants.isEmpty ? LinkPhase.idle : LinkPhase.waiting,
         );
+      } else if (_adapter != BleAdapterState.ready) {
+        // Bluetooth went off during the attempt: not the light's failure,
+        // and nothing to retry until it is back.
+        s.session.setPhase(LinkPhase.bluetoothOff);
       } else if (e.gattStatus == 133) {
         s.gatt133++;
         if (s.gatt133 >= 2) await _central.clearCache(f.deviceId);
@@ -637,7 +652,11 @@ final class ConnectionManager {
       }
     } on Object {
       await _disconnect(link);
-      _failed(s);
+      if (_adapter != BleAdapterState.ready) {
+        s.session.setPhase(LinkPhase.bluetoothOff);
+      } else {
+        _failed(s);
+      }
     } finally {
       honest?.cancel();
       s.connecting = false;
@@ -697,7 +716,9 @@ final class ConnectionManager {
     if (_disposed) return;
     final bool setupNeeded =
         s.session.status.incompatibility == EbIncompatibility.setupNeeded;
-    if (reason == LinkLossReason.adapterOff) {
+    // The plugin may report an adapter switch-off as an ordinary loss.
+    if (reason == LinkLossReason.adapterOff ||
+        _adapter != BleAdapterState.ready) {
       s.session.setPhase(LinkPhase.bluetoothOff);
     } else if (setupNeeded && !s.wantsSetup) {
       // Released after setting up: it stays what it was until retried.

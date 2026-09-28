@@ -69,7 +69,7 @@ Only `platform/` touches ESP-IDF/Arduino; everything else builds on the host for
 
 | Limit (`ConnectionPolicy`) | Value |
 |---|---|
-| Links open at once | 5 on Android, 8 on iOS (`maxConnections`); a higher-priority want evicts a lower one |
+| Links open at once | 5 on Android, 8 on iOS (`maxConnections`). When all are in use, a higher-priority want disconnects the least recently used light whose wants are all lower **and** whose session is idle (nothing in flight); if there is none, the new want waits ("deferred") until a link closes. A busy lower-priority light is never cut off. |
 | Connect timeout | 10 s |
 | Idle grace (unwanted, foreground) | 60 s |
 | Background grace | 20 s, then every light is released so other phones can use it |

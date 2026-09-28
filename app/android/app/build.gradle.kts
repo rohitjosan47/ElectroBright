@@ -9,11 +9,29 @@ plugins {
 // Release signing. The previous app was released with the debug key of the
 // development Mac; Android only upgrades an installed app when the signing
 // certificate matches, so release builds use a backed-up copy of that key.
-// `android/key.properties` is git-ignored; without it, release builds fall
-// back to the local debug key.
+// `android/key.properties` is git-ignored. Without it a release build fails:
+// signed with another key, the APK could never upgrade the installed app.
+// `-PallowDebugSigning` (flutter: `--android-project-arg=allowDebugSigning=true`)
+// signs with the local debug key anyway, for a build that is never published.
 val keyProperties = Properties().apply {
     val file = rootProject.file("key.properties")
     if (file.exists()) file.inputStream().use { load(it) }
+}
+val hasReleaseKey = keyProperties.getProperty("storeFile") != null
+val allowDebugSigning = project.hasProperty("allowDebugSigning")
+
+gradle.taskGraph.whenReady {
+    val releaseTasks = allTasks.filter {
+        it.project == project && Regex("^(assemble|bundle|package|sign)Release.*").matches(it.name)
+    }
+    if (releaseTasks.isNotEmpty() && !hasReleaseKey && !allowDebugSigning) {
+        throw GradleException(
+            "Release build without the upgrade key: android/key.properties is missing " +
+                "(see docs/release.md, section 4). A release signed with any other " +
+                "key cannot upgrade the installed app. For an unpublished test build, pass " +
+                "--android-project-arg=allowDebugSigning=true to sign with the debug key.",
+        )
+    }
 }
 
 android {
@@ -36,7 +54,7 @@ android {
     }
 
     signingConfigs {
-        if (keyProperties.getProperty("storeFile") != null) {
+        if (hasReleaseKey) {
             create("release") {
                 storeFile = file(keyProperties.getProperty("storeFile"))
                 storePassword = keyProperties.getProperty("storePassword")
@@ -48,6 +66,7 @@ android {
 
     buildTypes {
         release {
+            // Debug key only when explicitly allowed (checked above).
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
