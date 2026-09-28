@@ -19,6 +19,7 @@ import '../../design/tokens/tokens.dart';
 import '../../drivers/electrobright/eb_types.dart';
 import '../../l10n/app_localizations.dart';
 import '../../sessions/connection_manager.dart';
+import '../../sessions/firmware_update.dart';
 import '../../sessions/fixture_session.dart';
 import '../../sessions/group_capabilities.dart';
 import '../../core/firmware/firmware_bundle.dart';
@@ -223,6 +224,13 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
     );
     final FirmwareVersion? installed = FirmwareVersion.tryParse(version);
     final bool wireless = status.view?.firmware?.wirelessUpdates ?? false;
+    final bool needsUsb = status.view?.firmware?.needsUsbInstall ?? false;
+    // The finished update's transfer, measured (no pacing depends on it).
+    final UpdateStats? stats = ref.watch(
+      updateProgressProvider(widget.fixtureId).select(
+        (UpdateProgress? p) => p == null || p.running ? null : p.stats,
+      ),
+    );
 
     if (status.isReady && !setup && !_diagAsked) {
       _diagAsked = true;
@@ -365,6 +373,7 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
                   installed: installed,
                   enabled: status.isConnected && wireless && !busy,
                   wireless: wireless || !status.isConnected,
+                  needsUsb: needsUsb,
                 ),
               // Debug builds only (release builds have neither the images nor
               // this option).
@@ -377,6 +386,23 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
                   trailing: Icon(Icons.chevron_right_rounded, color: fg),
                   enabled: status.isConnected && wireless && !busy,
                   onTap: () => unawaited(_rollbackTest()),
+                ),
+              if (stats != null)
+                ListTile(
+                  key: const ValueKey<String>('dev-update-stats'),
+                  title: Text(l.updateTransferStats, style: title),
+                  subtitle: Text(
+                    l.updateTransferStatsDetail(
+                      (stats.bytesPerSecond / 1000).toStringAsFixed(1),
+                      stats.windowResends,
+                      stats.resumes,
+                    ),
+                    style: detail.copyWith(
+                      fontFeatures: const <FontFeature>[
+                        FontFeature.tabularFigures(),
+                      ],
+                    ),
+                  ),
                 ),
             ],
           ),
@@ -478,9 +504,12 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
     required FirmwareVersion? installed,
     required bool enabled,
     required bool wireless,
+    required bool needsUsb,
   }) {
     final bool newer = installed != null && installed > bundled;
-    final String hint = !wireless && installed != null
+    final String hint = needsUsb
+        ? l.updateNeedsUsbInstall
+        : !wireless && installed != null
         ? l.updateNeedsUsb('$installed')
         : newer
         ? l.reinstallNewer('$bundled')

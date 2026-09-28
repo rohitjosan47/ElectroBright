@@ -797,6 +797,24 @@
   "updateNoAnswer": "The light stopped answering. Try again.",
   "updateNotBack": "The light hasn't come back after restarting. Check that it has power, then open it again.",
   "updateOtherVersion": "The light came back with different firmware than expected.",
+  "updateUnconfirmed": "The new firmware hasn't confirmed itself yet. If something is wrong with it, the light goes back to its previous firmware on its own.",
+  "updateNeedsUsbInstall": "This light needs a one-time USB install to receive updates.",
+  "updatePaused": "The update paused while the app was in the background. It continues when you return to the app.",
+  "updateTransferStats": "Last update transfer",
+  "updateTransferStatsDetail": "{rate} kB/s · window re-sends: {resends} · resumes: {resumes}",
+  "@updateTransferStatsDetail": {
+    "placeholders": {
+      "rate": {
+        "type": "String"
+      },
+      "resends": {
+        "type": "int"
+      },
+      "resumes": {
+        "type": "int"
+      }
+    }
+  },
   "bundledVersion": "In this app",
   "reinstallHint": "Sends firmware {version} to this light again",
   "@reinstallHint": {

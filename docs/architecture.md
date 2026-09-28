@@ -110,7 +110,7 @@ sequenceDiagram
     else fails or freezes
         BL->>L: roll back to previous slot
     end
-    App->>L: reconnect, VERSION, DIAG (rb, slot) after 18 s
+    App->>L: reconnect, VERSION, DIAG until pv=0, then rb and slot
 ```
 
 - **Build:** `firmware/update/ElectroBright_Update` is the type-neutral image; `firmware/tools/build_update_image.sh` builds it and `app/tool/bundle_firmware.sh` copies it with a manifest into `app/assets/firmware/`. See [firmware.md](firmware.md) and [release.md](release.md).

@@ -99,6 +99,12 @@ final class NoBackgroundTasks implements BackgroundTasks {
 /// Decides which lights are connected: wants, a connection budget, one (or
 /// two) connects at a time, backoff with jitter, GATT-133 recovery, reconnect
 /// as soon as a wanted light advertises, and the background grace period.
+///
+/// A light being updated ([WantReason.update]) is exempt from the background
+/// release: it keeps (and regains) its link, and the background task stays
+/// alive until the update ends. When the OS ends that task anyway, every
+/// link goes and [suspended] is true until the app is back in the
+/// foreground (the update pauses meanwhile).
 final class ConnectionManager {
   ConnectionManager({
     required this._central,
@@ -131,6 +137,13 @@ final class ConnectionManager {
   final Map<String, Future<void>> _closing = <String, Future<void>>{};
   bool _inBackground = false;
   Cancelable? _backgroundTimer;
+
+  /// The background grace period is over: only an update keeps its link.
+  bool _graceOver = false;
+  bool _suspended = false;
+  final StreamController<bool> _suspensions = StreamController<bool>.broadcast(
+    sync: true,
+  );
   int? _backgroundTask;
   ScanLease? _reconnectLease;
   bool _disposed = false;
@@ -257,6 +270,13 @@ final class ConnectionManager {
 
   // ---- lifecycle -------------------------------------------------------------------
 
+  /// The background task ended while the app was in the background: nothing
+  /// is connected until it is back in the foreground.
+  bool get suspended => _suspended;
+
+  /// [suspended]'s changes (delivered synchronously, before the links go).
+  Stream<bool> get suspensions => _suspensions.stream;
+
   Future<void> onBackground() async {
     if (_inBackground) return;
     _inBackground = true;
@@ -265,6 +285,7 @@ final class ConnectionManager {
     if (policy.stayConnectedInBackground) return;
     _backgroundTask = await _background.begin('eb-release');
     _backgroundTimer = _scheduler.after(policy.backgroundGrace, () {
+      _graceOver = true;
       unawaited(_releaseAll());
     });
   }
@@ -272,8 +293,13 @@ final class ConnectionManager {
   Future<void> onForeground() async {
     if (!_inBackground) return;
     _inBackground = false;
+    _graceOver = false;
     _backgroundTimer?.cancel();
     _backgroundTimer = null;
+    if (_suspended) {
+      _suspended = false;
+      _suspensions.add(false);
+    }
     await _endBackgroundTask();
     for (final _Slot s in _slots.values) {
       final EbSession? es = s.session.session;
@@ -282,19 +308,31 @@ final class ConnectionManager {
     _evaluate();
   }
 
-  /// Called by the platform when the background task is about to expire.
-  Future<void> onBackgroundExpiring() => _releaseAll();
+  /// Called by the platform when the background task is about to expire:
+  /// everything goes, an update too (it pauses until the app is back).
+  Future<void> onBackgroundExpiring() async {
+    if (_inBackground && !_suspended) {
+      _suspended = true;
+      _suspensions.add(true);
+    }
+    await _releaseAll(evenUpdates: true);
+  }
 
-  Future<void> _releaseAll() async {
+  /// Releases every light, except one being updated unless [evenUpdates];
+  /// the background task ends once nothing is updating.
+  Future<void> _releaseAll({bool evenUpdates = false}) async {
     _backgroundTimer?.cancel();
     for (final _Slot s in _slots.values) {
+      if (!evenUpdates && s.updating) continue;
       s.retry?.cancel();
       s.retry = null;
       // A waiting connect would take the light the moment it appears.
       s.cancelConnect();
       await _disconnect(s.link);
     }
-    await _endBackgroundTask();
+    if (evenUpdates || !_slots.values.any((_Slot s) => s.updating)) {
+      await _endBackgroundTask();
+    }
   }
 
   Future<void> _endBackgroundTask() async {
@@ -321,6 +359,7 @@ final class ConnectionManager {
 
   Future<void> dispose() async {
     halt();
+    unawaited(_suspensions.close());
     _reconnectLease?.release();
     await _adapterSub.cancel();
     await _advertSub.cancel();
@@ -365,7 +404,8 @@ final class ConnectionManager {
   void _evaluate() {
     if (_disposed) return;
     _updateReconnectLease();
-    if (_adapter != BleAdapterState.ready || _inBackground) return;
+    if (_adapter != BleAdapterState.ready) return;
+    if (_inBackground) return _evaluateInBackground();
 
     // Release lights nobody wants (after a grace period).
     for (final _Slot s in _slots.values) {
@@ -429,6 +469,37 @@ final class ConnectionManager {
         continue;
       }
       s.connectDone = _connect(s);
+    }
+  }
+
+  /// In the background only an update keeps (or regains) its link; after
+  /// the grace period a light whose update ended goes at once.
+  void _evaluateInBackground() {
+    for (final _Slot s in _slots.values) {
+      if (s.updating) continue;
+      if (_graceOver) {
+        s.cancelConnect();
+        if (s.link != null) unawaited(_disconnect(s.link));
+      }
+    }
+    if (_graceOver && !_slots.values.any((_Slot s) => s.updating)) {
+      unawaited(_endBackgroundTask());
+    }
+    if (_suspended) return;
+    for (final _Slot s in _slots.values) {
+      if (s.updating &&
+          s.link == null &&
+          !s.connecting &&
+          s.retry == null &&
+          s.session.status.phase != LinkPhase.incompatible &&
+          // Android: only to a light seen advertising (see _evaluate).
+          (!policy.isAndroid ||
+              _discovery.seenRecently(
+                s.session.fixture.deviceId,
+                policy.advertFresh,
+              ))) {
+        s.connectDone = _connect(s);
+      }
     }
   }
 
@@ -513,7 +584,7 @@ final class ConnectionManager {
       );
       if (_disposed ||
           s.wants.isEmpty ||
-          _inBackground ||
+          (_inBackground && (!s.updating || _suspended)) ||
           !identical(_slots[f.id], s)) {
         await _disconnect(link);
         return;
@@ -631,7 +702,8 @@ final class ConnectionManager {
     } else if (setupNeeded && !s.wantsSetup) {
       // Released after setting up: it stays what it was until retried.
       s.session.setPhase(LinkPhase.incompatible);
-    } else if (s.wants.isNotEmpty && !_inBackground) {
+    } else if (s.wants.isNotEmpty &&
+        (!_inBackground || (s.updating && !_suspended))) {
       s.session.setPhase(LinkPhase.waiting);
       if (reason != LinkLossReason.requested) _retryIn(s, policy.backoff.first);
     } else {
@@ -674,6 +746,9 @@ final class _Slot {
   // Cancelled in _onClosed / on re-attach.
   // ignore: cancel_subscriptions
   StreamSubscription<EbEvent>? eventSub;
+
+  /// The light is being updated ([WantReason.update]).
+  bool get updating => wants.any((Want w) => w.reason == WantReason.update);
 
   /// A screen is setting the light up ([WantReason.setup]).
   bool get wantsSetup => wants.any((Want w) => w.reason == WantReason.setup);

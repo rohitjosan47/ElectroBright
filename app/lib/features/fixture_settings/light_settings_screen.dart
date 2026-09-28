@@ -288,17 +288,23 @@ class _LightSettingsScreenState extends ConsumerState<LightSettingsScreen> {
     TextStyle title,
     TextStyle sub,
   ) {
-    final (bool connected, String? version, bool wireless, bool updating) = ref
-        .watch(
-          fixtureStatusProvider(widget.fixtureId).select(
-            (FixtureStatus s) => (
-              s.isConnected,
-              s.view?.firmware?.version.version,
-              s.view?.firmware?.wirelessUpdates ?? false,
-              s.updating,
-            ),
-          ),
-        );
+    final (
+      bool connected,
+      String? version,
+      bool wireless,
+      bool needsUsb,
+      bool updating,
+    ) = ref.watch(
+      fixtureStatusProvider(widget.fixtureId).select(
+        (FixtureStatus s) => (
+          s.isConnected,
+          s.view?.firmware?.version.version,
+          s.view?.firmware?.wirelessUpdates ?? false,
+          s.view?.firmware?.needsUsbInstall ?? false,
+          s.updating,
+        ),
+      ),
+    );
     final FirmwareVersion? bundled = ref.watch(
       bundledFirmwareProvider.select((FirmwareBundle? b) => b?.version),
     );
@@ -324,6 +330,8 @@ class _LightSettingsScreenState extends ConsumerState<LightSettingsScreen> {
             ? l.presenceUpdating
             : wireless
             ? l.updateAvailableDetail('$bundled', '$installed')
+            : needsUsb
+            ? l.updateNeedsUsbInstall
             : l.updateNeedsUsb('$installed'),
         style: sub,
       ),

@@ -303,6 +303,90 @@ void main() {
     expect(find.text('Updated to $_current'), findsOneWidget);
     expect(d.model('Living room').restarts, 1);
     expect(d.model('Living room').otaFlash.running, 1);
+
+    // Back on the developer page: how the transfer went.
+    pop(t, UpdateFirmwareScreen);
+    await _settle(t, 1);
+    await t.scrollUntilVisible(
+      _key('dev-update-stats'),
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('Last update transfer'), findsOneWidget);
+    expect(
+      find.textContaining(
+        RegExp(r'^\d+\.\d kB/s · window re-sends: 0 · resumes: 0$'),
+      ),
+      findsOneWidget,
+    );
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('OTA=0: a one-time USB install instead of an update offer', (
+    WidgetTester t,
+  ) async {
+    const String usb =
+        'This light needs a one-time USB install to receive updates.';
+    final DemoApp d = await start(t);
+    final EbDeviceModel m = d.model('Desk strip');
+    m.otaFlash.capacity = 0;
+    m.reboot();
+    connect(d, 'Desk strip');
+    await t.runAsync(() => d.app.ble.connections.reconnect(d.id('Desk strip')));
+    await _settle(t, 3);
+    expect(d.session('Desk strip').status.isReady, isTrue);
+    expect(
+      d.session('Desk strip').status.view!.firmware!.needsUsbInstall,
+      isTrue,
+    );
+    expect(find.text('1 light has an update'), findsNothing);
+    expect(_key('tile-update-badge'), findsNothing);
+
+    await push(t, LightSettingsScreen(fixtureId: d.id('Desk strip')));
+    await _settle(t);
+    await t.scrollUntilVisible(
+      _key('settings-update-firmware'),
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text(usb), findsOneWidget);
+    pop(t, LightSettingsScreen);
+    await _settle(t, 1);
+
+    await push(t, UpdateFirmwareScreen(fixtureId: d.id('Desk strip')));
+    expect(t.widget<Text>(_key('update-blocked')).data, usb);
+    expect(t.widget<FilledButton>(_key('update-start')).onPressed, isNull);
+    expect(find.text("This firmware doesn't fit this light."), findsNothing);
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('suspended in the background: the screen says the update '
+      'paused; it resumes on return', (WidgetTester t) async {
+    final DemoApp d = await start(t);
+    connect(d, 'Desk strip');
+    await _settle(t);
+    await push(t, UpdateFirmwareScreen(fixtureId: d.id('Desk strip')));
+    await startUpdate(t);
+    expect(find.text('Sending the firmware…'), findsOneWidget);
+    final ConnectionManager c = d.app.ble.connections;
+    await t.runAsync(c.onBackground);
+    await t.runAsync(c.onBackgroundExpiring);
+    await _settle(t, 3);
+    expect(_key('update-paused'), findsOneWidget);
+    expect(
+      find.text(
+        'The update paused while the app was in the background. It '
+        'continues when you return to the app.',
+      ),
+      findsOneWidget,
+    );
+    expect(d.session('Desk strip').status.isConnected, isFalse);
+
+    await t.runAsync(c.onForeground);
+    await _settle(t, 45);
+    expect(find.text('Updated to $_current'), findsOneWidget);
+    expect(_key('update-paused'), findsNothing);
+    expect(d.model('Desk strip').runningVersion, _current);
     await DemoApp.shutDown(t);
   });
 

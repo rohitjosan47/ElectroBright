@@ -352,6 +352,7 @@ final class EbSession {
       // The update service, and (3.8.2+) a spare slot: CAPS OTA=0 means none.
       wirelessUpdates:
           _link.offers(EbOta.serviceUuid) && caps.updateSlotBytes != 0,
+      updateSlotBytes: caps.updateSlotBytes,
     );
     _phase = EbPhase.ready;
     _armTimerWatch();

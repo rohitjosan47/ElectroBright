@@ -101,9 +101,13 @@ class _UpdateFirmwareScreenState extends ConsumerState<UpdateFirmwareScreen> {
       updateProgressProvider(widget.fixtureId),
     );
     final String? active = ref.watch(activeUpdateProvider);
-    final (bool connected, String? live) = ref.watch(
+    final (bool connected, String? live, bool needsUsb) = ref.watch(
       fixtureStatusProvider(widget.fixtureId).select(
-        (FixtureStatus s) => (s.isConnected, s.view?.firmware?.version.version),
+        (FixtureStatus s) => (
+          s.isConnected,
+          s.view?.firmware?.version.version,
+          s.view?.firmware?.needsUsbInstall ?? false,
+        ),
       ),
     );
     ref.listen<UpdateProgress?>(updateProgressProvider(widget.fixtureId), (
@@ -128,7 +132,7 @@ class _UpdateFirmwareScreenState extends ConsumerState<UpdateFirmwareScreen> {
     final FirmwareVersion? from = progress?.from ?? installed;
 
     final List<Widget> body = switch (progress) {
-      null => _intro(l, f, bundle, installed, connected, active),
+      null => _intro(l, f, bundle, installed, connected, active, needsUsb),
       final UpdateProgress p when p.running => _running(l, p),
       final UpdateProgress p => _result(l, f, p, bundle),
     };
@@ -177,6 +181,7 @@ class _UpdateFirmwareScreenState extends ConsumerState<UpdateFirmwareScreen> {
     FirmwareVersion? installed,
     bool connected,
     String? active,
+    bool needsUsb,
   ) {
     final TextStyle title = settingsTitleStyle(context);
     final TextStyle detail = settingsDetailStyle(context);
@@ -188,6 +193,8 @@ class _UpdateFirmwareScreenState extends ConsumerState<UpdateFirmwareScreen> {
     final bool other = active != null && active != widget.fixtureId;
     final String? blocker = bundle == null
         ? l.updateBadImage
+        : needsUsb
+        ? l.updateNeedsUsbInstall
         : newer
         ? l.updateDowngrade
         : same && !widget.reinstall
@@ -320,6 +327,14 @@ class _UpdateFirmwareScreenState extends ConsumerState<UpdateFirmwareScreen> {
                     ],
                   ),
                   const SizedBox(height: Space.s),
+                  if (p.paused) ...<Widget>[
+                    _Note(
+                      key: const ValueKey<String>('update-paused'),
+                      icon: Icons.pause_circle_outline_rounded,
+                      text: l.updatePaused,
+                    ),
+                    const SizedBox(height: Space.xs),
+                  ],
                   _Note(
                     icon: Icons.phone_iphone_rounded,
                     text: l.updateStayNear,
@@ -410,7 +425,8 @@ class _UpdateFirmwareScreenState extends ConsumerState<UpdateFirmwareScreen> {
         bundle != null &&
         p.problem != UpdateProblem.downgrade &&
         p.problem != UpdateProblem.sameVersion &&
-        p.problem != UpdateProblem.unsupported;
+        p.problem != UpdateProblem.unsupported &&
+        p.problem != UpdateProblem.needsUsbInstall;
     return <Widget>[
       SettingsSection(
         children: <Widget>[
@@ -471,6 +487,7 @@ class _UpdateFirmwareScreenState extends ConsumerState<UpdateFirmwareScreen> {
 String updateProblemText(AppLocalizations l, UpdateProblem? p) => switch (p) {
   UpdateProblem.notConnected => l.updateNotConnected,
   UpdateProblem.unsupported => l.updateUnsupported,
+  UpdateProblem.needsUsbInstall => l.updateNeedsUsbInstall,
   UpdateProblem.downgrade => l.updateDowngrade,
   UpdateProblem.sameVersion => l.updateSameVersion,
   UpdateProblem.badImage => l.updateBadImage,
@@ -485,12 +502,13 @@ String updateProblemText(AppLocalizations l, UpdateProblem? p) => switch (p) {
   UpdateProblem.noAnswer || null => l.updateNoAnswer,
   UpdateProblem.notBack => l.updateNotBack,
   UpdateProblem.otherVersion => l.updateOtherVersion,
+  UpdateProblem.unconfirmed => l.updateUnconfirmed,
   UpdateProblem.anotherUpdate => l.updateOtherRunning,
 };
 
 /// A small line with an icon (the update screen's notes).
 class _Note extends StatelessWidget {
-  const _Note({required this.icon, required this.text});
+  const _Note({required this.icon, required this.text, super.key});
   final IconData icon;
   final String text;
 

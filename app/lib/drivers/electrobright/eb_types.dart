@@ -83,6 +83,7 @@ final class EbFirmware {
     required this.modeCount,
     required this.capabilities,
     this.wirelessUpdates = false,
+    this.updateSlotBytes,
   });
   final String model;
   final EbVersion version;
@@ -95,6 +96,13 @@ final class EbFirmware {
   /// It has the wireless-update service (firmware 3.8.0+) and a spare slot
   /// to install to (3.8.2+ announces it as CAPS `OTA=`; `OTA=0`: none).
   final bool wirelessUpdates;
+
+  /// CAPS `OTA=`: the spare slot's size (null before 3.8.2).
+  final int? updateSlotBytes;
+
+  /// `OTA=0`: no spare slot to install to; a one-time USB install gives it
+  /// one (then updates come through the app).
+  bool get needsUsbInstall => updateSlotBytes == 0;
 
   ChannelLayout get layout => capabilities.layout;
 }

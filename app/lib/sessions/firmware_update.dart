@@ -53,6 +53,10 @@ enum UpdateProblem {
   /// Its firmware has no wireless updates (before 3.8.0).
   unsupported,
 
+  /// It has no spare slot to install to (CAPS `OTA=0`): a one-time USB
+  /// install gives it one.
+  needsUsbInstall,
+
   /// The light has newer firmware (never sent; also the light's DOWNGRADE).
   downgrade,
 
@@ -96,6 +100,10 @@ enum UpdateProblem {
   /// It came back with a version that is neither the old nor the new one.
   otherVersion,
 
+  /// The new firmware still had not confirmed itself (DIAG `pv`) when the
+  /// wait ended.
+  unconfirmed,
+
   /// Another light is being updated (one at a time).
   anotherUpdate,
 }
@@ -117,6 +125,8 @@ final class UpdateProgress {
     this.slotBefore,
     this.slotAfter,
     this.rolledBackFlag,
+    this.paused = false,
+    this.stats,
   });
 
   final String fixtureId;
@@ -143,6 +153,13 @@ final class UpdateProgress {
   final int? slotAfter;
   final bool? rolledBackFlag;
 
+  /// The app was suspended in the background mid-update: the update waits
+  /// and resumes when the app is open again (true until it moves on).
+  final bool paused;
+
+  /// How the transfer went (developer tools), once it has sent something.
+  final UpdateStats? stats;
+
   double get fraction => total == 0 ? 0 : sent / total;
   bool get running => !stage.finished;
 
@@ -162,6 +179,8 @@ final class UpdateProgress {
     int? slotBefore,
     int? slotAfter,
     bool? rolledBackFlag,
+    bool? paused,
+    UpdateStats? stats,
   }) => UpdateProgress(
     fixtureId: fixtureId,
     stage: stage ?? this.stage,
@@ -176,6 +195,8 @@ final class UpdateProgress {
     slotBefore: slotBefore ?? this.slotBefore,
     slotAfter: slotAfter ?? this.slotAfter,
     rolledBackFlag: rolledBackFlag ?? this.rolledBackFlag,
+    paused: paused ?? this.paused,
+    stats: stats ?? this.stats,
   );
 
   @override
@@ -193,7 +214,9 @@ final class UpdateProgress {
       other.problem == problem &&
       other.slotBefore == slotBefore &&
       other.slotAfter == slotAfter &&
-      other.rolledBackFlag == rolledBackFlag;
+      other.rolledBackFlag == rolledBackFlag &&
+      other.paused == paused &&
+      other.stats == stats;
 
   @override
   int get hashCode => Object.hash(
@@ -210,12 +233,61 @@ final class UpdateProgress {
     slotBefore,
     slotAfter,
     rolledBackFlag,
+    paused,
+    stats,
   );
 
   @override
   String toString() =>
       'UpdateProgress($fixtureId ${stage.name} $sent/$total'
-      '${problem == null ? '' : ' ${problem!.name}'})';
+      '${problem == null ? '' : ' ${problem!.name}'}'
+      '${paused ? ' paused' : ''})';
+}
+
+/// One update's transfer, measured (developer tools; no pacing depends on
+/// it).
+@immutable
+final class UpdateStats {
+  const UpdateStats({
+    required this.bytes,
+    required this.sending,
+    required this.windowResends,
+    required this.resumes,
+  });
+
+  /// Bytes the light confirmed (each byte counted once).
+  final int bytes;
+
+  /// Time spent sending windows and waiting for their ACKs (not
+  /// reconnecting).
+  final Duration sending;
+
+  /// Windows sent again from an offset already sent (lost DATA or ACK, a
+  /// light timeout, a resume).
+  final int windowResends;
+
+  /// Transfers resumed on a new link after a drop.
+  final int resumes;
+
+  /// Confirmed bytes per second of sending time (0 before any).
+  double get bytesPerSecond =>
+      sending <= Duration.zero ? 0 : bytes * 1e6 / sending.inMicroseconds;
+
+  @override
+  bool operator ==(Object other) =>
+      other is UpdateStats &&
+      other.bytes == bytes &&
+      other.sending == sending &&
+      other.windowResends == windowResends &&
+      other.resumes == resumes;
+
+  @override
+  int get hashCode => Object.hash(bytes, sending, windowResends, resumes);
+
+  @override
+  String toString() =>
+      'UpdateStats(${bytesPerSecond.round()} B/s, '
+      '$windowResends re-sends, $resumes resumes)';
 }
 
 /// The update engine's waits.
@@ -230,7 +302,9 @@ final class UpdateTiming {
     this.reconnect = const Duration(seconds: 30),
     this.maxResumes = 5,
     this.restart = const Duration(seconds: 60),
-    this.confirm = const Duration(seconds: 18),
+    this.verify = const Duration(seconds: 120),
+    this.verifyPoll = const Duration(seconds: 1),
+    this.legacyWindow = const Duration(seconds: 18),
     this.abort = const Duration(seconds: 2),
   });
 
@@ -258,9 +332,17 @@ final class UpdateTiming {
   /// For the light to come back after END_OK (it restarts).
   final Duration restart;
 
-  /// From END_OK until the new firmware has surely confirmed itself (its
-  /// self-check ends 15 s after it starts; docs/protocol.md §10).
-  final Duration confirm;
+  /// For the new firmware to confirm itself (DIAG `pv` clears) once it is
+  /// back; its self-check decides within 15 s of starting (docs/protocol.md
+  /// §10), so this is generous.
+  final Duration verify;
+
+  /// Between DIAG reads while `pv` is set.
+  final Duration verifyPoll;
+
+  /// Firmware without DIAG `pv` (before 3.8.2): from END_OK until its
+  /// self-check has surely ended.
+  final Duration legacyWindow;
 
   /// For ABORTED after a cancel.
   final Duration abort;
@@ -272,15 +354,29 @@ final class UpdateTiming {
 /// skip it, its intents are refused) and the session's command and colour
 /// lanes are paused; the update service shares the link's single writer.
 /// After END_OK the light restarts; the engine waits for it to reconnect
-/// (same device), checks the version and, once the new firmware's self-check
-/// window has passed, DIAG's rollback flag and running slot.
+/// (same device), checks the version, waits until the new firmware has
+/// confirmed itself (DIAG `pv` clears) and then reads DIAG's rollback flag
+/// and running slot. An END_OK lost to the restart is no failure: a light
+/// back on the new firmware goes straight to that confirmation.
+///
+/// In the background the update keeps its link (see [ConnectionManager]);
+/// if the app is suspended anyway, the update pauses and resumes once the
+/// app is open again.
 final class FirmwareUpdates {
   FirmwareUpdates({
     required this._connections,
     required this._scheduler,
     this.timing = const UpdateTiming(),
     this.onRunning,
-  });
+  }) {
+    _suspensions = _connections.suspensions.listen((bool on) {
+      if (on) {
+        _active?.pause();
+      } else {
+        _active?.resume();
+      }
+    });
+  }
 
   final ConnectionManager _connections;
   final Scheduler _scheduler;
@@ -295,6 +391,7 @@ final class FirmwareUpdates {
       StreamController<UpdateProgress>.broadcast();
   _Run? _active;
   bool _disposed = false;
+  late final StreamSubscription<bool> _suspensions;
 
   /// The light being updated, if any.
   String? get activeId => _active?.fixtureId;
@@ -338,6 +435,7 @@ final class FirmwareUpdates {
       return busy;
     }
     final _Run run = _Run(this, fixtureId, first);
+    if (_connections.suspended) run.pause();
     _active = run;
     onRunning?.call(true);
     _emit(first);
@@ -368,6 +466,7 @@ final class FirmwareUpdates {
   Future<void> dispose() async {
     _disposed = true;
     _active?.requestCancel(force: true);
+    await _suspensions.cancel();
     unawaited(_changes.close());
   }
 
@@ -389,6 +488,16 @@ final class _LinkLost implements Exception {
   const _LinkLost();
 }
 
+/// After END: the light already runs the new image (it answered BEGIN with
+/// SAME_VERSION), so END_OK was lost to its restart.
+final class _Installed implements Exception {
+  const _Installed();
+}
+
+/// Where the transfer ended: [session] is the link END_OK came on, or with
+/// [restarted] already a link to the light running the new firmware.
+typedef _Sent = ({EbSession session, bool restarted});
+
 /// One update from start to result.
 final class _Run {
   _Run(this._owner, this.fixtureId, this.progress);
@@ -402,6 +511,25 @@ final class _Run {
   bool _abandon = false;
   final List<void Function()> _wakers = <void Function()>[];
 
+  /// The app is suspended (its link goes too): the update waits for it to
+  /// resume, and no timeout runs out meanwhile ([_timeout]).
+  bool _paused = false;
+  final List<void Function()> _resumers = <void Function()>[];
+
+  /// END went out: the light may have installed the image and restarted.
+  bool _endSent = false;
+
+  /// When the wait for the new firmware's confirmation (re)started.
+  Duration _verifyFrom = Duration.zero;
+
+  // What the transfer measured (UpdateStats).
+  int? _firstOffset;
+  int _confirmed = 0;
+  int _written = 0;
+  Duration _sendingTime = Duration.zero;
+  int _windowResends = 0;
+  int _reconnects = 0;
+
   Scheduler get _scheduler => _owner._scheduler;
   UpdateTiming get _t => _owner.timing;
 
@@ -412,6 +540,73 @@ final class _Run {
       w();
     }
   }
+
+  void pause() {
+    if (_paused) return;
+    _paused = true;
+    _set(progress.copyWith(paused: true));
+  }
+
+  void resume() {
+    if (!_paused) return;
+    _paused = false;
+    // The light gets its full time again.
+    _verifyFrom = _scheduler.now;
+    final List<void Function()> due = List<void Function()>.of(_resumers);
+    _resumers.clear();
+    for (final void Function() r in due) {
+      r();
+    }
+  }
+
+  /// While paused: until the app is back (or a cancel).
+  Future<void> _untilResumed() async {
+    if (!_paused) return;
+    final Completer<void> done = Completer<void>();
+    void go() {
+      if (!done.isCompleted) done.complete();
+    }
+
+    _resumers.add(go);
+    _wakers.add(go);
+    try {
+      await done.future;
+    } finally {
+      _resumers.remove(go);
+      _wakers.remove(go);
+    }
+    if (_abandon) throw const _Stop(UpdateStage.cancelled);
+    _checkCancel();
+  }
+
+  /// Calls [fire] after [limit], counting only time the app was running: a
+  /// timeout due while paused starts over once the app resumes.
+  Cancelable _timeout(Duration limit, void Function() fire) {
+    final _Timeout t = _Timeout(this);
+    void arm() {
+      t.rearm = null;
+      t.timer = _scheduler.after(limit, () {
+        if (_paused) {
+          t.rearm = arm;
+          _resumers.add(arm);
+        } else {
+          fire();
+        }
+      });
+    }
+
+    arm();
+    return t;
+  }
+
+  UpdateStats? get _stats => _firstOffset == null
+      ? null
+      : UpdateStats(
+          bytes: max(0, _confirmed - _firstOffset!),
+          sending: _sendingTime,
+          windowResends: _windowResends,
+          resumes: _reconnects,
+        );
 
   void _set(UpdateProgress p) {
     if (p == progress) return;
@@ -446,6 +641,9 @@ final class _Run {
         fw.version.version,
       );
       _set(progress.copyWith(from: installed));
+      if (fw.needsUsbInstall) {
+        throw const _Stop(UpdateStage.failed, UpdateProblem.needsUsbInstall);
+      }
       if (!fw.wirelessUpdates || installed == null) {
         throw const _Stop(UpdateStage.failed, UpdateProblem.unsupported);
       }
@@ -473,10 +671,13 @@ final class _Run {
       fs.setUpdating(on: true);
       _checkCancel();
 
-      session = await _send(fs, session, image);
+      final _Sent sent = await _send(fs, session, image, slotBefore);
+      session = sent.session;
       final Duration installedAt = _scheduler.now;
-      _set(progress.copyWith(stage: UpdateStage.restarting));
-      return await _confirm(fs, session, installed, installedAt, slotBefore);
+      if (!sent.restarted) {
+        _set(progress.copyWith(stage: UpdateStage.restarting));
+      }
+      return await _confirm(fs, sent, installed, installedAt, slotBefore);
     } on _Stop catch (s) {
       // ABORT on the link in use (a resumed transfer has a new one).
       if (s.stage == UpdateStage.cancelled) await _abortOn(fs.session);
@@ -494,6 +695,8 @@ final class _Run {
       stage: s.stage,
       problem: s.problem,
       reconnecting: false,
+      paused: false,
+      stats: _stats,
     );
     _set(p);
     return p;
@@ -501,46 +704,75 @@ final class _Run {
 
   // ---- transfer ---------------------------------------------------------------
 
-  /// Sends [image] until END_OK, resuming on a new link after a drop.
-  /// Returns the session END_OK came on.
-  Future<EbSession> _send(
+  /// Sends [image] until END_OK, resuming on a new link after a drop (a
+  /// drop while the app is suspended waits for it and is not counted).
+  /// Once END went out, a light back on the new image lost only END_OK: that
+  /// link is returned as [_Sent.restarted] instead of sending again.
+  Future<_Sent> _send(
     FixtureSession fs,
     EbSession first,
     FirmwareImage image,
+    int? slotBefore,
   ) async {
     EbSession session = first;
-    int resumes = 0;
+    int drops = 0;
     while (true) {
       final _Port port = _Port(session, this);
       try {
         session.pauseLanes();
         await _transfer(port, image);
-        return session;
+        return (session: session, restarted: false);
+      } on _Installed {
+        return (session: session, restarted: true);
       } on _LinkLost {
-        if (++resumes > _t.maxResumes) {
+        if (_paused) {
+          await _untilResumed();
+        } else if (++drops > _t.maxResumes) {
           throw const _Stop(UpdateStage.failed, UpdateProblem.linkLost);
         }
+        _reconnects++;
         _set(progress.copyWith(reconnecting: true, timeLeft: null));
         final EbSession? next = await _connected(
           fs,
-          _t.reconnect,
+          _endSent ? _t.restart : _t.reconnect,
           other: session,
         );
         _checkCancel();
         if (next == null) {
-          throw const _Stop(UpdateStage.failed, UpdateProblem.linkLost);
+          throw _Stop(
+            UpdateStage.failed,
+            _endSent ? UpdateProblem.notBack : UpdateProblem.linkLost,
+          );
         }
         session = next;
         _set(progress.copyWith(reconnecting: false));
+        if (_endSent && await _restartedInto(session, slotBefore)) {
+          return (session: session, restarted: true);
+        }
       } finally {
         port.close();
       }
     }
   }
 
+  /// After END, on a new link: whether [s] already runs the new image. A
+  /// reinstall keeps the version, so there DIAG tells (another slot, or one
+  /// not confirmed yet).
+  Future<bool> _restartedInto(EbSession s, int? slotBefore) async {
+    final FirmwareVersion? v = FirmwareVersion.tryParse(
+      s.firmware!.version.version,
+    );
+    if (v != progress.to) return false;
+    if (progress.from != progress.to) return true;
+    final Map<String, int>? d = await s.diag();
+    return d != null &&
+        (d['pv'] == 1 || (slotBefore != null && d['slot'] != slotBefore));
+  }
+
   Future<void> _transfer(_Port port, FirmwareImage image) async {
     final Uint8List begin = _beginRequest(image);
     int next = await _begin(port, begin);
+    _firstOffset ??= next;
     final int chunk = _chunkSize(port.session.mtu);
     _Rate rate = _Rate(_scheduler.now, next);
     _set(
@@ -559,41 +791,50 @@ final class _Run {
           image.size,
           (next ~/ EbOta.window + 1) * EbOta.window,
         );
-        for (int at = next; at < end; at += chunk) {
-          _checkCancel();
-          await port.data(image.bytes, at, min(chunk, end - at));
-        }
         final int before = next;
-        final _Reply? r = await port.next(
-          _t.ack,
-          (_Reply r) => r.kind == EbOta.ack || r.kind == EbOta.error,
-        );
-        if (r == null) {
-          // The window's last chunk (or its ACK) was lost: ask where it is.
-          final _Reply? st = await _status(port);
-          if (st == null) {
-            if (_scheduler.now - progressAt > _t.stallLimit) {
-              throw const _Stop(UpdateStage.failed, UpdateProblem.noAnswer);
-            }
-            continue;
+        final Duration windowAt = _scheduler.now;
+        if (next < _written) _windowResends++;
+        try {
+          for (int at = next; at < end; at += chunk) {
+            _checkCancel();
+            final int length = min(chunk, end - at);
+            _written = max(_written, at + length);
+            await port.data(image.bytes, at, length);
           }
-          if (st.a == EbOta.stateReceiving) {
-            next = st.b;
-          } else if (st.a == EbOta.stateIdle) {
-            // The transfer stopped (timeout): resume where it got to.
+          final _Reply? r = await port.next(
+            _t.ack,
+            (_Reply r) => r.kind == EbOta.ack || r.kind == EbOta.error,
+          );
+          if (r == null) {
+            // The window's last chunk (or its ACK) was lost: ask where it is.
+            final _Reply? st = await _status(port);
+            if (st == null) {
+              if (_scheduler.now - progressAt > _t.stallLimit) {
+                throw const _Stop(UpdateStage.failed, UpdateProblem.noAnswer);
+              }
+              continue;
+            }
+            if (st.a == EbOta.stateReceiving) {
+              next = st.b;
+            } else if (st.a == EbOta.stateIdle) {
+              // The transfer stopped (timeout): resume where it got to.
+              next = await _begin(port, begin);
+              rate = _Rate(_scheduler.now, next);
+            } else {
+              throw const _Stop(UpdateStage.failed, UpdateProblem.busy);
+            }
+          } else if (r.kind == EbOta.ack) {
+            next = r.a;
+          } else if (r.a == EbOtaError.timeout.code) {
             next = await _begin(port, begin);
             rate = _Rate(_scheduler.now, next);
           } else {
-            throw const _Stop(UpdateStage.failed, UpdateProblem.busy);
+            throw _Stop(UpdateStage.failed, _problemOf(r.a));
           }
-        } else if (r.kind == EbOta.ack) {
-          next = r.a;
-        } else if (r.a == EbOtaError.timeout.code) {
-          next = await _begin(port, begin);
-          rate = _Rate(_scheduler.now, next);
-        } else {
-          throw _Stop(UpdateStage.failed, _problemOf(r.a));
+        } finally {
+          _sendingTime += _scheduler.now - windowAt;
         }
+        _confirmed = max(_confirmed, next);
         if (next > before) {
           progressAt = _scheduler.now;
         } else if (_scheduler.now - progressAt > _t.stallLimit) {
@@ -603,12 +844,21 @@ final class _Run {
           progress.copyWith(
             sent: next,
             timeLeft: rate.left(_scheduler.now, next, image.size),
+            // Moving again after a pause.
+            paused: _paused || (progress.paused && next <= before),
           ),
         );
       }
       // Everything arrived: the light checks and selects the image.
       _checkCancel();
-      _set(progress.copyWith(stage: UpdateStage.installing, timeLeft: null));
+      _set(
+        progress.copyWith(
+          stage: UpdateStage.installing,
+          timeLeft: null,
+          stats: _stats,
+        ),
+      );
+      _endSent = true;
       await port.control(const <int>[EbOta.end]);
       final _Reply? r = await port.next(
         _t.end,
@@ -651,6 +901,10 @@ final class _Run {
       );
       if (r == null) continue;
       if (r.kind == EbOta.beginOk) return r.a;
+      // After END: it already runs this image (END_OK was lost).
+      if (_endSent && r.a == EbOtaError.sameVersion.code) {
+        throw const _Installed();
+      }
       throw _Stop(UpdateStage.failed, _problemOf(r.a));
     }
     throw const _Stop(UpdateStage.failed, UpdateProblem.noAnswer);
@@ -719,18 +973,22 @@ final class _Run {
 
   // ---- after END_OK -------------------------------------------------------------
 
-  /// The light restarts into the new firmware, which confirms itself within
-  /// its self-check window or goes back to the previous one.
+  /// The light restarts into the new firmware (unless [sent] is already
+  /// on it), which confirms itself or goes back to the previous one. Waits
+  /// until DIAG `pv` clears, then reads `rb` and the slot.
   Future<UpdateProgress> _confirm(
     FixtureSession fs,
-    EbSession old,
+    _Sent sent,
     FirmwareVersion from,
     Duration installedAt,
     int? slotBefore,
   ) async {
-    EbSession? s = await _connected(fs, _t.restart, other: old);
+    EbSession? s = sent.restarted
+        ? sent.session
+        : await _connected(fs, _t.restart, other: sent.session);
     if (s == null) throw _abandonedOr(UpdateProblem.notBack);
     _set(progress.copyWith(stage: UpdateStage.checking));
+    _verifyFrom = _scheduler.now;
     while (true) {
       final FirmwareVersion? v = FirmwareVersion.tryParse(
         s!.firmware!.version.version,
@@ -739,20 +997,32 @@ final class _Run {
         if (v == from) throw await _rolledBack(s);
         throw const _Stop(UpdateStage.failed, UpdateProblem.otherVersion);
       }
-      final Duration left = installedAt + _t.confirm - _scheduler.now;
-      if (await _dropsWithin(s, left)) {
-        // It restarted again: a failed self-check going back.
+      final Map<String, int>? d = s.phase == EbPhase.closed
+          ? null
+          : await s.diag();
+      // Firmware without `pv` (before 3.8.2): its self-check window instead.
+      final Duration legacyLeft = d != null && d['pv'] == null
+          ? installedAt + _t.legacyWindow - _scheduler.now
+          : Duration.zero;
+      if (d != null && d['pv'] != 1 && legacyLeft <= Duration.zero) {
+        if (d['rb'] == 1 || (slotBefore != null && d['slot'] == slotBefore)) {
+          _recordDiag(d);
+          throw const _Stop(UpdateStage.rolledBack);
+        }
+        return _finish(const _Stop(UpdateStage.done));
+      }
+      if (_scheduler.now - _verifyFrom > _t.verify) {
+        throw const _Stop(UpdateStage.failed, UpdateProblem.unconfirmed);
+      }
+      if (await _dropsWithin(
+        s,
+        legacyLeft > Duration.zero ? legacyLeft : _t.verifyPoll,
+      )) {
+        // It restarted again (a failed self-check going back), or the app
+        // was suspended.
         s = await _connected(fs, _t.restart, other: s);
         if (s == null) throw _abandonedOr(UpdateProblem.notBack);
-        continue;
       }
-      final Map<String, int>? d = await s.diag();
-      if (d != null &&
-          (d['rb'] == 1 || (slotBefore != null && d['slot'] == slotBefore))) {
-        _recordDiag(d);
-        throw const _Stop(UpdateStage.rolledBack);
-      }
-      return _finish(const _Stop(UpdateStage.done));
     }
   }
 
@@ -830,7 +1100,7 @@ final class _Run {
       final EbSession? s = ready();
       if (s != null && !done.isCompleted) done.complete(s);
     });
-    final Cancelable timer = _scheduler.after(limit, () {
+    final Cancelable timer = _timeout(limit, () {
       if (!done.isCompleted) done.complete(null);
     });
     void wake() {
@@ -845,6 +1115,26 @@ final class _Run {
       _wakers.remove(wake);
       unawaited(sub.cancel());
     }
+  }
+}
+
+/// A [_Run._timeout]: the scheduler's timer, or the re-arm waiting for the
+/// app to resume.
+final class _Timeout implements Cancelable {
+  _Timeout(this._run);
+  final _Run _run;
+  Cancelable? timer;
+  void Function()? rearm;
+
+  @override
+  bool get isActive => (timer?.isActive ?? false) || rearm != null;
+
+  @override
+  void cancel() {
+    timer?.cancel();
+    final void Function()? r = rearm;
+    if (r != null) _run._resumers.remove(r);
+    rearm = null;
   }
 }
 
