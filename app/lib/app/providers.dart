@@ -11,6 +11,7 @@ import '../core/model/fixture.dart';
 import '../core/model/light_capabilities.dart';
 import '../core/protocol/eb/eb_fixture_catalog.dart';
 import '../core/protocol/eb/eb_scene.dart';
+import '../core/store/json_store.dart';
 import '../core/model/channel_layout.dart';
 import '../sessions/discovery.dart';
 import '../sessions/fixture_registry.dart';
@@ -156,20 +157,75 @@ final class NearbyLight {
 
 /// Unsaved ElectroBright lights nearby (legacy ones included: see
 /// [NearbyLight.isLegacy]), strongest first: only those heard in the last
-/// [Discovery.nearbyFresh] of the current scan. Watching it keeps a fast
-/// scan running.
+/// [Discovery.nearbyFresh] of the current scan. Watching it keeps the add
+/// flow's fast, unfiltered scan running.
 final NotifierProvider<NearbyNotifier, List<NearbyLight>> nearbyProvider =
     NotifierProvider.autoDispose<NearbyNotifier, List<NearbyLight>>(
-      NearbyNotifier.new,
+      () => NearbyNotifier(ScanNeed.addFlow),
     );
 
+/// The same list from Home's low-power scan, filtered to the ElectroBright
+/// service (a legacy light may not be heard by it).
+final NotifierProvider<NearbyNotifier, List<NearbyLight>> _badgeNearbyProvider =
+    NotifierProvider.autoDispose<NearbyNotifier, List<NearbyLight>>(
+      () => NearbyNotifier(ScanNeed.badge),
+    );
+
+/// How many nearby lights can be added (Home's "Add light" badge): not
+/// saved, not legacy, not hidden as "Not mine". Watching it keeps Home's
+/// low-power scan running.
+final Provider<int> nearbyBadgeProvider = Provider.autoDispose<int>((Ref ref) {
+  final Set<String> hidden = ref.watch(hiddenLightsProvider);
+  return ref
+      .watch(_badgeNearbyProvider)
+      .where((NearbyLight n) => !n.isLegacy && !hidden.contains(n.seen.id))
+      .length;
+});
+
+/// Nearby lights hidden with "Not mine" (device ids), kept in the session's
+/// store (demo lights apart from real ones).
+final NotifierProvider<HiddenLightsNotifier, Set<String>> hiddenLightsProvider =
+    NotifierProvider<HiddenLightsNotifier, Set<String>>(
+      HiddenLightsNotifier.new,
+    );
+
+final class HiddenLightsNotifier extends Notifier<Set<String>> {
+  static const String collection = 'hiddenLights';
+  JsonStore? _store;
+
+  @override
+  Set<String> build() {
+    final JsonStore? store = _store = ref.watch(appSessionProvider)?.store;
+    final Object? v = store?.read(collection);
+    return <String>{
+      if (v is List<Object?>)
+        for (final Object? id in v)
+          if (id is String) id,
+    };
+  }
+
+  void hide(String deviceId) => _save(<String>{...state, deviceId});
+
+  void showAll() => _save(<String>{});
+
+  void _save(Set<String> ids) {
+    _store?.write(collection, ids.toList()..sort());
+    state = ids;
+  }
+}
+
 final class NearbyNotifier extends Notifier<List<NearbyLight>> {
+  NearbyNotifier(this.need);
+
+  /// The scan held while watched.
+  final ScanNeed need;
+
   @override
   List<NearbyLight> build() {
     final AppSession? app = ref.watch(appSessionProvider);
     if (app == null) return const <NearbyLight>[];
     final Discovery d = app.ble.discovery;
-    final ScanLease lease = d.acquire(ScanNeed.addFlow);
+    final ScanLease lease = d.acquire(need);
     List<NearbyLight> compute() {
       final Set<String> saved = ref
           .read(fixturesProvider)

@@ -82,6 +82,14 @@ void main() {
     await t.tap(f);
   }
 
+  /// The add screen's list.
+  Finder addList() => find
+      .descendant(
+        of: find.byType(AddLightScreen),
+        matching: find.byType(Scrollable),
+      )
+      .first;
+
   /// Waits for [screen] and for its page transition to finish.
   Future<void> arrive(WidgetTester t, Finder screen) async {
     await waitFor(t, screen);
@@ -118,7 +126,9 @@ void main() {
     );
     await wait(t, 500);
     await t.tap(find.text('Try demo lights'));
-    await waitFor(t, find.text('Nearby — not added'));
+    // Home, empty: a welcome; Home lists no nearby light.
+    await waitFor(t, find.text('Add your first light'));
+    expect(find.byType(NearbyRow), findsNothing);
 
     EbDeviceModel twin(String id) => services.demoLights!.fixtures
         .firstWhere((SimFixture f) => f.id == id)
@@ -135,7 +145,10 @@ void main() {
       ('Living room', 'RGBW · Colour + white', current),
     ];
     for (final (String name, String type, String version) in lights) {
-      await tapOn(t, find.text(type));
+      await t.tap(find.text('Add light'));
+      await arrive(t, find.byType(AddLightScreen));
+      await waitFor(t, find.text(type));
+      await tapOn(t, find.text(type), scrollable: addList());
       await waitFor(t, find.textContaining('firmware $version'));
       expect(find.byType(AddLightScreen), findsOneWidget);
       await t.enterText(find.byType(TextField), name);
@@ -354,9 +367,13 @@ void main() {
     expect(find.byKey(const ValueKey<String>('groups-card')), findsOneWidget);
 
     // The light with the original firmware is listed apart, at the bottom
-    // of Home, and leads to the update screen.
-    await reveal(t, find.text('Unsupported lights'));
-    await tapOn(t, find.text('Update needed'));
+    // of the add screen, and leads to the update screen.
+    expect(find.text('Unsupported lights'), findsNothing);
+    await t.tap(find.text('Add light'));
+    await arrive(t, find.byType(AddLightScreen));
+    await waitFor(t, find.text('Unsupported lights'));
+    await reveal(t, find.text('Unsupported lights'), scrollable: addList());
+    await tapOn(t, find.text('Update needed'), scrollable: addList());
     await waitFor(t, find.byType(FirmwareUpdateScreen));
     Navigator.of(t.element(find.byType(FirmwareUpdateScreen)))
         .popUntil((Route<dynamic> r) => r.isFirst);

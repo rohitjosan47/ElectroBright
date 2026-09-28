@@ -9,13 +9,16 @@ import 'dart:math' as math;
 
 import 'package:electrobright/app/app_session.dart';
 import 'package:electrobright/app/providers.dart';
+import 'package:electrobright/core/ble/ble_central.dart';
 import 'package:electrobright/core/model/channel_color.dart';
+import 'package:electrobright/core/protocol/eb/eb_constants.dart';
 import 'package:electrobright/core/protocol/eb/mode_catalog.dart';
 import 'package:electrobright/core/store/json_store.dart';
 import 'package:electrobright/design/controls/glass_slider.dart';
 import 'package:electrobright/design/controls/hue_wheel.dart';
 import 'package:electrobright/features/groups/group_screen.dart';
 import 'package:electrobright/sessions/group_capabilities.dart';
+import 'package:electrobright/features/add_fixture/add_light_screen.dart';
 import 'package:electrobright/features/control/control_screen.dart';
 import 'package:electrobright/features/control/timer_sheet.dart';
 import 'package:electrobright/features/home/home_screen.dart';
@@ -180,7 +183,77 @@ void main() {
     // Adverts that change nothing Home shows don't rebuild it (item 2).
     expect(a.homeBuildsPerSecond, 0);
     expect(a.framesPerSecond, 0);
-    expect(a.scan, 'addFlow');
+    // The badge's low-power scan, not the add flow's.
+    expect(a.scan, 'badge');
+    await DemoApp.shutDown(t);
+  }, timeout: const Timeout(Duration(minutes: 8)));
+
+  testWidgets('scan needs per screen', (WidgetTester t) async {
+    final DemoApp d = await start(t);
+    final Discovery discovery = d.app.ble.discovery;
+    const List<String> filter = <String>[Eb.serviceUuid];
+
+    // Home: low power, filtered to the ElectroBright service.
+    final Activity home = await measure(t, d, 'home, badge scan');
+    expect(home.scan, 'badge');
+    expect(discovery.scanning?.services, filter);
+    expect(discovery.scanning?.intensity, ScanIntensity.lowPower);
+
+    // A light's screen covers Home: no badge scan, no add-flow scan.
+    await d.open(t, 'Living room');
+    final Activity control = await measure(
+      t,
+      d,
+      'control screen, scan held',
+      light: 'Living room',
+    );
+    expect(control.scan, isNot(anyOf('badge', 'addFlow')));
+    Navigator.of(t.element(find.byType(ControlScreen))).pop();
+    await DemoApp.settle(t, 2);
+    expect(discovery.strongestNeed, ScanNeed.badge);
+
+    // The add screen: fast and unfiltered, only while it is open.
+    await t.tap(find.text('Add light'));
+    await DemoApp.settle(t, 2);
+    expect(find.byType(AddLightScreen), findsOneWidget);
+    final Activity add = await measure(t, d, 'add screen, fast scan');
+    expect(add.scan, 'addFlow');
+    expect(discovery.scanning?.services, isEmpty);
+    expect(discovery.scanning?.intensity, ScanIntensity.lowLatency);
+    Navigator.of(t.element(find.byType(AddLightScreen))).pop();
+    await DemoApp.settle(t, 2);
+    final Activity back = await measure(t, d, 'home again, badge scan');
+    expect(back.scan, 'badge');
+    expect(discovery.scanning?.services, filter);
+
+    // In the background nothing scans; back in the foreground Home's
+    // badge scan resumes.
+    for (final AppLifecycleState s in <AppLifecycleState>[
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+    ]) {
+      t.binding.handleAppLifecycleStateChanged(s);
+    }
+    await t.pump();
+    final Activity paused = await measure(t, d, 'home, app paused');
+    expect(paused.scan, 'none');
+    expect(discovery.scanning, isNull);
+    for (final AppLifecycleState s in <AppLifecycleState>[
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      t.binding.handleAppLifecycleStateChanged(s);
+    }
+    await t.pump();
+    expect(discovery.strongestNeed, ScanNeed.badge);
+    expect(discovery.isScanning, isTrue);
+    // Resuming reconnects (handshakes): let it finish before shutting down.
+    await t.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await DemoApp.settle(t, 10);
     await DemoApp.shutDown(t);
   }, timeout: const Timeout(Duration(minutes: 8)));
 

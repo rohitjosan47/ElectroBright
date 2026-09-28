@@ -3,13 +3,15 @@
 The Flutter app in `app/` (iOS and Android) controls every ElectroBright fixture over Bluetooth Low Energy. It reads what each light's firmware can do and builds its controls from that. The wire contract is in [protocol.md](protocol.md).
 
 ## 1. Lights and connection
-- **Home** lists your saved lights. Each tile has:
+- **Home** lists your saved lights ("3 of 5 connected"); it never lists nearby lights. With no saved light it shows a short welcome, **Add your first light**, pointing to the **Add light** button. Each tile has:
   - a colour orb, the name, the **type badge** (e.g. "Tunable white" with one dot per LED) and a state line such as "On · 80 % · Fire";
   - a presence line (Connected, Connecting…, or Unavailable: off, out of range, or connected to another phone) and a power button.
   - Long-press a tile for Rename, Identify, Light settings or Forget. Identify on a light that isn't connected says "Connecting…", connects it and then identifies it; after 10 s it gives up and says so. Tapping it again meanwhile does nothing more.
-- **Nearby — not added** shows lights that are advertising, with their type read from the Bluetooth name: only lights heard in the last 10 s of scanning. A light appears with its first advert and leaves 10 s after its last one (so it doesn't flicker); when the scan starts again, nothing from before is shown until it is heard again. Lights are forgotten entirely after 2 minutes of scanning without an advert.
-- **Unsupported lights**, at the very bottom of Home, lists lights on the original firmware ("These lights run older firmware this app no longer supports."), with the same 10 s rule; they are never in the nearby list. Tapping one opens the firmware update screen.
-- **Add a light** has these steps:
+- **Nearby badge:** the **Add light** button carries a count of the lights nearby that can be added: not saved, not on the original firmware, not hidden as **Not mine**, and heard in the last 10 s of scanning. There is no badge at 0; a screen reader says "Add light, 2 lights nearby". For it, Home runs a low-power scan filtered to the ElectroBright service, only while Home is on screen and the app is in the foreground.
+- **Nearby lights** are listed on the add screen, with their type read from the Bluetooth name: only lights heard in the last 10 s of scanning. A light appears with its first advert and leaves 10 s after its last one (so it doesn't flicker); when the scan starts again, nothing from before is shown until it is heard again. Lights are forgotten entirely after 2 minutes of scanning without an advert. The add screen runs the fast, unfiltered scan, only while it is open (so it also finds lights on the original firmware, which may not advertise the service).
+  - **Not mine** on a nearby light hides it from the list and the badge. The app remembers it by device id (demo lights apart from real ones). **Show hidden lights**, at the bottom, brings every hidden light back.
+  - **Unsupported lights**, at the bottom of the add screen, lists lights on the original firmware ("These lights run older firmware this app no longer supports."), with the same 10 s rule; they are never in the nearby list or the badge. Tapping one opens the firmware update screen.
+- **Add a light** (tap a nearby light on the add screen) has these steps:
   1. The app connects and reads the light's identity ("Found a Tunable white light · firmware 3.6.0").
   2. **Flash it** identifies the light so you can find it.
   3. You name it.

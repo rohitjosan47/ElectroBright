@@ -354,6 +354,8 @@ void main() {
     final DemoApp d = await start(t);
     d.radio.fixtures.add(SimFixture.setupNeeded(id: 'demo-setup'));
     await settle(t, 2);
+    await t.tap(find.text('Add light'));
+    await settle(t, 2);
     await t.tap(find.text('ElectroBright_C3_SETUP'));
     await settleRestart(t, 4);
     expect(find.byType(AddLightScreen), findsOneWidget);

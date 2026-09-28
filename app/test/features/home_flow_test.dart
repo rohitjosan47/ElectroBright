@@ -54,9 +54,28 @@ void main() {
     await t.tap(find.text('Try demo lights'));
     await settle(t);
 
-    // Home, with every fixture type nearby (types from the BLE names).
+    // Home, empty: a welcome pointing to "Add light", which counts the
+    // lights nearby (the legacy one never counts). Home lists none of them.
     expect(find.text('Lights'), findsOneWidget);
-    expect(find.text('Nearby — not added'), findsOneWidget);
+    expect(find.text('Add your first light'), findsOneWidget);
+    expect(
+      find.text('Switch your light on, then tap Add light below.'),
+      findsOneWidget,
+    );
+    expect(find.text('0 of 0 connected'), findsOneWidget);
+    expect(find.byType(NearbyRow), findsNothing);
+    final SemanticsHandle semantics = t.ensureSemantics();
+    expect(
+      find.bySemanticsLabel(RegExp(r'^Add light, 5 lights nearby$')),
+      findsOneWidget,
+    );
+    semantics.dispose();
+
+    // The add screen, with every fixture type nearby (types from the BLE
+    // names).
+    await t.tap(find.text('Add light'));
+    await settle(t, 2);
+    expect(find.byType(AddLightScreen), findsOneWidget);
     for (final String type in <String>[
       'RGBW · Colour + white',
       'RGB · Colour',
@@ -69,11 +88,6 @@ void main() {
     expect(find.text('Update needed'), findsOneWidget); // the legacy light
 
     // Add the tunable-white light.
-    await t.scrollUntilVisible(
-      find.text('Tunable white · Tunable white (warm to cool)'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
     await t.tap(find.text('Tunable white · Tunable white (warm to cool)'));
     await settle(t);
     expect(find.byType(AddLightScreen), findsOneWidget);
@@ -88,9 +102,11 @@ void main() {
     await t.tap(find.text('Save'));
     await settle(t);
 
-    // Home: the new light with its type and state.
+    // Home: the new light with its type and state; no more welcome.
     expect(find.byType(AddLightScreen), findsNothing);
     expect(find.text('Kitchen'), findsOneWidget);
+    expect(find.text('Add your first light'), findsNothing);
+    expect(find.text('1 of 1 connected'), findsOneWidget);
     expect(find.text('Tunable white'), findsWidgets); // type badge
     expect(find.textContaining('On · 100 %'), findsOneWidget);
     expect(find.text('Connected'), findsOneWidget);
@@ -142,6 +158,8 @@ void main() {
     );
     await settle(t, 1);
 
+    await t.tap(find.text('Add light'));
+    await settle(t, 2);
     await t.tap(find.text('RGBW · Colour + white'));
     await settle(t);
     expect(find.byType(AddLightScreen), findsOneWidget);

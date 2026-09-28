@@ -43,10 +43,7 @@ String uniqueLightName(String base, Iterable<String> taken) {
 /// (its firmware says what type it is), flash it to be sure, name it, save.
 /// Nothing is saved until Save; Cancel always releases the light.
 class AddLightScreen extends ConsumerStatefulWidget {
-  const AddLightScreen({this.initial, super.key});
-
-  /// Start connecting to this nearby light right away.
-  final NearbyLight? initial;
+  const AddLightScreen({super.key});
 
   @override
   ConsumerState<AddLightScreen> createState() => _AddLightScreenState();
@@ -73,13 +70,6 @@ class _AddLightScreenState extends ConsumerState<AddLightScreen> {
   final TextEditingController _name = TextEditingController();
 
   AppSession get _app => ref.read(appSessionProvider)!;
-
-  @override
-  void initState() {
-    super.initState();
-    final NearbyLight? n = widget.initial;
-    if (n != null) scheduleMicrotask(() => _pick(n));
-  }
 
   @override
   void dispose() {
@@ -343,6 +333,9 @@ class _AddLightScreenState extends ConsumerState<AddLightScreen> {
   }
 }
 
+/// The nearby lights to pick from (strongest first; "Not mine" hides one),
+/// then the lights on unsupported firmware, then a way back to the hidden
+/// ones.
 class _PickList extends ConsumerWidget {
   const _PickList({required this.onPick});
   final ValueChanged<NearbyLight> onPick;
@@ -352,14 +345,25 @@ class _PickList extends ConsumerWidget {
     final AppLocalizations l = AppLocalizations.of(context);
     final List<NearbyLight> nearby = ref.watch(nearbyProvider);
     final List<Fixture> saved = ref.watch(fixturesProvider);
+    final Set<String> hidden = ref.watch(hiddenLightsProvider);
+    final HiddenLightsNotifier hide = ref.read(hiddenLightsProvider.notifier);
     final bool dark = ToneScope.darkOf(context);
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
+    final List<NearbyLight> lights = <NearbyLight>[
+      for (final NearbyLight n in nearby)
+        if (!n.isLegacy && !hidden.contains(n.seen.id)) n,
+    ];
+    // Older firmware the app can't drive: last, apart from the rest.
+    final List<NearbyLight> unsupported = <NearbyLight>[
+      for (final NearbyLight n in nearby)
+        if (n.isLegacy) n,
+    ];
     return ListView(
       children: <Widget>[
         Text(l.addHint, style: TextStyle(color: fg.withValues(alpha: 0.7))),
         const SizedBox(height: Space.m),
-        if (nearby.isEmpty) _Busy(text: l.addSearching),
-        for (final NearbyLight n in nearby)
+        if (lights.isEmpty) _Busy(text: l.addSearching),
+        for (final NearbyLight n in lights)
           Padding(
             padding: const EdgeInsets.only(bottom: Space.s),
             child: NearbyRow(
@@ -369,6 +373,44 @@ class _PickList extends ConsumerWidget {
                   .firstOrNull
                   ?.name,
               onTap: () => onPick(n),
+              onHide: () => hide.hide(n.seen.id),
+            ),
+          ),
+        if (unsupported.isNotEmpty) ...<Widget>[
+          const SizedBox(height: Space.l - Space.s),
+          Semantics(
+            header: true,
+            child: Text(
+              l.unsupportedTitle,
+              style: TextStyle(
+                color: fg,
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            l.unsupportedNote,
+            style: TextStyle(color: fg.withValues(alpha: 0.65)),
+          ),
+          const SizedBox(height: Space.s),
+          for (final NearbyLight n in unsupported)
+            Padding(
+              padding: const EdgeInsets.only(bottom: Space.s),
+              child: NearbyRow(light: n, onTap: () => onPick(n)),
+            ),
+        ],
+        if (hidden.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: Space.s, bottom: Space.l),
+            child: Center(
+              child: TextButton.icon(
+                key: const ValueKey<String>('show-hidden-lights'),
+                onPressed: hide.showAll,
+                icon: const Icon(Icons.visibility_outlined),
+                label: Text(l.showHiddenLights),
+              ),
             ),
           ),
       ],
@@ -377,16 +419,20 @@ class _PickList extends ConsumerWidget {
 }
 
 /// A nearby, not yet added light: its type (from the advertised name),
-/// signal and an Add action.
+/// signal and, with [onHide], a "Not mine" action. A tap adds it.
 class NearbyRow extends StatelessWidget {
   const NearbyRow({
     required this.light,
     required this.onTap,
+    this.onHide,
     this.already,
     super.key,
   });
   final NearbyLight light;
   final VoidCallback onTap;
+
+  /// "Not mine": hides the light (see [hiddenLightsProvider]).
+  final VoidCallback? onHide;
   final String? already;
 
   @override
@@ -434,9 +480,35 @@ class NearbyRow extends StatelessWidget {
                   ],
                 ),
               ),
-              if (hint != null) ChannelDots(layout: hint),
-              const SizedBox(width: Space.s),
-              _Bars(bars: light.seen.signalBars, color: fg),
+              // "Not mine" under the type and signal, so the name keeps
+              // its width.
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: <Widget>[
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      if (hint != null) ChannelDots(layout: hint),
+                      const SizedBox(width: Space.s),
+                      _Bars(bars: light.seen.signalBars, color: fg),
+                    ],
+                  ),
+                  if (onHide != null)
+                    TextButton(
+                      key: ValueKey<String>('not-mine-${light.seen.id}'),
+                      onPressed: onHide,
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: Space.s,
+                        ),
+                        foregroundColor: fg.withValues(alpha: 0.75),
+                      ),
+                      child: Text(l.notMine),
+                    ),
+                ],
+              ),
             ],
           ),
         ),

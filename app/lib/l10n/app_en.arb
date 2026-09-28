@@ -24,18 +24,20 @@
   "channelW": "White",
   "channelCw": "Cool white",
   "channelWw": "Warm white",
-  "homeSummary": "{connected} connected · {nearby} nearby",
+  "homeSummary": "{connected} of {saved} connected",
   "@homeSummary": {
     "placeholders": {
       "connected": {
         "type": "int"
       },
-      "nearby": {
+      "saved": {
         "type": "int"
       }
     }
   },
   "homeEmpty": "No lights yet. Add your first light to get started.",
+  "homeWelcomeTitle": "Add your first light",
+  "homeWelcomeBody": "Switch your light on, then tap Add light below.",
   "stateOnPercent": "On · {percent} %",
   "@stateOnPercent": {
     "placeholders": {
@@ -62,12 +64,21 @@
   "presenceUnexpected": "Answered unexpectedly",
   "presenceBluetoothOff": "Bluetooth is off",
   "presencePermission": "Bluetooth permission needed",
-  "nearbyTitle": "Nearby — not added",
   "nearbyUnknownType": "ElectroBright light",
   "nearbyUpdate": "Update needed",
   "unsupportedTitle": "Unsupported lights",
   "unsupportedNote": "These lights run older firmware this app no longer supports.",
   "addLight": "Add light",
+  "addLightNearby": "Add light, {count, plural, =1{1 light nearby} other{{count} lights nearby}}",
+  "@addLightNearby": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "notMine": "Not mine",
+  "showHiddenLights": "Show hidden lights",
   "addTitle": "Add a light",
   "addHint": "Only one phone can be connected to a light at a time.",
   "addSearching": "Looking for lights…",

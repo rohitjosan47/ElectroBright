@@ -43,8 +43,9 @@ import '../fixture_settings/light_settings_screen.dart';
 @visibleForTesting
 bool debugShowDeveloperTools = kDebugMode;
 
-/// Home: every saved light with its type and state, plus lights nearby that
-/// are not added yet.
+/// Home: every saved light with its type and state. Lights nearby that can
+/// be added show as a count on "Add light"; the add screen lists them.
+
 /// How long Home's Identify waits for a light to connect.
 const Duration identifyConnectTimeout = Duration(seconds: 10);
 
@@ -56,7 +57,8 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  List<NearbyLight> _nearby = const <NearbyLight>[];
+  /// Lights nearby that can be added (the "Add light" badge).
+  int _nearby = 0;
   final Map<String, Want> _wants = <String, Want>{};
 
   /// Lights an Identify is connecting or flashing.
@@ -276,52 +278,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return ready;
   }
 
-  /// A titled list of nearby lights (not added, or unsupported); a row
-  /// opens the add flow, which sends a legacy light to its firmware update.
-  Widget _nearbySection(
-    Color fg,
-    String title,
-    List<NearbyLight> lights, {
-    String? note,
-    double top = 0,
-  }) => SliverPadding(
-    padding: EdgeInsets.fromLTRB(Space.gutter, top, Space.gutter, 0),
-    sliver: SliverList.list(
-      children: <Widget>[
-        Semantics(
-          header: true,
-          child: Text(
-            title,
-            style: TextStyle(
-              color: fg,
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        if (note != null) ...<Widget>[
-          const SizedBox(height: 2),
-          Text(note, style: TextStyle(color: fg.withValues(alpha: 0.65))),
-        ],
-        const SizedBox(height: Space.s),
-        for (final NearbyLight n in lights)
-          Padding(
-            padding: const EdgeInsets.only(bottom: Space.s),
-            child: NearbyRow(
-              light: n,
-              onTap: () => unawaited(
-                Navigator.of(context).push(
-                  MaterialPageRoute<String>(
-                    builder: (_) => AddLightScreen(initial: n),
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
-    ),
-  );
-
   Future<String?> _askName(String current) => showNameDialog(
     context,
     title: AppLocalizations.of(context).rename,
@@ -435,20 +391,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final AppLocalizations l = AppLocalizations.of(context);
     final AppSession? app = ref.watch(appSessionProvider);
     final List<Fixture> fixtures = ref.watch(fixturesProvider);
-    // The nearby list, and the fast scan behind it, only while Home is on
-    // screen: covered by a full-screen route it keeps the last list.
+    // The badge, and the low-power scan behind it, only while Home is on
+    // screen: covered by a full-screen route it keeps the last count.
     if (TickerMode.valuesOf(context).enabled) {
-      _nearby = ref.watch(nearbyProvider);
+      _nearby = ref.watch(nearbyBadgeProvider);
     }
-    // Lights on unsupported (legacy) firmware get their own section.
-    final List<NearbyLight> nearby = <NearbyLight>[
-      for (final NearbyLight n in _nearby)
-        if (!n.isLegacy) n,
-    ];
-    final List<NearbyLight> unsupported = <NearbyLight>[
-      for (final NearbyLight n in _nearby)
-        if (n.isLegacy) n,
-    ];
     if (app != null) {
       _syncWants(app, fixtures);
       _watchLayoutChanges(app);
@@ -477,18 +424,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: app == null
-            ? null
-            : () => unawaited(
-                Navigator.of(context).push(
-                  MaterialPageRoute<String>(
-                    builder: (_) => const AddLightScreen(),
+      // The count of lights nearby that can be added, on the button's
+      // corner. Brand colour, not the error red: nothing is wrong.
+      floatingActionButton: Badge(
+        isLabelVisible: _nearby > 0,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        textColor: Theme.of(context).colorScheme.onPrimary,
+        label: ExcludeSemantics(child: Text('$_nearby')),
+        child: FloatingActionButton.extended(
+          onPressed: app == null
+              ? null
+              : () => unawaited(
+                  Navigator.of(context).push(
+                    MaterialPageRoute<String>(
+                      builder: (_) => const AddLightScreen(),
+                    ),
                   ),
                 ),
-              ),
-        icon: const Icon(Icons.add_rounded),
-        label: Text(l.addLight),
+          icon: const Icon(Icons.add_rounded),
+          label: Text(
+            l.addLight,
+            semanticsLabel: _nearby > 0 ? l.addLightNearby(_nearby) : null,
+          ),
+        ),
       ),
       body: AmbientCanvas(
         child: CustomScrollView(
@@ -528,7 +486,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               ],
                             ),
                             Text(
-                              l.homeSummary(connected, nearby.length),
+                              l.homeSummary(connected, fixtures.length),
                               style: TextStyle(
                                 color: fg.withValues(alpha: 0.65),
                               ),
@@ -566,12 +524,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             if (fixtures.isEmpty)
               SliverPadding(
                 padding: const EdgeInsets.all(Space.gutter),
-                sliver: SliverToBoxAdapter(
-                  child: Text(
-                    l.homeEmpty,
-                    style: TextStyle(color: fg.withValues(alpha: 0.7)),
-                  ),
-                ),
+                sliver: SliverToBoxAdapter(child: _Welcome(fg: fg)),
               ),
             if (groups.isNotEmpty)
               SliverPadding(
@@ -606,20 +559,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
             ),
-            if (nearby.isNotEmpty) _nearbySection(fg, l.nearbyTitle, nearby),
-            // Older firmware the app can't drive: last, apart from the rest.
-            if (unsupported.isNotEmpty)
-              _nearbySection(
-                fg,
-                l.unsupportedTitle,
-                unsupported,
-                note: l.unsupportedNote,
-                top: nearby.isEmpty ? 0 : Space.l,
-              ),
             const SliverToBoxAdapter(child: SizedBox(height: 96)),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// No saved lights yet: a short welcome pointing to "Add light".
+class _Welcome extends StatelessWidget {
+  const _Welcome({required this.fg});
+  final Color fg;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppLocalizations l = AppLocalizations.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Semantics(
+          header: true,
+          child: Text(
+            l.homeWelcomeTitle,
+            style: TextStyle(
+              color: fg,
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          l.homeWelcomeBody,
+          style: TextStyle(color: fg.withValues(alpha: 0.7)),
+        ),
+      ],
     );
   }
 }

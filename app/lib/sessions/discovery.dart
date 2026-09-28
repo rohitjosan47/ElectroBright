@@ -18,6 +18,10 @@ enum ScanNeed {
   /// Waiting to reconnect a wanted light.
   reconnect,
 
+  /// Home visible: the "Add light" badge. Low power, only lights we
+  /// understand (legacy lights may not match: the add flow finds those).
+  badge,
+
   /// Background freshness of "nearby" badges (duty-cycled on iOS).
   presence,
 }
@@ -170,6 +174,15 @@ final class Discovery {
   SeenDevice? seen(String id) => _seen[id];
   bool get isScanning => _scan != null;
 
+  /// The running scan's service filter (empty: unfiltered) and intensity,
+  /// or null when none runs (tests and diagnostics).
+  @visibleForTesting
+  ({List<String> services, ScanIntensity intensity})? get scanning {
+    final _ScanConfig? c = _running;
+    if (_scan == null || c == null) return null;
+    return (services: c.services, intensity: c.intensity);
+  }
+
   /// The strongest scan need held right now (tests and diagnostics), or
   /// null when no lease is held.
   @visibleForTesting
@@ -243,6 +256,7 @@ final class Discovery {
       ),
       ScanNeed.panel => _ScanConfig(filter, ScanIntensity.lowLatency),
       ScanNeed.reconnect => _ScanConfig(filter, ScanIntensity.balanced),
+      ScanNeed.badge => _ScanConfig(filter, ScanIntensity.lowPower),
       ScanNeed.presence => _ScanConfig(
         filter,
         ScanIntensity.lowPower,

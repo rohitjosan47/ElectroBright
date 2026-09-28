@@ -61,7 +61,7 @@ void main() {
     expect(cm.sessions.where((s) => s.fixture.id.startsWith('lab-')), isEmpty);
     expect(cm.manages('demo-lab-2'), isFalse, reason: 'forgettable again');
     // Home's own scan is all that remains (no lab lease).
-    expect(discovery.strongestNeed, ScanNeed.addFlow);
+    expect(discovery.strongestNeed, ScanNeed.badge);
     await DemoApp.shutDown(t);
   });
 }

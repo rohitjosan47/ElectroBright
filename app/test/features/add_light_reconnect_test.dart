@@ -45,11 +45,8 @@ void main() {
     await settle(t);
     const String row = 'Tunable white · Tunable white (warm to cool)';
     for (int round = 1; round <= 3; round++) {
-      await t.scrollUntilVisible(
-        find.text(row),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
+      await t.tap(find.text('Add light'));
+      await settle(t, 2);
       await t.tap(find.text(row));
       await settle(t);
       expect(find.byType(AddLightScreen), findsOneWidget);
@@ -64,11 +61,8 @@ void main() {
     }
     // A light that switched off after it was listed: "Connecting…" ends in
     // the failure message within 20 s.
-    await t.scrollUntilVisible(
-      find.text(row),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
+    await t.tap(find.text('Add light'));
+    await settle(t, 2);
     ProviderScope.containerOf(t.element(find.text(row)))
         .read(servicesProvider)
         .demoLights!
@@ -77,9 +71,11 @@ void main() {
     await settle(t, 1);
     expect(find.byType(AddLightScreen), findsOneWidget);
     expect(find.text('Connecting…'), findsWidgets);
-    await settle(t, 19);
+    // 19.9 s after the pick: still connecting.
+    await settle(t, 18);
+    await t.pump(const Duration(milliseconds: 900));
     expect(find.textContaining("Couldn't connect"), findsNothing);
-    await settle(t, 2);
+    await settle(t, 1);
     expect(find.textContaining("Couldn't connect"), findsOneWidget);
     await t.tap(find.byIcon(Icons.close_rounded));
     await settle(t, 1);
