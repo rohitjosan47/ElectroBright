@@ -12,10 +12,11 @@ import '../drivers/electrobright/eb_types.dart';
 import 'discovery.dart';
 import 'fixture_session.dart';
 
-/// Why a light should be connected, strongest first. [setup]: a screen
-/// setting the light up (developer tools), which also keeps a light in
-/// setup-needed mode connected.
-enum WantReason { setup, screen, action, group, scene, favourite }
+/// Why a light should be connected, strongest first. [update]: a wireless
+/// firmware update (never evicted). [setup]: a screen setting the light up
+/// (developer tools), which also keeps a light in setup-needed mode
+/// connected.
+enum WantReason { update, setup, screen, action, group, scene, favourite }
 
 /// A registered want; release it when no longer needed.
 final class Want {
@@ -218,7 +219,8 @@ final class ConnectionManager {
     // A direct user action skips the remaining backoff.
     if (reason == WantReason.action ||
         reason == WantReason.screen ||
-        reason == WantReason.setup) {
+        reason == WantReason.setup ||
+        reason == WantReason.update) {
       slot.retry?.cancel();
       slot.retry = null;
       slot.userAt = _scheduler.now;

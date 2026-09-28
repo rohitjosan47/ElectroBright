@@ -82,6 +82,7 @@ final class EbFirmware {
     required this.caps,
     required this.modeCount,
     required this.capabilities,
+    this.wirelessUpdates = false,
   });
   final String model;
   final EbVersion version;
@@ -90,6 +91,9 @@ final class EbFirmware {
 
   /// What the light can do; every screen adapts to this.
   final LightCapabilities capabilities;
+
+  /// It has the wireless-update service (firmware 3.8.0+).
+  final bool wirelessUpdates;
 
   ChannelLayout get layout => capabilities.layout;
 }

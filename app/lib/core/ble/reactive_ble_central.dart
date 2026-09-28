@@ -188,9 +188,13 @@ final class _ReactiveBleLink implements BleLink {
   final StreamSubscription<ConnectionStateUpdate> _connection;
   final Completer<LinkLossReason> _closed = Completer<LinkLossReason>();
   int _mtu = 23;
+  Set<String> _services = const <String>{};
 
   @override
   int get mtu => _mtu;
+
+  @override
+  bool offers(String serviceUuid) => _services.contains(serviceUuid);
 
   @override
   Future<LinkLossReason> get closed => _closed.future;
@@ -198,6 +202,9 @@ final class _ReactiveBleLink implements BleLink {
   Future<void> _prepare(Map<String, List<String>> services) async {
     await _ble.discoverAllServices(deviceId);
     final List<Service> found = await _ble.getDiscoveredServices(deviceId);
+    _services = <String>{
+      for (final Service x in found) ReactiveBleCentral._expand('${x.id}'),
+    };
     for (final String s in services.keys) {
       if (!found.any((Service x) => x.id == Uuid.parse(s))) {
         throw StateError('service $s missing');

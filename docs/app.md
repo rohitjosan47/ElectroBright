@@ -111,8 +111,17 @@ A group exists with two or more lights, and new lights join their group on their
   - **Fixture type:** the current type. Firmware without CAPS `TYPES=` gets "Changing the type needs firmware 3.7.0 or later".
   - **Find the right type** (CAPS `PROBE=1`): the app lights each output with PROBE (red, green, blue, white/cool, warm) and asks "Is it lighting up?" (Yes / No / Retry). It then suggests the type that drives exactly those outputs; any other combination gets a clear message. The suggestion is preselected, and all five types stay selectable.
   - **Change type:** a confirmation (the light restarts, its presets are cleared, it moves to the matching group), then SET_TYPE. The page waits while the light restarts and is re-identified, then shows the result.
-  - **Firmware:** the installed version.
+  - **Firmware:** the installed version, the version bundled with the app, and **Reinstall firmware** (the update flow of §4b with the reinstall flag; never a downgrade).
   - **Diagnostics:** DIAG in plain words (running time, last restart reason, firmware slot, rollback, then the rendering, connection and memory counters), with Refresh and Copy (readable text plus the raw reply).
+
+## 4b. Wireless firmware updates
+- **What's bundled:** `tool/bundle_firmware.sh` builds the type-neutral update image (`firmware/tools/build_update_image.sh`) and puts it in `assets/firmware/` with `manifest.json` (version, size, SHA-256, product, image kind, file). The app reads the manifest at start; the image is loaded and checked against it when an update begins. `test/cross_repo/firmware_bundle_test.dart` checks the manifest against the file and the firmware's `kFirmwareVersion`.
+- **When it's offered:** a connected light whose firmware has the update service (3.8.0+) and is older than the bundled version gets an update badge on its Home tile, Home shows "1 light has an update", and its settings have **Update firmware**. Older firmware without the service gets a note that it needs one USB install. A downgrade is never offered or sent.
+- **The update screen** says what will happen and "Keep the app open and stay near the light", then shows the progress with percentage and time left. **Cancel** works until the whole image has arrived (ABORT; the light keeps its firmware); after that the light installs it on its own. The screen stays awake for the whole update.
+- **Engine** (`sessions/firmware_update.dart`, protocol §10): BEGIN (retried; a resumed transfer continues from the offset the light reports), DATA up to MTU − 3 bytes per write with one 8 KB window in flight, STATUS when an ACK is missing, END, ABORT. A dropped link mid-transfer is resumed once the light is back. Every ERROR code has its own message.
+- **While a light updates** (from the first byte until the new firmware is confirmed): its command and colour lanes are paused, its own controls and groups skip it, Home says "Updating…", and only one light updates at a time.
+- **After END_OK** the light restarts; the app waits for it to reconnect (same device), checks the version and, once the new firmware's 15 s self-check window has passed, DIAG's `rb` and `slot`. A rollback is reported as "The update didn't take; your light is back on its previous firmware."
+- **Demo mode:** the demo RGB light runs 3.7.0, so the whole flow can be tried: the simulated light receives the bundled image in about 5 s, restarts and confirms it like the firmware.
 
 ## 5. How it stays in sync
 - **Handshake:** INFO names the layout, CAPS confirms it (`LAYOUT`, `MODES`), and then STATUS, MODE_SETTINGS and PRESET_LIST are read.

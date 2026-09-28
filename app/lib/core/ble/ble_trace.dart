@@ -62,6 +62,8 @@ final class TracingLink implements BleLink {
   @override
   int get mtu => _inner.mtu;
   @override
+  bool offers(String serviceUuid) => _inner.offers(serviceUuid);
+  @override
   Future<LinkLossReason> get closed => _inner.closed;
 
   @override

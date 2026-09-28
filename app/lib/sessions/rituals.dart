@@ -27,9 +27,7 @@ extension FixtureRituals on FixtureSession {
   }
 
   bool _live(EbSession s) =>
-      identical(session, s) &&
-      s.phase != EbPhase.closed &&
-      status.phase == LinkPhase.ready;
+      identical(session, s) && s.phase != EbPhase.closed && status.isReady;
 
   /// Makes the light show itself. Firmware with IDENTIFY does it alone: two
   /// crisp flashes and a chirp, even asleep, then it restores itself.

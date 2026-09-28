@@ -15,24 +15,34 @@ import 'eb_device_model.dart';
 final class SimFixture {
   /// A light running the universal firmware, new with the [fixture] type
   /// (advertised under its type's BLE name unless [name] overrides it).
+  /// [version]: the firmware it runs until a wireless update installs
+  /// another.
   SimFixture.electroBright({
     required this.id,
     EbFixtureSpec fixture = EbFixtureCatalog.rgbw,
     this._name,
     this.rssi = -58,
-  }) : model = EbDeviceModel(fixture: fixture);
+    String version = EbDeviceModel.firmwareVersion,
+  }) : model = EbDeviceModel(
+         fixture: fixture,
+         version: version,
+         versionFromImage: true,
+       ),
+       offersUpdates = true;
 
   /// A light whose firmware has no fixture type yet (setup-needed mode).
   SimFixture.setupNeeded({required this.id, this.rssi = -58})
     : _name = null,
-      model = EbDeviceModel(fixture: null);
+      model = EbDeviceModel(fixture: null, versionFromImage: true),
+      offersUpdates = true;
 
   /// A light still running the original (pre-3.x) ElectroBright firmware:
   /// it advertises `ElectroBright_BLE` and answers INFO with the old model
   /// name, so the app shows "Firmware update needed".
   SimFixture.legacy({required this.id, this.rssi = -66})
     : _name = Eb.legacyName,
-      model = EbDeviceModel(fixture: _legacyFirmware);
+      model = EbDeviceModel(fixture: _legacyFirmware),
+      offersUpdates = false;
 
   static const EbFixtureSpec _legacyFirmware = EbFixtureSpec(
     folder: '(original firmware)',
@@ -50,6 +60,9 @@ final class SimFixture {
 
   final String id;
   final String? _name;
+
+  /// It has the wireless-update service (not the original firmware).
+  final bool offersUpdates;
 
   /// Advertised name: the active type's (it changes with SET_TYPE).
   String get name => _name ?? model.fixture.bleName;
@@ -71,6 +84,7 @@ final class SimCentral implements BleCentral {
     this.deviceTick = const Duration(milliseconds: 50),
     this.advertInterval = const Duration(milliseconds: 150),
     this.connectDelay = const Duration(milliseconds: 90),
+    this.updateWindowTime = const Duration(milliseconds: 60),
   }) {
     this.fixtures.addAll(fixtures);
     _tickDevices();
@@ -81,6 +95,11 @@ final class SimCentral implements BleCentral {
   final Duration deviceTick;
   final Duration advertInterval;
   final Duration connectDelay;
+
+  /// Air time of one 8 KB window of a wireless update: the write that
+  /// completes a window takes this long (a fast simulated transfer: about
+  /// 5 s for the bundled image). Tests may change it at any time.
+  Duration updateWindowTime;
   final StreamController<BleAdapterState> _adapter =
       StreamController<BleAdapterState>.broadcast();
   BleAdapterState _state = BleAdapterState.ready;
@@ -252,7 +271,7 @@ final class SimCentral implements BleCentral {
       f.model
         ..connect()
         ..pass();
-      final _SimLink link = _SimLink(f, f.model.restarts);
+      final _SimLink link = _SimLink(this, f, f.model.restarts);
       f._link = link;
       ready.complete(link);
     }
@@ -280,8 +299,9 @@ final class SimCentral implements BleCentral {
 }
 
 final class _SimLink implements BleLink {
-  _SimLink(this._fixture, this._restarts);
+  _SimLink(this._central, this._fixture, this._restarts);
 
+  final SimCentral _central;
   final SimFixture _fixture;
 
   /// The light's restart count when this link was made: a restart (SET_TYPE)
@@ -298,6 +318,11 @@ final class _SimLink implements BleLink {
 
   @override
   int get mtu => 185; // typical iPhone
+
+  @override
+  bool offers(String serviceUuid) =>
+      serviceUuid == Eb.serviceUuid ||
+      (serviceUuid == EbOta.serviceUuid && _fixture.offersUpdates);
 
   @override
   Future<LinkLossReason> get closed => _closed.future;
@@ -323,6 +348,7 @@ final class _SimLink implements BleLink {
       throw LinkClosedException(await _closed.future);
     }
     // Each characteristic to its callback (BleNus.cpp), then a control pass.
+    final int window = _fixture.model.ota.next ~/ EbOta.window;
     if (ref.characteristic == EbOta.controlUuid) {
       _fixture.model.otaControl(value);
     } else if (ref.characteristic == EbOta.dataUuid) {
@@ -331,7 +357,16 @@ final class _SimLink implements BleLink {
       _fixture.model.write(value);
     }
     _fixture.model.pass();
-    await Future<void>.value();
+    final Duration air = _central.updateWindowTime;
+    if (ref.characteristic == EbOta.dataUuid &&
+        _fixture.model.ota.next ~/ EbOta.window != window &&
+        air > Duration.zero) {
+      final Completer<void> sent = Completer<void>();
+      _central._scheduler.after(air, sent.complete);
+      await sent.future;
+    } else {
+      await Future<void>.value();
+    }
     _deliver();
   }
 

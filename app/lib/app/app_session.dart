@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../bootstrap/service_registry.dart';
+import '../core/firmware/firmware_bundle.dart';
 import '../core/store/json_store.dart';
 import '../core/store/legacy_import.dart';
 import '../core/store/preset_reset.dart';
+import '../sessions/firmware_update.dart';
 import '../sessions/fixture_registry.dart';
 import '../sessions/group_session.dart';
 
@@ -19,6 +22,8 @@ final class AppSession {
     required this.ble,
     required this.registry,
     required this.groups,
+    required this.updates,
+    this.firmware,
   });
 
   final bool demo;
@@ -28,7 +33,23 @@ final class AppSession {
 
   /// The colour and white groups (created and disposed with the session).
   final GroupSessions groups;
+
+  /// Wireless firmware updates (one light at a time).
+  final FirmwareUpdates updates;
+
+  /// The firmware bundled with the app (null if it has none).
+  final FirmwareBundle? firmware;
 }
+
+/// Reads the bundled firmware's manifest (tests override it).
+final Provider<Future<FirmwareBundle?> Function()> firmwareBundleLoader =
+    Provider<Future<FirmwareBundle?> Function()>(
+      (Ref ref) =>
+          () => FirmwareBundle.load(
+            text: (String path) => rootBundle.loadString(path, cache: false),
+            bytes: rootBundle.load,
+          ),
+    );
 
 /// The app's main store (settings, and the real lights), opened in main().
 final Provider<JsonStore> storeProvider = Provider<JsonStore>(
@@ -59,6 +80,7 @@ final class _Runtime {
     final AppSession? s = session;
     session = null;
     if (s == null) return;
+    unawaited(s.updates.dispose());
     s.groups.dispose();
     unawaited(
       s.registry.saveAll().whenComplete(() async {
@@ -84,6 +106,9 @@ final class AppController extends Notifier<AppSession?> {
   static const String demoKey = 'demo';
 
   Future<void>? _starting;
+
+  /// Read once, when the app first starts a session.
+  Future<FirmwareBundle?>? _bundle;
 
   _Runtime get _runtime => ref.read(_runtimeProvider);
 
@@ -121,6 +146,7 @@ final class AppController extends Notifier<AppSession?> {
     final AppSession? old = state;
     if (old != null) {
       state = _runtime.session = null;
+      await old.updates.dispose();
       old.groups.dispose();
       await old.registry.saveAll();
       await old.registry.dispose();
@@ -145,6 +171,9 @@ final class AppController extends Notifier<AppSession?> {
         );
       }
     }
+    final FirmwareBundle? firmware = await (_bundle ??= ref.read(
+      firmwareBundleLoader,
+    )());
     final Map<String, Object?> settings = _settings()
       ..[onboardedKey] = true
       ..[demoKey] = demo;
@@ -160,6 +189,13 @@ final class AppController extends Notifier<AppSession?> {
         store: store,
         scheduler: services.scheduler,
       ),
+      updates: FirmwareUpdates(
+        connections: ble.connections,
+        scheduler: services.scheduler,
+        // A transfer keeps the screen on: auto-lock would suspend the app.
+        onRunning: (bool on) => services.platform.setKeepAwake(on: on),
+      ),
+      firmware: firmware,
     );
   }
 

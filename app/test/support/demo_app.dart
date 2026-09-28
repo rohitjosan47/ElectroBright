@@ -8,6 +8,7 @@ import 'package:electrobright/core/protocol/eb/eb_fixture_catalog.dart';
 import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/core/store/json_store.dart';
 import 'package:electrobright/core/util/scheduler.dart';
+import 'package:electrobright/design/platform/platform_bridge.dart';
 import 'package:electrobright/features/control/control_screen.dart';
 import 'package:electrobright/sessions/fixture_session.dart';
 import 'package:electrobright/sim/eb_device_model.dart';
@@ -54,15 +55,20 @@ final class DemoApp {
   }
 
   /// Starts demo mode, adds every light and returns on Home. A light whose
-  /// simulated device the demo does not have gets one of its type.
+  /// simulated device the demo does not have gets one of its type. The demo's
+  /// RGB light runs older firmware (a wireless update is available) only
+  /// with [olderFirmware]; otherwise every light is up to date.
   static Future<DemoApp> start(
     WidgetTester t, {
     Map<String, (String, ChannelLayout)> lights = DemoApp.lights,
+    PlatformBridge? platform,
+    bool olderFirmware = false,
   }) async {
     // App time follows the test's fake timers.
     final Stopwatch watch = clock.stopwatch()..start();
     final AppServices services = AppServices(
       scheduler: SystemScheduler(elapsed: () => watch.elapsed),
+      platform: platform,
     );
     await t.pumpWidget(
       ProviderScope(
@@ -83,6 +89,20 @@ final class DemoApp {
       t.element(find.text('Lights')),
     ).read(appSessionProvider)!;
     final SimCentral radio = services.demoLights!;
+    if (!olderFirmware) {
+      final int i = radio.fixtures.indexWhere(
+        (SimFixture f) =>
+            f.model.runningVersion != EbDeviceModel.firmwareVersion,
+      );
+      if (i >= 0) {
+        final SimFixture old = radio.fixtures[i];
+        radio.fixtures[i] = SimFixture.electroBright(
+          id: old.id,
+          fixture: old.model.fixture,
+          rssi: old.rssi,
+        );
+      }
+    }
     for (final MapEntry<String, (String, ChannelLayout)> e in lights.entries) {
       if (!radio.fixtures.any((SimFixture f) => f.id == e.value.$1)) {
         radio.fixtures.add(

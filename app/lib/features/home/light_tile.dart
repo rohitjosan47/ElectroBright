@@ -21,6 +21,7 @@ import '../../drivers/electrobright/eb_types.dart';
 import '../../l10n/app_localizations.dart';
 import '../../sessions/connection_manager.dart';
 import '../../sessions/fixture_session.dart';
+import '../firmware_update/update_providers.dart';
 import 'presence.dart';
 
 /// One saved light on Home: colour orb, name, type, state, presence, power.
@@ -29,12 +30,16 @@ class LightTile extends ConsumerWidget {
     required this.fixtureId,
     required this.onOpen,
     required this.onMore,
+    this.onUpdate,
     super.key,
   });
 
   final String fixtureId;
   final VoidCallback onOpen;
   final VoidCallback onMore;
+
+  /// Opens the light's firmware update (its update badge).
+  final VoidCallback? onUpdate;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -46,17 +51,20 @@ class LightTile extends ConsumerWidget {
       EbDeviceState? state,
       LinkPhase phase,
       EbIncompatibility? incompatibility,
+      bool updating,
     ) = ref.watch(
-      fixtureStatusProvider(fixtureId)
-          .select((FixtureStatus s) => (s.state, s.phase, s.incompatibility)),
+      fixtureStatusProvider(fixtureId).select(
+        (FixtureStatus s) => (s.state, s.phase, s.incompatibility, s.updating),
+      ),
     );
+    final bool update = ref.watch(updateAvailableProvider(fixtureId));
     // No fixture type yet: "Setup needed" instead of its state; a tap sets
     // it up.
     final bool setup =
         f.setupNeeded || incompatibility == EbIncompatibility.setupNeeded;
     final String presence = setup
         ? l.presenceSetupNeeded
-        : presenceOf(l, phase, incompatibility);
+        : presenceOf(l, phase, incompatibility, updating: updating);
     final EbScene? scene = setup ? null : state?.scene;
     final bool sleeping = state?.sleeping ?? false;
     final bool dark = ToneScope.darkOf(context);
@@ -71,7 +79,7 @@ class LightTile extends ConsumerWidget {
     final String modeName = scene == null
         ? ''
         : EbModeCatalog.byId(scene.mode).name;
-    final bool live = phase == LinkPhase.ready;
+    final bool live = phase == LinkPhase.ready && !updating;
 
     return Semantics(
       button: true,
@@ -91,7 +99,18 @@ class LightTile extends ConsumerWidget {
             children: <Widget>[
               Row(
                 children: <Widget>[
-                  TileOrb(color: orb.color, glow: orb.glow),
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: <Widget>[
+                      TileOrb(color: orb.color, glow: orb.glow),
+                      if (update)
+                        Positioned(
+                          right: -6,
+                          top: -6,
+                          child: UpdateBadge(onTap: onUpdate),
+                        ),
+                    ],
+                  ),
                   const Spacer(),
                   GlassIconButton(
                     icon: Icons.power_settings_new_rounded,
@@ -101,7 +120,7 @@ class LightTile extends ConsumerWidget {
                     haptic: sleeping
                         ? HapticEvent.powerOn
                         : HapticEvent.powerOff,
-                    onPressed: scene == null
+                    onPressed: scene == null || updating
                         ? null
                         : () => unawaited(_togglePower(ref, !sleeping)),
                   ),
@@ -194,6 +213,52 @@ class LightTile extends ConsumerWidget {
   return dc == null || dc.off
       ? (color: fg.withValues(alpha: 0.12), glow: false)
       : (color: Color(ColorScience.toArgb(dc.color)), glow: true);
+}
+
+/// The update badge on a Home tile's orb: the light's firmware is older
+/// than the app's. Brand periwinkle (never the light's colour), like the
+/// pills; a tap opens the update.
+class UpdateBadge extends StatelessWidget {
+  const UpdateBadge({this.onTap, super.key});
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppLocalizations l = AppLocalizations.of(context);
+    final bool dark = ToneScope.darkOf(context);
+    final Color fill = dark ? PillFill.dark.halo : PillFill.light.halo;
+    return Semantics(
+      button: onTap != null,
+      label: l.updateFirmware,
+      excludeSemantics: true,
+      child: GestureDetector(
+        key: const ValueKey<String>('tile-update-badge'),
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Padding(
+          // A bigger target than the dot.
+          padding: const EdgeInsets.all(4),
+          child: Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: fill,
+              border: Border.all(
+                color: dark ? const Color(0xFF15171C) : Colors.white,
+                width: 2,
+              ),
+            ),
+            child: const Icon(
+              Icons.arrow_upward_rounded,
+              size: 12,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// The round colour swatch of a light on Home.

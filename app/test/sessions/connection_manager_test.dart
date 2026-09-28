@@ -109,6 +109,8 @@ final class _ThrowingLink implements BleLink {
   @override
   int get mtu => _inner.mtu;
   @override
+  bool offers(String serviceUuid) => _inner.offers(serviceUuid);
+  @override
   Future<LinkLossReason> get closed => _inner.closed;
   @override
   Stream<Uint8List> subscribe(GattRef ref) => _inner.subscribe(ref);

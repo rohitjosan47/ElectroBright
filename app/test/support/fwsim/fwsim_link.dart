@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:electrobright/core/ble/ble_link.dart';
+import 'package:electrobright/core/protocol/eb/eb_constants.dart';
 import 'package:electrobright/core/protocol/eb/eb_ota.dart';
 import 'package:electrobright/core/util/scheduler.dart';
 
@@ -71,6 +72,11 @@ final class FwSimLink implements BleLink {
 
   @override
   int get mtu => _mtu;
+
+  /// fwsim is the 3.8.0 core: the ElectroBright and update services.
+  @override
+  bool offers(String serviceUuid) =>
+      serviceUuid == Eb.serviceUuid || serviceUuid == EbOta.serviceUuid;
 
   @override
   Future<LinkLossReason> get closed => _closed.future;

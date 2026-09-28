@@ -94,6 +94,11 @@ final class PlatformHost: NSObject, PlatformHostApi {
   // for up to the display's maximum only while frames are drawn).
   func setHighRefreshRate(high: Bool) throws {}
 
+  // A firmware transfer keeps the screen on (auto-lock would suspend the app).
+  func setKeepAwake(on: Bool) throws {
+    UIApplication.shared.isIdleTimerDisabled = on
+  }
+
   // MARK: Background tasks
 
   func beginBackgroundTask(name: String) throws -> Int64 {

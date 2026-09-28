@@ -27,11 +27,14 @@ import 'groups_card.dart';
 import '../../sessions/group_capabilities.dart';
 import '../../sessions/group_session.dart';
 import 'light_tile.dart';
+import 'updates_banner.dart';
 import '../developer/developer_screen.dart';
 import '../developer/developer_tools.dart';
 import '../developer/light_developer_screen.dart';
 import '../diagnostics/ble_lab.dart';
 import '../firmware_update/firmware_update_screen.dart';
+import '../firmware_update/update_firmware_screen.dart';
+import '../firmware_update/update_providers.dart';
 import '../fixture_settings/light_settings_screen.dart';
 
 /// Whether Home's settings sheet offers the developer tools (BLE diagnostics
@@ -109,6 +112,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _open(Fixture f) {
     final FixtureStatus st = ref.read(fixtureStatusProvider(f.id));
+    // Being updated: its progress.
+    if (st.updating) return _openUpdate(f.id);
     // No fixture type yet: only setting it up (whether or not the developer
     // tools are on).
     if (f.setupNeeded || st.incompatibility == EbIncompatibility.setupNeeded) {
@@ -150,6 +155,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
     );
   }
+
+  /// A light's firmware update (its tile badge, the banner, a tap while it
+  /// updates).
+  void _openUpdate(String id) => unawaited(
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => UpdateFirmwareScreen(fixtureId: id),
+      ),
+    ),
+  );
 
   /// A group (from its card): connects the group while it is open,
   /// releases it after.
@@ -448,6 +463,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         .length;
     final bool dark = ToneScope.darkOf(context);
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
+    final List<String> updates = ref.watch(lightsWithUpdateProvider);
     final bool bigText = MediaQuery.textScalerOf(context).scale(1) > 1.4;
     // Groups with 2 or more lights.
     final List<GroupKind> groups = <GroupKind>[
@@ -532,6 +548,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
             ),
+            if (updates.isNotEmpty)
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(
+                  Space.gutter,
+                  Space.s,
+                  Space.gutter,
+                  0,
+                ),
+                sliver: SliverToBoxAdapter(
+                  child: UpdatesBanner(
+                    count: updates.length,
+                    onTap: () => _openUpdate(updates.first),
+                  ),
+                ),
+              ),
             if (fixtures.isEmpty)
               SliverPadding(
                 padding: const EdgeInsets.all(Space.gutter),
@@ -569,6 +600,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     fixtureId: fixtures[i].id,
                     onOpen: () => _open(fixtures[i]),
                     onMore: () => unawaited(_more(fixtures[i])),
+                    onUpdate: () => _openUpdate(fixtures[i].id),
                   ),
                   childCount: fixtures.length,
                 ),

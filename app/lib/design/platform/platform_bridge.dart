@@ -53,6 +53,10 @@ final class PlatformBridge implements BackgroundTasks, PlatformEventsApi {
   void setHighRefreshRate(bool high) =>
       unawaited(_safe(() => _api.setHighRefreshRate(high), null));
 
+  /// Keeps the screen on while [on] (a firmware transfer runs).
+  void setKeepAwake({required bool on}) =>
+      unawaited(_safe(() => _api.setKeepAwake(on), null));
+
   @override
   Future<int> begin(String name) =>
       _safe(() => _api.beginBackgroundTask(name), -1);

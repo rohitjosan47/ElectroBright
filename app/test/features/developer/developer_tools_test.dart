@@ -387,7 +387,18 @@ void main() {
     );
     await openDeveloper(t, d, 'Living room');
     expect(key('dev-firmware'), findsOneWidget);
-    expect(find.text('3.8.0'), findsOneWidget);
+    // Installed, and next to it the version bundled with the app.
+    expect(
+      find.descendant(of: key('dev-firmware'), matching: find.text('3.8.0')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: key('dev-bundled-firmware'),
+        matching: find.text('3.8.0'),
+      ),
+      findsOneWidget,
+    );
     expect(key('diag-uptime'), findsOneWidget);
     expect(find.text('Powered on'), findsOneWidget);
     expect(find.text('Firmware slot'), findsOneWidget);
@@ -399,6 +410,8 @@ void main() {
         (d.model('Living room').state()['stats']! as Map<String, Object>)['rx']!
             as int;
     final int before = rx();
+    await t.ensureVisible(key('dev-diag-refresh'));
+    await t.pump();
     await t.tap(key('dev-diag-refresh'));
     await settle(t, 1);
     expect(rx(), before + 1);

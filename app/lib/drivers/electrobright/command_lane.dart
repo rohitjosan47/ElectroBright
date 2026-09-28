@@ -67,6 +67,7 @@ final class CommandLane {
   /// Owned by that job, so a stale _start can never clear another's guard.
   _Job? _startingJob;
   bool _closed = false;
+  bool _paused = false;
   int _consecutiveTimeouts = 0;
 
   /// Test/diagnostic hook.
@@ -122,6 +123,15 @@ final class CommandLane {
     }
     _pump();
     return job.done.future;
+  }
+
+  /// While paused nothing new is sent (a wireless update owns the link);
+  /// queued commands wait, one already sent still gets its reply.
+  bool get paused => _paused;
+  set paused(bool on) {
+    if (on == _paused) return;
+    _paused = on;
+    if (!on) _pump();
   }
 
   /// Offers a reply line; returns false if it belongs to no command.
@@ -195,7 +205,11 @@ final class CommandLane {
   }
 
   void _pump() {
-    if (_closed || _startingJob != null || _active != null || _queue.isEmpty) {
+    if (_closed ||
+        _paused ||
+        _startingJob != null ||
+        _active != null ||
+        _queue.isEmpty) {
       return;
     }
     final _Job job = _queue.first;

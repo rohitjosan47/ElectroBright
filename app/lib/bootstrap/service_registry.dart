@@ -17,6 +17,10 @@ import '../sessions/connection_manager.dart';
 import '../sessions/discovery.dart';
 import '../sim/sim_central.dart';
 
+/// The firmware the demo's RGB light runs: older than the app's bundled
+/// firmware, so demo mode can show a wireless update.
+const String demoOlderFirmware = '3.7.0';
+
 /// The Bluetooth stack. Built only after the permission question is settled,
 /// because touching the BLE plugin shows the iOS permission prompt.
 final class BleStack {
@@ -82,10 +86,13 @@ final class AppServices {
             // One demo light of every fixture type.
             fixtures: <SimFixture>[
               SimFixture.electroBright(id: 'demo-rgbw'),
+              // Runs older firmware, so a wireless update can be tried
+              // (a fast simulated transfer of the bundled image).
               SimFixture.electroBright(
                 id: 'demo-rgb',
                 fixture: EbFixtureCatalog.rgb,
                 rssi: -64,
+                version: demoOlderFirmware,
               ),
               SimFixture.electroBright(
                 id: 'demo-rgbcct',

@@ -46,6 +46,7 @@ final class FixtureStatus {
     this.detail,
     this.offlineBrightness,
     this.colourPick,
+    this.updating = false,
   });
 
   final LinkPhase phase;
@@ -65,7 +66,16 @@ final class FixtureStatus {
   bool get legacyFirmware =>
       incompatibility == EbIncompatibility.legacyFirmware;
 
-  bool get isReady => phase == LinkPhase.ready && view != null;
+  /// Connected and free to use: not while its firmware is being updated
+  /// (then groups skip it and its controls wait).
+  bool get isReady => isConnected && !updating;
+
+  /// Connected and identified (also while updating).
+  bool get isConnected => phase == LinkPhase.ready && view != null;
+
+  /// A wireless firmware update is running (from the start of the transfer
+  /// until the new firmware is confirmed, or the update stops).
+  final bool updating;
 
   /// Brightness set while not connected, sent when the light is back
   /// (0 = turned off at zero). Shown instead of the last known one, so the
@@ -102,7 +112,8 @@ final class FixtureStatus {
       other.incompatibility == incompatibility &&
       other.detail == detail &&
       other.offlineBrightness == offlineBrightness &&
-      other.colourPick == colourPick;
+      other.colourPick == colourPick &&
+      other.updating == updating;
 
   @override
   int get hashCode => Object.hash(
@@ -114,28 +125,25 @@ final class FixtureStatus {
     detail,
     offlineBrightness,
     colourPick,
+    updating,
   );
 
-  FixtureStatus _withOffline(int? brightness) => FixtureStatus(
+  /// With the session-wide fields: brightness set while offline, the
+  /// colour pick and the update flag.
+  FixtureStatus _with({
+    required int? offline,
+    required ColourPick? pick,
+    required bool updating,
+  }) => FixtureStatus(
     phase: phase,
     view: view,
     lastKnown: lastKnown,
     attempt: attempt,
     incompatibility: incompatibility,
     detail: detail,
-    offlineBrightness: view == null ? brightness : null,
-    colourPick: colourPick,
-  );
-
-  FixtureStatus _withPick(ColourPick? pick) => FixtureStatus(
-    phase: phase,
-    view: view,
-    lastKnown: lastKnown,
-    attempt: attempt,
-    incompatibility: incompatibility,
-    detail: detail,
-    offlineBrightness: offlineBrightness,
+    offlineBrightness: view == null ? offline : null,
     colourPick: view == null ? null : pick,
+    updating: updating,
   );
 }
 
@@ -357,6 +365,7 @@ final class FixtureSession {
         phase: _status.phase,
         lastKnown: s.confirmed,
         attempt: _status.attempt,
+        updating: _updating,
       );
     }
     await _detach();
@@ -382,9 +391,11 @@ final class FixtureSession {
   }
 
   void _set(FixtureStatus s) {
-    final FixtureStatus next = s
-        ._withOffline(_offlineBrightness)
-        ._withPick(_pick);
+    final FixtureStatus next = s._with(
+      offline: _offlineBrightness,
+      pick: _pick,
+      updating: _updating,
+    );
     // Nothing new: no emit (and no rebuilds or saves behind it).
     if (next == _status) return;
     _status = next;
@@ -407,7 +418,8 @@ final class FixtureSession {
     final EbSession? s = _session;
     return s != null &&
         s.phase != EbPhase.closed &&
-        _status.phase == LinkPhase.ready;
+        _status.phase == LinkPhase.ready &&
+        !_updating;
   }
 
   Future<EbResult> _intent(
@@ -415,6 +427,8 @@ final class FixtureSession {
     Future<EbResult> Function(EbSession s) action, {
     Duration keep = offlineWindow,
   }) {
+    // Not sent, and not kept for later: the update owns the light.
+    if (_updating) return Future<EbResult>.value(updatingResult);
     final EbSession? s = _session;
     if (_live) return action(s!);
     if (_reconnecting) {
@@ -545,6 +559,7 @@ final class FixtureSession {
     bool live = false,
     CommandOrigin origin = CommandOrigin.user,
   }) {
+    if (_updating) return;
     _byUser(origin, EbKeys.brightness);
     final bool offline = !_live && _reconnecting;
     unawaited(
@@ -638,32 +653,56 @@ final class FixtureSession {
 
   /// Timer, presets and reset need the light now (no offline replay).
   Future<EbResult> setTimer(int seconds) =>
-      _session?.setTimer(seconds) ??
-      Future<EbResult>.value(EbResult.disconnected);
+      _free?.setTimer(seconds) ?? Future<EbResult>.value(_unreachable);
 
-  static const EbPresetResult _noPreset = EbPresetResult(EbResult.disconnected);
+  EbPresetResult get _noPreset => EbPresetResult(_unreachable);
 
   /// Saves the current look in [slot]; the result carries the saved scene.
   Future<EbPresetResult> presetSave(int slot) =>
-      _session?.presetSave(slot) ?? Future<EbPresetResult>.value(_noPreset);
+      _free?.presetSave(slot) ?? Future<EbPresetResult>.value(_noPreset);
 
   /// Loads [slot]; the result carries the complete loaded scene.
   Future<EbPresetResult> presetLoad(
     int slot, {
     CommandOrigin origin = CommandOrigin.user,
   }) {
-    final EbSession? s = _session;
+    final EbSession? s = _free;
     if (s == null) return Future<EbPresetResult>.value(_noPreset);
     _byUser(origin, 'preset');
     return s.presetLoad(slot);
   }
 
   Future<EbResult> presetDelete(int slot) =>
-      _session?.presetDelete(slot) ??
-      Future<EbResult>.value(EbResult.disconnected);
+      _free?.presetDelete(slot) ?? Future<EbResult>.value(_unreachable);
 
   Future<EbResult> factoryReset() =>
-      _session?.factoryReset() ?? Future<EbResult>.value(EbResult.disconnected);
+      _free?.factoryReset() ?? Future<EbResult>.value(_unreachable);
+
+  // ---- wireless update ------------------------------------------------------
+
+  /// Result of a change refused because the light's firmware is being
+  /// updated (nothing is sent or kept).
+  static const EbResult updatingResult = EbResult(
+    EbOutcome.failed,
+    code: 'UPDATING',
+  );
+
+  /// A wireless update is running (see [FixtureStatus.updating]).
+  bool get updating => _updating;
+  bool _updating = false;
+
+  /// Set by the update engine for the whole update (restart included).
+  void setUpdating({required bool on}) {
+    if (on == _updating) return;
+    _updating = on;
+    _set(_status);
+  }
+
+  /// The session for a command that needs the light now; null while it is
+  /// not connected or updating.
+  EbSession? get _free => _updating ? null : _session;
+  EbResult get _unreachable =>
+      _updating ? updatingResult : EbResult.disconnected;
 
   // ---- setting up (developer tools) --------------------------------------------
 

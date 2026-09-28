@@ -106,6 +106,10 @@ abstract class PlatformHostApi {
   /// (something moves or a finger is down); otherwise leaves the rate to
   /// the system. iOS: nothing (ProMotion adapts on its own).
   void setHighRefreshRate(bool high);
+
+  /// Keeps the screen on while [on] (a firmware transfer runs): iOS
+  /// UIApplication.isIdleTimerDisabled, Android FLAG_KEEP_SCREEN_ON.
+  void setKeepAwake(bool on);
 }
 
 @FlutterApi()

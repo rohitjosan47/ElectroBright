@@ -29,6 +29,9 @@ import '../control/effects/mode_presentation.dart';
 import '../control/presets/preset_meta.dart';
 import '../developer/developer_tools.dart';
 import '../developer/light_developer_screen.dart';
+import '../firmware_update/update_firmware_screen.dart';
+import '../firmware_update/update_providers.dart';
+import '../../core/firmware/firmware_bundle.dart';
 
 /// One light's settings: name, type and what it can do, identify / channel
 /// test, sound, factory reset and forget.
@@ -111,6 +114,7 @@ class _LightSettingsScreenState extends ConsumerState<LightSettingsScreen> {
     final TextStyle title = settingsTitleStyle(context);
     final TextStyle sub = settingsDetailStyle(context);
     final bool developer = ref.watch(developerToolsProvider);
+    final Widget? firmware = _firmwareRow(l, fg, title, sub);
 
     Widget section(String? heading, List<Widget> rows) =>
         SettingsSection(heading: heading, children: rows);
@@ -237,6 +241,7 @@ class _LightSettingsScreenState extends ConsumerState<LightSettingsScreen> {
                   : null,
             ),
           ]),
+          if (firmware != null) section(l.firmware, <Widget>[firmware]),
           if (developer)
             section(null, <Widget>[
               row(
@@ -271,6 +276,62 @@ class _LightSettingsScreenState extends ConsumerState<LightSettingsScreen> {
           ]),
         ],
       ),
+    );
+  }
+
+  /// "Update firmware" when the connected light's firmware is older than the
+  /// app's: open for a light that updates wirelessly (or is updating), a note
+  /// for one whose firmware can't. Null when there is nothing to offer.
+  Widget? _firmwareRow(
+    AppLocalizations l,
+    Color fg,
+    TextStyle title,
+    TextStyle sub,
+  ) {
+    final (bool connected, String? version, bool wireless, bool updating) = ref
+        .watch(
+          fixtureStatusProvider(widget.fixtureId).select(
+            (FixtureStatus s) => (
+              s.isConnected,
+              s.view?.firmware?.version.version,
+              s.view?.firmware?.wirelessUpdates ?? false,
+              s.updating,
+            ),
+          ),
+        );
+    final FirmwareVersion? bundled = ref.watch(
+      bundledFirmwareProvider.select((FirmwareBundle? b) => b?.version),
+    );
+    final FirmwareVersion? installed = FirmwareVersion.tryParse(version);
+    final bool older =
+        connected &&
+        bundled != null &&
+        installed != null &&
+        installed < bundled;
+    if (!updating && !older) return null;
+    void open() => unawaited(
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => UpdateFirmwareScreen(fixtureId: widget.fixtureId),
+        ),
+      ),
+    );
+    return ListTile(
+      key: const ValueKey<String>('settings-update-firmware'),
+      title: Text(l.updateFirmware, style: title),
+      subtitle: Text(
+        updating
+            ? l.presenceUpdating
+            : wireless
+            ? l.updateAvailableDetail('$bundled', '$installed')
+            : l.updateNeedsUsb('$installed'),
+        style: sub,
+      ),
+      trailing: updating || wireless
+          ? Icon(Icons.chevron_right_rounded, color: fg)
+          : null,
+      enabled: updating || wireless,
+      onTap: updating || wireless ? open : null,
     );
   }
 

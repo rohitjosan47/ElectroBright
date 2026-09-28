@@ -39,6 +39,8 @@ flutter:
   assets:
     - assets/brand/
     - assets/profiles/builtin/
+    # The wireless-update image and its manifest (tool/bundle_firmware.sh).
+    - assets/firmware/
   fonts:
     # Android UI font (iOS uses the system San Francisco). SIL OFL 1.1,
     # licence in assets/fonts/Inter-OFL.txt.

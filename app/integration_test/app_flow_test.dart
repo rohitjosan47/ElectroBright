@@ -1,7 +1,8 @@
 // End-to-end on a simulator or device with the demo lights: onboarding,
 // adding one light of every type through the real add flow, and each
 // type's controls checked against its firmware twin, then the colour and
-// white groups, and the developer tools (probe test and a type change).
+// white groups, the developer tools (probe test and a type change) and a
+// wireless firmware update of the demo light that runs older firmware.
 //
 //   flutter test integration_test -d <simulator id>
 import 'package:electrobright/app.dart';
@@ -18,6 +19,7 @@ import 'package:electrobright/features/control/control_screen.dart';
 import 'package:electrobright/features/developer/developer_screen.dart';
 import 'package:electrobright/features/developer/light_developer_screen.dart';
 import 'package:electrobright/features/firmware_update/firmware_update_screen.dart';
+import 'package:electrobright/features/firmware_update/update_firmware_screen.dart';
 import 'package:electrobright/features/groups/group_screen.dart';
 import 'package:electrobright/sim/eb_device_model.dart';
 import 'package:electrobright/sim/sim_central.dart';
@@ -122,20 +124,19 @@ void main() {
         .firstWhere((SimFixture f) => f.id == id)
         .model;
 
-    // Add one light of every type through the add flow.
+    // Add one light of every type through the add flow (the RGB one runs
+    // older firmware).
+    const String current = EbDeviceModel.firmwareVersion;
     const List<(String, String, String)> lights = <(String, String, String)>[
-      ('Kitchen', 'Tunable white · Tunable white (warm to cool)', 'demo-cct'),
-      ('Hallway', 'White · Single white', 'demo-w'),
-      ('Desk strip', 'RGB · Colour', 'demo-rgb'),
-      ('Bedroom', 'RGB + CCT · Colour + tunable white', 'demo-rgbcct'),
-      ('Living room', 'RGBW · Colour + white', 'demo-rgbw'),
+      ('Kitchen', 'Tunable white · Tunable white (warm to cool)', current),
+      ('Hallway', 'White · Single white', current),
+      ('Desk strip', 'RGB · Colour', demoOlderFirmware),
+      ('Bedroom', 'RGB + CCT · Colour + tunable white', current),
+      ('Living room', 'RGBW · Colour + white', current),
     ];
-    for (final (String name, String type, String _) in lights) {
+    for (final (String name, String type, String version) in lights) {
       await tapOn(t, find.text(type));
-      await waitFor(
-        t,
-        find.textContaining('firmware ${EbDeviceModel.firmwareVersion}'),
-      );
+      await waitFor(t, find.textContaining('firmware $version'));
       expect(find.byType(AddLightScreen), findsOneWidget);
       await t.enterText(find.byType(TextField), name);
       // "Done" on the keyboard saves.
@@ -428,5 +429,38 @@ void main() {
     );
     expect(twin('demo-w').restarts, 1);
     expect(twin('demo-w').layout, ChannelLayout.cct);
+
+    // Wireless update: the RGB light runs older firmware than the app's.
+    Navigator.of(t.element(find.byType(LightDeveloperScreen)))
+        .popUntil((Route<dynamic> r) => r.isFirst);
+    await wait(t, 800);
+    await t.scrollUntilVisible(
+      find.text('Lights'),
+      -300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await openLight('Desk strip');
+    await back();
+    await t.scrollUntilVisible(
+      find.text('Lights'),
+      -300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    final Finder banner = find.byKey(
+      const ValueKey<String>('home-updates-banner'),
+    );
+    await waitFor(t, find.text('1 light has an update'), seconds: 20);
+    await tapOn(t, banner, delta: -200);
+    await arrive(t, find.byType(UpdateFirmwareScreen));
+    expect(find.text('$demoOlderFirmware → $current'), findsOneWidget);
+    await tapOn(t, find.byKey(const ValueKey<String>('update-start')));
+    await waitFor(t, find.byKey(const ValueKey<String>('update-progress')));
+    await waitFor(t, find.text('Updated to $current'), seconds: 90);
+    expect(twin('demo-rgb').runningVersion, current);
+    expect(twin('demo-rgb').restarts, 1);
+    await tapOn(t, find.byKey(const ValueKey<String>('update-done')));
+    await wait(t, 800);
+    expect(find.byType(UpdateFirmwareScreen), findsNothing);
+    expect(banner, findsNothing);
   });
 }

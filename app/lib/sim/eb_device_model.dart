@@ -24,8 +24,18 @@ final class EbDeviceModel {
   /// The universal firmware built with [fixture] as a new light's type (the
   /// sketch `firmware/fixtures/<folder>/`); null is a build without a default,
   /// which starts in setup-needed mode until SET_TYPE.
-  EbDeviceModel({EbFixtureSpec? fixture = EbFixtureCatalog.rgbw})
-    : buildDefault = fixture {
+  ///
+  /// [version] is the firmware flashed over USB. With [versionFromImage] the
+  /// light runs what a wireless update installed: after one, it reports the
+  /// version of the image in its running slot (the demo lights). Without it
+  /// the version never changes, like fwsim, which is one compiled build (the
+  /// OTA differential test).
+  EbDeviceModel({
+    EbFixtureSpec? fixture = EbFixtureCatalog.rgbw,
+    String version = firmwareVersion,
+    this.versionFromImage = false,
+  }) : buildDefault = fixture,
+       flashedVersion = version {
     _rig = _Rig(this);
     boot();
   }
@@ -66,6 +76,25 @@ final class EbDeviceModel {
   set flashWritesFail(bool fail) => _flash.failWrites = fail;
 
   static const String firmwareVersion = '3.8.0';
+
+  /// The firmware flashed over USB (the factory slot's).
+  final String flashedVersion;
+  final bool versionFromImage;
+
+  /// The version the light runs (VERSION, and what BEGIN compares against).
+  String get runningVersion {
+    if (!versionFromImage) return flashedVersion;
+    final List<int> image = otaFlash.slot[otaFlash.running];
+    final int? at = ImageIdentityTwin.find(image);
+    final List<int>? v = at == null
+        ? null
+        : ImageIdentityTwin.universalVersion(image, at);
+    return v == null ? flashedVersion : v.join('.');
+  }
+
+  /// Test fault: a newly installed firmware never passes its self-check, so
+  /// it rolls back at the deadline.
+  bool failSelfCheck = false;
 
   /// The fake OTA app slots and the bootloader's rollback rules (survive
   /// restarts, like flash).
@@ -207,6 +236,7 @@ final class EbDeviceModel {
     _otaDelivered.clear();
     return out;
   }
+
   void setSubscribed({required bool subscribed}) => _subscribed = subscribed;
   void failNextNotifies(int count) => _notifyFailures = count;
 
@@ -330,7 +360,9 @@ final class EbDeviceModel {
     final int? marker = _flash.updateType;
     final bool typeLoaded = marker == null || marker == _typeValue(fixture);
     final bool pass =
-        typeLoaded && since ~/ 5 >= SelfCheckTwin.minRenderFrames;
+        !failSelfCheck &&
+        typeLoaded &&
+        since ~/ 5 >= SelfCheckTwin.minRenderFrames;
     if (pass) {
       _selfChecking = false;
       otaFlash.confirm();
@@ -540,7 +572,7 @@ final class _Rig {
   bool restartRequested = false;
   late final OtaReceiverTwin ota = OtaReceiverTwin(
     flash: device.otaFlash,
-    running: ImageIdentityTwin.parseVersion(EbDeviceModel.firmwareVersion)!,
+    running: ImageIdentityTwin.parseVersion(device.runningVersion)!,
     reply: device._otaReplies.push,
     onActive: (bool active) {
       core.setOtaBusy(active);
@@ -1058,8 +1090,7 @@ enum _ParseStatus { ok, unknown, format, range }
 
 final class _Parsed {
   const _Parsed.ok(this.id, this.args) : status = _ParseStatus.ok, error = null;
-  const _Parsed.fail(this.status, this.error, [this.id])
-    : args = const <int>[];
+  const _Parsed.fail(this.status, this.error, [this.id]) : args = const <int>[];
   final _ParseStatus status;
   final _Cmd? id;
   final List<int> args;
@@ -1151,7 +1182,8 @@ _Parsed _parseCommand(String line, EbFixtureSpec fixture) {
   if (spec.id == _Cmd.setType) {
     // A type name (case-insensitive), not a number: the catalogue index.
     final int type = EbFixtureCatalog.all.indexWhere(
-      (EbFixtureSpec f) => f.layout.wire == line.substring(p, end).toUpperCase(),
+      (EbFixtureSpec f) =>
+          f.layout.wire == line.substring(p, end).toUpperCase(),
     );
     return type < 0
         ? _Parsed.fail(_ParseStatus.range, spec.error, spec.id)
@@ -1175,7 +1207,9 @@ _Parsed _parseCommand(String line, EbFixtureSpec fixture) {
         break;
       }
       final (int rc, int v) = _parseField(line, fieldStart, q);
-      if (rc == 1) return _Parsed.fail(_ParseStatus.format, spec.error, spec.id);
+      if (rc == 1) {
+        return _Parsed.fail(_ParseStatus.format, spec.error, spec.id);
+      }
       final bool first = values.isEmpty;
       final int lo = first ? spec.firstMin : spec.restMin;
       final int hi = first ? spec.firstMax : spec.restMax;
@@ -1238,6 +1272,7 @@ final class _Controller {
     }
     _publish();
   }
+
   int _probe = 0;
   int _probeDeadline = 0;
   bool soundEnabled = true;
@@ -1318,8 +1353,7 @@ final class _Controller {
           ? lines.length - i
           : EbDeviceModel._maxLinesPerBatch;
       final List<_Parsed> results = <_Parsed>[
-        for (int k = 0; k < n; k++)
-          _parseCommand(lines[i + k], _rig.fixture),
+        for (int k = 0; k < n; k++) _parseCommand(lines[i + k], _rig.fixture),
       ];
       for (int k = 0; k < n; k++) {
         if (_restartPending) return;
@@ -1509,7 +1543,7 @@ final class _Controller {
       case _Cmd.info:
         _rig.sendLine('INFO:${_rig.fixture.modelId}');
       case _Cmd.version:
-        _rig.sendLine('VERSION:${EbDeviceModel.firmwareVersion}');
+        _rig.sendLine('VERSION:${_rig.device.runningVersion}');
       case _Cmd.caps:
         _rig.sendLine(_rig.fixture.capsReply);
       case _Cmd.ping:

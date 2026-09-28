@@ -322,9 +322,7 @@ ChannelColor _groupColour(Common<ColourIntent> common) {
 /// How many lights the group drives, and how many of those are connected.
 ({int driven, int ready}) _drivenCounts(GroupStatus s) => (
   driven: s.members.where((GroupMember m) => !m.own).length,
-  ready: s.members
-      .where((GroupMember m) => !m.own && m.phase == LinkPhase.ready)
-      .length,
+  ready: s.members.where((GroupMember m) => !m.own && m.isReady).length,
 );
 
 /// Up to four connected lights as small still orbs, fanned out, and how
@@ -342,7 +340,7 @@ class _GroupOrb extends ConsumerWidget {
     final GroupStatus st = ref.watch(groupStatusProvider(kind));
     final List<String> ready = <String>[
       for (final GroupMember m in st.members)
-        if (m.phase == LinkPhase.ready && !m.own) m.id,
+        if (m.isReady && !m.own) m.id,
     ];
     final int n = math.min(ready.length, _shown);
     final int more = ready.length - n;
@@ -755,7 +753,7 @@ class _GroupEffectsTab extends ConsumerWidget {
           groupStatusProvider(group.kind).select(
             (GroupStatus s) => <String>[
               for (final GroupMember m in s.members)
-                if (m.phase == LinkPhase.ready && !m.own) m.id,
+                if (m.isReady && !m.own) m.id,
             ].join(' '),
           ),
         )
@@ -1091,9 +1089,11 @@ String? groupRowStatus(
   required bool included,
   required bool own,
   required bool limitedOut,
+  bool updating = false,
 }) {
   if (!included || own) return own ? l.groupOwnSettings : l.groupExcluded;
   if (limitedOut) return l.groupRowPhoneLimit;
+  if (updating) return l.presenceUpdating;
   return switch (phase) {
     LinkPhase.ready => null,
     LinkPhase.connecting ||
@@ -1133,8 +1133,9 @@ class _GroupLightRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final AppLocalizations l = AppLocalizations.of(context);
     final String id = fixture.id;
-    final LinkPhase phase = ref.watch(
-      fixtureStatusProvider(id).select((FixtureStatus s) => s.phase),
+    final (LinkPhase phase, bool updating) = ref.watch(
+      fixtureStatusProvider(id)
+          .select((FixtureStatus s) => (s.phase, s.updating)),
     );
     final _RowState g = ref.watch(
       groupStatusProvider(group.kind).select((GroupStatus s) {
@@ -1150,7 +1151,7 @@ class _GroupLightRow extends ConsumerWidget {
       }),
     );
     final FixtureSession? session = ref.watch(fixtureSessionProvider(id));
-    final bool ready = phase == LinkPhase.ready;
+    final bool ready = phase == LinkPhase.ready && !updating;
     final bool following = g.included && !g.own;
     final int percent = (g.trim * 100).round();
     final String type = fixtureTypeName(l, fixture.layout);
@@ -1162,6 +1163,7 @@ class _GroupLightRow extends ConsumerWidget {
       included: g.included,
       own: g.own,
       limitedOut: g.limitedOut,
+      updating: updating,
     );
     final TextStyle small = TextStyle(
       color: fg.withValues(alpha: 0.6),

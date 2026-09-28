@@ -47,6 +47,10 @@ abstract interface class BleLink {
   /// Negotiated ATT MTU (23 until an exchange happened).
   int get mtu;
 
+  /// Whether the peripheral has the GATT service [serviceUuid] (lower-case),
+  /// as discovered when the link was prepared.
+  bool offers(String serviceUuid);
+
   /// Enables notifications on [ref]. Payloads arrive in order.
   Stream<Uint8List> subscribe(GattRef ref);
 

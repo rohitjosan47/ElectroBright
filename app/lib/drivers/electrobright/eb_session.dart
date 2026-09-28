@@ -9,6 +9,7 @@ import '../../core/model/light_capabilities.dart';
 import '../../core/protocol/eb/eb_command.dart';
 import '../../core/protocol/eb/eb_constants.dart';
 import '../../core/protocol/eb/eb_identity.dart';
+import '../../core/protocol/eb/eb_ota.dart';
 import '../../core/protocol/eb/eb_reply.dart';
 import '../../core/protocol/eb/eb_scene.dart';
 import '../../core/protocol/eb/line_reassembler.dart';
@@ -348,6 +349,7 @@ final class EbSession {
       caps: caps,
       modeCount: levels.levels.length,
       capabilities: capabilities,
+      wirelessUpdates: _link.offers(EbOta.serviceUuid),
     );
     _phase = EbPhase.ready;
     _armTimerWatch();
@@ -701,6 +703,44 @@ final class EbSession {
     if (!(_caps?.types.contains(layout.wire) ?? false)) return _skipped;
     return _send(SetType(layout), const <String>[]);
   }
+
+  // ===========================================================================
+  // Wireless update (docs/protocol.md §10): the update engine
+  // (sessions/firmware_update.dart) uses this link's update service.
+
+  /// Pauses the command and colour lanes: nothing of the normal protocol is
+  /// sent until [resumeLanes] (queued changes wait). Idempotent.
+  void pauseLanes() {
+    if (_lanesPaused) return;
+    _lanesPaused = true;
+    _commands.paused = true;
+    _stream.hold();
+  }
+
+  void resumeLanes() {
+    if (!_lanesPaused) return;
+    _lanesPaused = false;
+    _commands.paused = false;
+    _stream.release();
+  }
+
+  bool _lanesPaused = false;
+  bool get lanesPaused => _lanesPaused;
+
+  int get mtu => _link.mtu;
+
+  /// Completes when this session's link ends.
+  Future<LinkLossReason> get linkClosed => _link.closed;
+
+  /// Notifications of [ref] (the update control characteristic).
+  Stream<Uint8List> subscribeRaw(GattRef ref) => _link.subscribe(ref);
+
+  /// One write in line with the session's own (the link has one writer).
+  Future<void> writeRaw(
+    GattRef ref,
+    Uint8List value, {
+    required bool withResponse,
+  }) => _writer.write(ref, value, withResponse: withResponse);
 
   /// Round-trip time of a PING, or null.
   Future<Duration?> ping() async {

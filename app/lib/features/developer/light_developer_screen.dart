@@ -21,7 +21,10 @@ import '../../l10n/app_localizations.dart';
 import '../../sessions/connection_manager.dart';
 import '../../sessions/fixture_session.dart';
 import '../../sessions/group_capabilities.dart';
+import '../../core/firmware/firmware_bundle.dart';
 import '../control/presets/preset_meta.dart';
+import '../firmware_update/update_firmware_screen.dart';
+import '../firmware_update/update_providers.dart';
 import '../home/presence.dart';
 import 'diag_report.dart';
 import 'fixture_probe.dart';
@@ -214,6 +217,11 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
         f.identity?.firmwareVersion;
     final bool busy =
         _change == _Change.sending || _change == _Change.restarting;
+    final FirmwareVersion? bundled = ref.watch(
+      bundledFirmwareProvider.select((FirmwareBundle? b) => b?.version),
+    );
+    final FirmwareVersion? installed = FirmwareVersion.tryParse(version);
+    final bool wireless = status.view?.firmware?.wirelessUpdates ?? false;
 
     if (status.isReady && !setup && !_diagAsked) {
       _diagAsked = true;
@@ -333,6 +341,30 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
                   ),
                 ),
               ),
+              if (bundled != null)
+                ListTile(
+                  key: const ValueKey<String>('dev-bundled-firmware'),
+                  title: Text(l.bundledVersion, style: title),
+                  trailing: Text(
+                    '$bundled',
+                    style: title.copyWith(
+                      fontFeatures: const <FontFeature>[
+                        FontFeature.tabularFigures(),
+                      ],
+                    ),
+                  ),
+                ),
+              if (bundled != null)
+                _reinstallRow(
+                  l,
+                  title,
+                  detail,
+                  fg,
+                  bundled: bundled,
+                  installed: installed,
+                  enabled: status.isConnected && wireless && !busy,
+                  wireless: wireless || !status.isConnected,
+                ),
             ],
           ),
           SettingsSection(
@@ -372,6 +404,49 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
           ),
         ],
       ],
+    );
+  }
+
+  /// Reinstall firmware: the update flow with the reinstall flag. Never a
+  /// downgrade; a light without wireless updates gets the USB note.
+  Widget _reinstallRow(
+    AppLocalizations l,
+    TextStyle title,
+    TextStyle detail,
+    Color fg, {
+    required FirmwareVersion bundled,
+    required FirmwareVersion? installed,
+    required bool enabled,
+    required bool wireless,
+  }) {
+    final bool newer = installed != null && installed > bundled;
+    final String hint = !wireless && installed != null
+        ? l.updateNeedsUsb('$installed')
+        : newer
+        ? l.reinstallNewer('$bundled')
+        : installed != null && installed < bundled
+        ? l.installHint('$bundled')
+        : l.reinstallHint('$bundled');
+    final bool can = enabled && !newer;
+    return ListTile(
+      key: const ValueKey<String>('dev-reinstall'),
+      leading: Icon(Icons.system_update_alt_rounded, color: fg),
+      title: Text(l.reinstallFirmware, style: title),
+      subtitle: Text(hint, style: detail),
+      trailing: can ? Icon(Icons.chevron_right_rounded, color: fg) : null,
+      enabled: can,
+      onTap: can
+          ? () => unawaited(
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => UpdateFirmwareScreen(
+                    fixtureId: widget.fixtureId,
+                    reinstall: true,
+                  ),
+                ),
+              ),
+            )
+          : null,
     );
   }
 

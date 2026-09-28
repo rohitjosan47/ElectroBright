@@ -95,7 +95,7 @@ class _GroupHalf extends ConsumerWidget {
               .where(
                 (String id) => ref.watch(
                   fixtureStatusProvider(id)
-                      .select((FixtureStatus s) => s.phase == LinkPhase.ready),
+                      .select((FixtureStatus s) => s.isReady),
                 ),
               )
               .length;

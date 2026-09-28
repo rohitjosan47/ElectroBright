@@ -29,9 +29,16 @@ final class GroupMember {
     this.following = false,
     this.own = false,
     this.trim = 1,
+    this.updating = false,
   });
   final String id;
   final LinkPhase phase;
+
+  /// Its firmware is being updated: group commands skip it.
+  final bool updating;
+
+  /// Connected and free for the group.
+  bool get isReady => phase == LinkPhase.ready && !updating;
 
   /// Not connected for the group: the connection budget ran out.
   final bool limitedOut;
@@ -54,13 +61,16 @@ final class GroupMember {
       other.limitedOut == limitedOut &&
       other.following == following &&
       other.own == own &&
-      other.trim == trim;
+      other.trim == trim &&
+      other.updating == updating;
   @override
-  int get hashCode => Object.hash(id, phase, limitedOut, following, own, trim);
+  int get hashCode =>
+      Object.hash(id, phase, limitedOut, following, own, trim, updating);
   @override
   String toString() =>
       'GroupMember($id, ${phase.name}${limitedOut ? ', limited out' : ''}'
-      '${following ? ', following' : ''}${own ? ', own' : ''})';
+      '${following ? ', following' : ''}${own ? ', own' : ''}'
+      '${updating ? ', updating' : ''})';
 }
 
 /// Where the group's lights are: each member plus the counts.
@@ -101,7 +111,7 @@ final class GroupStatus {
   final int? activePreset;
 
   int get total => members.length;
-  int get ready => _count((GroupMember m) => m.phase == LinkPhase.ready);
+  int get ready => _count((GroupMember m) => m.isReady);
   int get connecting => _count(
     (GroupMember m) =>
         m.phase == LinkPhase.waiting ||
@@ -1596,6 +1606,7 @@ final class GroupSession {
             following: _memory.following.contains(id),
             own: _memory.own.contains(id),
             trim: trimOf(id),
+            updating: _connections.session(id)?.status.updating ?? false,
           ),
       ],
       excluded: <String>[

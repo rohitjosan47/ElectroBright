@@ -5,30 +5,34 @@ import '../../drivers/electrobright/eb_types.dart';
 import '../../l10n/app_localizations.dart';
 import '../../sessions/fixture_session.dart';
 
-/// Where a light is ("Connected", "Unavailable — …", "Firmware update needed").
+/// Where a light is ("Connected", "Unavailable — …", "Firmware update needed",
+/// "Updating…").
 String presenceText(AppLocalizations l, FixtureStatus s) =>
-    presenceOf(l, s.phase, s.incompatibility);
+    presenceOf(l, s.phase, s.incompatibility, updating: s.updating);
 
 /// [presenceText] from the only fields it reads.
 String presenceOf(
   AppLocalizations l,
   LinkPhase phase,
-  EbIncompatibility? incompatibility,
-) => switch (phase) {
-  LinkPhase.ready => l.presenceConnected,
-  LinkPhase.connecting ||
-  LinkPhase.handshaking ||
-  LinkPhase.waiting => l.presenceConnecting,
-  LinkPhase.unavailable => l.presenceUnavailable,
-  LinkPhase.bluetoothOff => l.presenceBluetoothOff,
-  LinkPhase.incompatible => switch (incompatibility) {
-    EbIncompatibility.legacyFirmware => l.presenceUpdateNeeded,
-    EbIncompatibility.unknownLayout => l.presenceNewerApp,
-    EbIncompatibility.setupNeeded => l.presenceSetupNeeded,
-    _ => l.presenceUnexpected,
-  },
-  LinkPhase.idle => l.presenceIdle,
-};
+  EbIncompatibility? incompatibility, {
+  bool updating = false,
+}) => updating
+    ? l.presenceUpdating
+    : switch (phase) {
+        LinkPhase.ready => l.presenceConnected,
+        LinkPhase.connecting ||
+        LinkPhase.handshaking ||
+        LinkPhase.waiting => l.presenceConnecting,
+        LinkPhase.unavailable => l.presenceUnavailable,
+        LinkPhase.bluetoothOff => l.presenceBluetoothOff,
+        LinkPhase.incompatible => switch (incompatibility) {
+          EbIncompatibility.legacyFirmware => l.presenceUpdateNeeded,
+          EbIncompatibility.unknownLayout => l.presenceNewerApp,
+          EbIncompatibility.setupNeeded => l.presenceSetupNeeded,
+          _ => l.presenceUnexpected,
+        },
+        LinkPhase.idle => l.presenceIdle,
+      };
 
 /// What the light is doing ("On · 64 % · Thunderstorm"); single-white lights
 /// report their effective output when the channel is below full.

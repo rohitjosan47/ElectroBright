@@ -11,6 +11,7 @@ import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.view.WindowManager
 import kotlinx.coroutines.CompletableDeferred
 
 /**
@@ -122,6 +123,17 @@ class PlatformHost(private val activity: Activity) : PlatformHostApi {
 
     override fun setHighRefreshRate(high: Boolean) {
         DisplayRefresh.setHigh(activity, high)
+    }
+
+    // A firmware transfer keeps the screen on.
+    override fun setKeepAwake(on: Boolean) {
+        activity.runOnUiThread {
+            if (on) {
+                activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            } else {
+                activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
     }
 
     private companion object {

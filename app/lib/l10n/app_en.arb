@@ -635,5 +635,176 @@
     }
   },
   "addFoundSetup": "Found a light that needs setting up",
-  "newLightName": "New light"
+  "newLightName": "New light",
+  "presenceUpdating": "Updating…",
+  "updateBadge": "Update",
+  "updatesBanner": "{count, plural, =1{1 light has an update} other{{count} lights have an update}}",
+  "@updatesBanner": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "updateFirmware": "Update firmware",
+  "reinstallFirmware": "Reinstall firmware",
+  "updateAvailableDetail": "Firmware {to} is available (this light has {from})",
+  "@updateAvailableDetail": {
+    "placeholders": {
+      "to": {
+        "type": "String"
+      },
+      "from": {
+        "type": "String"
+      }
+    }
+  },
+  "updateNeedsUsb": "This light has firmware {version}, which can't update wirelessly. Install firmware 3.8.0 or later over USB once; after that, updates come through the app.",
+  "@updateNeedsUsb": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "updateVersions": "{from} → {to}",
+  "@updateVersions": {
+    "placeholders": {
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      }
+    }
+  },
+  "updateWhatHappens": "{name} gets firmware {to} over Bluetooth. It keeps running its current firmware while the new one arrives and is checked, then restarts on it. Its type, settings and presets stay. If anything goes wrong, it stays on — or goes back to — the firmware it has now.",
+  "@updateWhatHappens": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      }
+    }
+  },
+  "reinstallWhatHappens": "{name} gets firmware {to} again over Bluetooth, then restarts on it. Its type, settings and presets stay. If anything goes wrong, it stays on the firmware it has now.",
+  "@reinstallWhatHappens": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      }
+    }
+  },
+  "updateStayNear": "Keep the app open and stay near the light.",
+  "updateDuration": "It usually takes a minute or two.",
+  "updateStart": "Update",
+  "reinstallStart": "Reinstall",
+  "updateStagePreparing": "Getting ready…",
+  "updateStageSending": "Sending the firmware…",
+  "updateStageReconnecting": "Reconnecting — the update continues where it stopped…",
+  "updateStageInstalling": "The light is checking the firmware…",
+  "updateStageRestarting": "The light is restarting…",
+  "updateStageChecking": "Making sure the new firmware starts properly…",
+  "updatePercent": "{percent} %",
+  "@updatePercent": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "updateSecondsLeft": "About {seconds} s left",
+  "@updateSecondsLeft": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "updateMinutesLeft": "{minutes, plural, =1{About 1 min left} other{About {minutes} min left}}",
+  "@updateMinutesLeft": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "updateNoStop": "Installing now. This can't be stopped, and your light stays safe.",
+  "updateDone": "Updated to {version}",
+  "@updateDone": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "updateDoneBody": "{name} runs firmware {version}.",
+  "@updateDoneBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "updateRolledBack": "The update didn't take; your light is back on its previous firmware.",
+  "updateCancelled": "Update cancelled. {name} keeps its current firmware.",
+  "@updateCancelled": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "updateFailed": "The update didn't finish",
+  "updateKeepsFirmware": "Your light keeps the firmware it has.",
+  "updateOtherRunning": "Another light is updating. You can update this one when it's done.",
+  "updateNotConnected": "Couldn't connect to the light. Make sure it's on and nearby, then try again.",
+  "updateUnsupported": "This light's firmware can't be updated wirelessly.",
+  "updateDowngrade": "The light already has newer firmware.",
+  "updateSameVersion": "The light already has this version.",
+  "updateBadImage": "The firmware in this app is damaged. Reinstall the app, then try again.",
+  "updateTooBig": "This firmware doesn't fit this light.",
+  "updateDamaged": "The firmware arrived damaged, so the light didn't install it. Try again.",
+  "updateNotAccepted": "The light didn't accept this firmware.",
+  "updateFlash": "The light couldn't save the firmware. Try again; if it keeps failing, switch the light off and on first.",
+  "updateBusy": "The light is still finishing an earlier update. Try again in a minute.",
+  "updateBadRequest": "The light didn't understand the update request.",
+  "updateStalled": "The transfer stopped. Move closer to the light and try again; it continues where it stopped.",
+  "updateLinkLost": "Lost the connection to the light. Move closer and try again; it continues where it stopped.",
+  "updateNoAnswer": "The light stopped answering. Try again.",
+  "updateNotBack": "The light hasn't come back after restarting. Check that it has power, then open it again.",
+  "updateOtherVersion": "The light came back with different firmware than expected.",
+  "bundledVersion": "In this app",
+  "reinstallHint": "Sends firmware {version} to this light again",
+  "@reinstallHint": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "installHint": "Installs firmware {version} on this light",
+  "@installHint": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "reinstallNewer": "This light has newer firmware than this app's ({version}).",
+  "@reinstallNewer": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  }
 }
