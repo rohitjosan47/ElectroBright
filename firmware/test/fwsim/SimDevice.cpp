@@ -24,13 +24,20 @@ void SimDevice::Env::systemDiag(SystemDiag& d) {
 }
 
 // ---- Lifecycle ------------------------------------------------------------------
-SimDevice::SimDevice(const FixtureProfile& fixture)
-    : fixture_(fixture), rig_(std::make_unique<Rig>(*this, kv_, fixture)) {}
+SimDevice::SimDevice(FixtureType buildDefault)
+    : buildDefault_(buildDefault), rig_(std::make_unique<Rig>(*this, kv_, system_, buildDefault)) {}
 
 void SimDevice::boot() { rig_->core.begin(now_); }
 
 void SimDevice::reboot() {
-  rig_ = std::make_unique<Rig>(*this, kv_, fixture_);
+  delivered_.clear();
+  restartNow();
+}
+
+// esp_restart(): like a power cycle, except that notifications already
+// delivered to the phone stay delivered.
+void SimDevice::restartNow() {
+  rig_ = std::make_unique<Rig>(*this, kv_, system_, buildDefault_);
   egress_.clear();
   assembler_ = LineAssembler();
   seen_ = {};
@@ -41,7 +48,6 @@ void SimDevice::reboot() {
   subscribed_ = false;
   mtu_ = 23;
   notifyFailures_ = 0;
-  delivered_.clear();
   now_ += 1500;  // boot time
   boot();
 }
@@ -62,10 +68,10 @@ void SimDevice::disconnect() {
 
 void SimDevice::write(const uint8_t* data, size_t len) {
   if (len == 0) return;
-  const ChannelLayout& layout = *fixture_.layout;
+  const ChannelLayout& layout = *fixture().layout;
   if (binframe::isCandidate(data, len, layout)) {
     ColorFrame frame{};
-    if (binframe::decode(data, len, layout, fixture_.legacyFrames, frame)) {
+    if (binframe::decode(data, len, layout, fixture().legacyFrames, frame)) {
       mailbox_ = frame;  // xQueueOverwrite: only the newest colour matters
       mailboxFull_ = true;
       Stats::inc(rig_->stats.binaryOk);
@@ -152,6 +158,13 @@ void SimDevice::passEnd() {
     Stats::inc(rig_->stats.notifyRetries, egress_.retries() - retriesBefore);
   } else {
     egress_.clear();
+  }
+
+  // 6. SET_TYPE: restart once the OK has gone out (the device also waits
+  // cfg::kRestartDelayMs; virtual time needs no wait).
+  if (rig_->env.restartRequested && (egress_.pending() == 0 || !connected_)) {
+    ++restarts_;
+    restartNow();
   }
 }
 

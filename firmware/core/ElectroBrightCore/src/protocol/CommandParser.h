@@ -11,6 +11,9 @@
 // Colour commands (COLOR, POLICE_COLOR_A/B) take exactly one value per channel
 // of the fixture's layout; RGBW exists only on layouts with colour LEDs and a
 // W LED (the RGBW light).
+//
+// Two commands differ: SET_TYPE takes a type name (SET_TYPE:RGBCCT), and
+// PROBE separates its two numbers with a colon (PROBE:3:1).
 
 #include <stdint.h>
 
@@ -48,6 +51,8 @@ enum class CmdId : uint8_t {
   Ping,
   Diag,
   Identify,
+  SetType,  // args[0] = FixtureType
+  Probe,    // args[0] = output 0..4, args[1] = 0 off / 1 on
 };
 
 struct Command {
@@ -62,6 +67,7 @@ struct ParseResult {
   ParseStatus status;
   Command cmd;
   const char* errorCode;  // e.g. "MODE_INVALID"; valid when status != Ok
+  // cmd.id is also valid for Format / Range failures (a known command).
 };
 
 ParseResult parseCommand(const char* line, const ChannelLayout& layout);

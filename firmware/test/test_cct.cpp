@@ -21,7 +21,7 @@
 
 namespace {
 
-const FixtureProfile& kCctFx = fx::cct::kProfile;
+const FixtureProfile& kCctFx = profiles::kCct;
 constexpr uint32_t kFrameMs = cfg::kRenderPeriodUs / 1000;
 constexpr int kCw = 0, kWw = 1;  // duty order = wire order
 constexpr const char* kDefaultStatus = "STATUS:255,255,255,1,5,5,0,0,1,0,0,0,1,0,255,255,0";
@@ -77,7 +77,7 @@ TEST(cct_reports_its_identity_and_layout) {
   r.send("CAPS");
   CHECK_STR(r.env.lines[0], "INFO:EB-C3-CCT-V1");
   CHECK_STR(r.env.lines[1], std::string("VERSION:") + cfg::kFirmwareVersion);
-  CHECK_STR(r.env.lines[2], "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=CCT");
+  CHECK_STR(r.env.lines[2], "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=CCT");
 }
 
 TEST(cct_status_has_17_fields_and_white_defaults) {

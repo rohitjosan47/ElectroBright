@@ -8,9 +8,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'firmware_sources.dart';
 
 /// The app's fixture catalogue (EbFixtureCatalog) must equal the firmware's
-/// fixtures: identity, layout, defaults, supported modes and legacy frames of
-/// every firmware/fixtures/*/Fixture.h, and the layout table of
-/// ChannelLayout.h. A fixture added to the firmware fails here until the app
+/// fixture types: identity, layout, defaults, supported modes, CAPS and legacy
+/// frames of every entry of the core's profile table (fixture/Profiles.h), the
+/// sketch that makes it a new light's default, and the layout table of
+/// ChannelLayout.h. A type added to the firmware fails here until the app
 /// knows it.
 void main() {
   final List<FirmwareFixture> firmware = firmwareFixtureList();
@@ -38,6 +39,9 @@ void main() {
             )
             .toList(),
     };
+    // NONE is setup-needed mode (no LEDs, no modes), not a fixture layout.
+    expect(src, contains('ChannelLayout kNone{"NONE", 0, {}, 0};'));
+    rows.remove('NONE');
     expect(
       rows.keys.toSet(),
       ChannelLayout.values.map((ChannelLayout l) => l.wire).toSet(),
@@ -52,21 +56,20 @@ void main() {
   });
 
   for (final FirmwareFixture fw in firmware) {
-    test('${fw.folder}: catalogue entry equals Fixture.h', () {
+    test('${fw.name}: catalogue entry equals the profile table', () {
       final EbFixtureSpec spec = EbFixtureCatalog.all.firstWhere(
         (EbFixtureSpec s) => s.fwsimName == fw.name,
       );
       final String src = fw.source;
-      String str(String name) =>
-          RegExp('constexpr const char\\* $name = "([^"]*)";')
-              .firstMatch(src)!
-              .group(1)!;
+      final List<String> strings = profileStrings(src);
 
       expect(spec.folder, fw.folder);
-      expect(str('kDeviceName'), spec.bleName);
-      expect(str('kModelId'), spec.modelId);
-      expect(str('kCapsReply'), spec.capsReply);
-      expect(str('kNvsNamespace'), spec.nvsNamespace);
+      expect(strings[0], spec.modelId);
+      expect(strings[1], spec.bleName);
+      expect(
+        spec.capsReply,
+        firmwareCaps(spec.layout.wire, firmwareModeMask(spec.layout.wire)),
+      );
 
       // &layouts::kRgbcct -> RGBCCT
       final String layoutRef = RegExp(r'&layouts::k(\w+),')
@@ -108,11 +111,34 @@ void main() {
           .group(1)!;
       expect(legacy == 'true', spec.legacyFrames);
 
-      // Supported modes: CAPS MODES= (absent = all 13).
+      // Supported modes: ChannelLayout.h, announced as CAPS MODES= (absent =
+      // all 13).
+      expect(spec.modeMask, firmwareModeMask(spec.layout.wire));
       final EbCaps caps = parseEbReply(spec.capsReply) as EbCaps;
       expect(caps.modesMask ?? 0x1FFF, spec.modeMask);
+      expect(caps.types, firmwareTypes());
+      expect(caps.probe, isTrue);
     });
   }
+
+  test('TYPES= lists the catalogue in order', () {
+    expect(
+      firmwareTypes(),
+      EbFixtureCatalog.all.map((EbFixtureSpec f) => f.layout.wire).toList(),
+    );
+  });
+
+  test('the Dart firmware twin\'s setup-needed mode equals profiles::kNone', () {
+    final List<String> strings = profileStrings(profileSource('None'));
+    const EbFixtureSpec setup = EbDeviceModel.setupSpec;
+    expect(strings[0], setup.modelId);
+    expect(strings[1], setup.bleName);
+    expect(setup.capsReply, firmwareCaps('NONE', 0));
+    expect((parseEbReply(setup.capsReply) as EbCaps).setupNeeded, isTrue);
+    final EbDeviceModel m = EbDeviceModel(fixture: null);
+    expect(m.setupNeeded, isTrue);
+    expect(m.fixture.capsReply, setup.capsReply);
+  });
 
   test('the Dart firmware twin reports each fixture\'s identity', () {
     for (final EbFixtureSpec spec in EbFixtureCatalog.all) {

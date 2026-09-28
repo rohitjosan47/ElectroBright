@@ -507,7 +507,14 @@ final class ConnectionManager {
       }
       s.link = link;
       unawaited(link.closed.then((LinkLossReason r) => _onClosed(s, link!, r)));
-      await s.session.attach(link, options: policy.sessionOptions);
+      await s.session.attach(
+        link,
+        options: policy.sessionOptions,
+        // A light without a fixture type gets only the commands it accepts.
+        setupFirst: _discovery.devices.any(
+          (SeenDevice d) => d.id == f.deviceId && d.name == Eb.setupName,
+        ),
+      );
       s.attempt = 0;
       s.gatt133 = 0;
       s.lastUsed = _scheduler.now;

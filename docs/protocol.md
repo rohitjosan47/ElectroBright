@@ -1,8 +1,10 @@
-# ElectroBright BLE protocol (firmware family 3.6)
+# ElectroBright BLE protocol (firmware 3.7)
 
 This is the contract between the ElectroBright fixtures (`firmware/`) and the app (`app/`). Every fixture speaks the same protocol. Only the **channel layout** changes one thing: how many values a colour has on the wire.
 
-| Fixture | Sketch | Layout | Channels (wire order) | Model id | BLE name |
+Since 3.7.0 one universal firmware image holds every fixture type. The light stores its active type, and `SET_TYPE` changes it (§9). A sketch only chooses the type a new light gets.
+
+| Type | Sketch (default type) | Layout | Channels (wire order) | Model id | BLE name |
 |---|---|---|---|---|---|
 | RGBW | `firmware/fixtures/ElectroBright_RGBW` | `RGBW` | R, G, B, W (n = 4) | `EB-C3-RGBW-V1` | `ElectroBright_C3_V1` |
 | RGB | `firmware/fixtures/ElectroBright_RGB` | `RGB` | R, G, B (n = 3) | `EB-C3-RGB-V1` | `ElectroBright_C3_RGB_V1` |
@@ -10,8 +12,8 @@ This is the contract between the ElectroBright fixtures (`firmware/`) and the ap
 | CCT | `firmware/fixtures/ElectroBright_CCT` | `CCT` | CW, WW (n = 2) | `EB-C3-CCT-V1` | `ElectroBright_C3_CCT_V1` |
 | W (single white) | `firmware/fixtures/ElectroBright_W` | `W` | W (n = 1) | `EB-C3-W-V1` | `ElectroBright_C3_W_V1` |
 
-Source of truth for each fixture:
-- `firmware/fixtures/<Name>/Fixture.h`: identity, layout, pins and defaults.
+Source of truth for each type:
+- `firmware/core/ElectroBrightCore/src/fixture/Profiles.h`: the profile table (identity, layout, pins and defaults of every type).
 - `firmware/core/ElectroBrightCore/src/fixture/ChannelLayout.h`: the layouts.
 
 ---
@@ -22,7 +24,7 @@ Source of truth for each fixture:
   - RX `…0002` (phone → light): write, or write without response.
   - TX `…0003` (light → phone): notify.
 - **Advertising:** the service UUID is in the advertisement. The name is in the scan response.
-- **Names:** every fixture's name starts with `ElectroBright_C3_`. Firmware before 3.x is named `ElectroBright_BLE`.
+- **Names:** every fixture's name starts with `ElectroBright_C3_`. A 3.7.0+ light without a type (setup-needed mode, §9) is named `ElectroBright_C3_SETUP`. Firmware before 3.x is named `ElectroBright_BLE`.
 - **One phone at a time:** a light stops advertising while a phone is connected.
 - **Text:** lines end with `\n`, `\r` or `\r\n`, at most 96 characters. Longer lines are dropped whole. Command names are case-insensitive. Whitespace around fields is ignored.
 - **Replies:** each reply ends with `\n`. Replies are packed into notifications of up to MTU − 3 bytes, so one notification can carry several replies, and one reply can span several notifications.
@@ -34,13 +36,17 @@ After connecting, send `INFO`, `VERSION` and `CAPS`:
 
 ```
 INFO:EB-C3-<LAYOUT>-V<rev>                         e.g. INFO:EB-C3-RGB-V1
-VERSION:<major>.<minor>.<patch>                    e.g. VERSION:3.6.2
-CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=<LAYOUT>
+VERSION:<major>.<minor>.<patch>                    e.g. VERSION:3.7.0
+CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=<LAYOUT>
 ```
+
+A light in setup-needed mode (§9) answers `INFO` with `ERROR:SETUP_NEEDED` and CAPS with `LAYOUT=NONE`. A client that sees the `ElectroBright_C3_SETUP` name, or knows the light was in that mode, asks `CAPS` first.
 
 - **Where the layout comes from:** the `LAYOUT` key in CAPS. It always equals the middle part of the model id.
 - **RGBW 3.4.0:** it predates the `LAYOUT` key. Its model id `EB-C3-RGBW-V1` implies `RGBW`.
-- **CAPS is `KEY=VALUE` pairs:** parse it as a map and ignore unknown keys. Keys may be added in later versions.
+- **CAPS is `KEY=VALUE` pairs:** parse it as a map and ignore unknown keys. Keys may be added in later versions. A list value runs over commas: a part without `=` continues the previous key's value (`TYPES=RGBW,RGB,…`). `LAYOUT` is not always the last key.
+- **Fixture types:** `TYPES=<list>` (3.7.0+) lists every type `SET_TYPE` accepts, in this order: `RGBW,RGB,RGBCCT,CCT,W`. If it is absent, the type cannot be changed.
+- **Probe:** `PROBE=1` (3.7.0+) means the light answers `PROBE` (§9).
 - **Preset slots:** `PRESETS=<n>` is the number of preset slots (15 on 3.6.0); absent on firmware before 3.6.0, where clients assume 15.
 - **Identify:** `IDENTIFY=1` (3.6.1+) means the light supports the `IDENTIFY` command (§4, §6). If it is absent, the light does not; clients must not send it.
 - **PWM:** `PWM=<bits>` is informational: the effective duty resolution. 3.6.1+ sends `PWM=15`: 25 kHz PWM (inaudible) with an 11-bit counter plus 4 bits of hardware dithering. Earlier firmware sends `PWM=14` (14-bit at 4.9 kHz, which can make the fixture's buck converter whine). Clients do not need it.
@@ -105,6 +111,8 @@ Colour arguments are `v1,…,vn`, each 0–255. The wrong number of values gives
 | `FACTORY_RESET` | `OK` (no reboot; the link stays up) |
 | `INFO` · `VERSION` · `CAPS` | §2 |
 | `DIAG` | `DIAG:key=value,…` (see `firmware/README.md`) |
+| `SET_TYPE:<RGBW\|RGB\|RGBCCT\|CCT\|W>` (only when CAPS has `TYPES=`) | `OK`, then the light restarts (§9); `ERROR:TYPE_INVALID`; `ERROR:STORAGE` |
+| `PROBE:<output 0-4>:<0\|1>` (only when CAPS has `PROBE=1`) | `OK` (§9); `ERROR:PROBE_INVALID` |
 
 **Error codes:**
 - `FORMAT`, `UNKNOWN_CMD`
@@ -113,6 +121,8 @@ Colour arguments are `v1,…,vn`, each 0–255. The wrong number of values gives
 - `MODE_SPEED_INVALID`, `MODE_FREQUENCY_INVALID`, `PRESET_ID`
 - `PRESET_EMPTY:<id>`
 - `STORAGE`: flash failure, reported once per boot
+- `TYPE_INVALID`, `PROBE_INVALID` (3.7.0+)
+- `SETUP_NEEDED` (3.7.0+): the light has no type yet and does not accept this command (§9)
 
 ## 5. STATUS
 
@@ -175,12 +185,33 @@ W     STATUS:255,255,1,5,5,0,0,1,0,0,0,1,255,255
 ## 7. Adding a layout
 
 1. Add it to `ChannelLayout.h` (a name plus its roles in wire order).
-2. Add a fixture folder with a `Fixture.h` and a sketch.
-3. Register the fixture in `firmware/test/Fixtures.h`.
+2. Add a `FixtureType` value and a profile to `fixture/Profiles.h` (and to `profiles::kAll`, the `TYPES=` order), and a sketch folder whose `App::start()` names the type.
+3. Register the type in `firmware/test/Fixtures.h`.
 
 The invariant tests (`test_layouts.cpp`) and `make conformance` then cover it. The channel roles are R, G, B, W, CW and WW. A layout without colour LEDs gets coloured effect light as white temperature (CW + WW) or as brightness (a single W). A layout can drop modes it cannot show (its `modes` mask, announced as CAPS `MODES`).
 
 ## 8. Firmware changes
 
+- **3.7.0:** one universal firmware for every fixture type; the light stores its type (NVS namespace `ebsys`, key `fx`, kept by `FACTORY_RESET`). New: `SET_TYPE`, `PROBE`, CAPS `TYPES=` and `PROBE=1` (before `LAYOUT=`), and setup-needed mode (§9). Every type keeps its settings and presets in namespace `eb3`; RGB, RGBCCT, CCT and W lights updated from 3.6.x start from their defaults. The rendering, frames and the other replies are unchanged.
 - **3.6.2:** full brightness is a genuine 100 %. A channel at full output now holds its pin high (no PWM switching); every level below full stays PWM with an on-time shorter than a whole period. In 3.6.1 a channel at full asked the LEDC for a whole-period on-time, which it outputs as off, so 100 % came out at about 1/16 while 99 % looked right. The wire protocol, CAPS and every rendered level are unchanged.
 - **3.6.1:** 25 kHz PWM (`PWM=15`), smooth colour-to-white on CCT, `IDENTIFY` (CAPS `IDENTIFY=1`).
+
+## 9. Fixture type, probe and setup-needed mode (3.7.0+)
+
+Every ElectroBright board has the same outputs: red GPIO 1, green 3, blue 4, white/cool 5, warm 10, buzzer 6. The light drives the outputs of its type and holds the others low.
+
+- **`SET_TYPE:<type>`** (a `TYPES=` name, case-insensitive):
+  - a different type: the light replies `OK`, stores the type, erases every preset and the scene (layouts differ; the sound setting stays), and restarts once the reply has gone out, so the link drops. It comes back as the new type: its model id, BLE name, layout, CAPS and defaults. Clients re-identify it (same device, new type) and drop what they kept about its presets;
+  - the same type: `OK`, nothing changes, no restart;
+  - an unknown name: `ERROR:TYPE_INVALID`. If the flash cannot be written: `ERROR:STORAGE`, and the type is unchanged;
+  - lines after `SET_TYPE` in the same write are ignored.
+- **`PROBE:<output>:<0|1>`** drives one physical output at a fixed moderate level (25 % duty) whatever the type, with every other LED output off: `0` red, `1` green, `2` blue, `3` white/cool (GPIO 5), `4` warm (GPIO 10). It lets the app find out what is wired.
+  - One output at a time: `PROBE:n:1` replaces any other probe. `PROBE:n:0` ends probe `n` (another output: nothing changes).
+  - It ends by itself after 3 s, and any other command or colour frame ends it.
+  - It changes no state and stores nothing, and it works in setup-needed mode.
+- **Setup-needed mode:** a light with no stored type and no default type built in (the type-neutral image used for wireless updates).
+  - Every LED output stays off. It advertises as `ElectroBright_C3_SETUP`.
+  - `CAPS` has `LAYOUT=NONE` (and `TYPES=`, `PROBE=1`); `VERSION` and `DIAG` answer normally.
+  - `IDENTIFY` plays the chirp only, even when muted (no LED is known yet).
+  - `PROBE` and `SET_TYPE` work as above. Every other command gives `ERROR:SETUP_NEEDED` (an unknown one `ERROR:UNKNOWN_CMD`), and binary colour frames are ignored.
+- **Boot:** a stored type wins. Without one, a build with a default type (every sketch in `firmware/fixtures/`) stores and uses it; a build without one starts in setup-needed mode. `FACTORY_RESET` keeps the type.

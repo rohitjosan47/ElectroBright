@@ -1,8 +1,8 @@
 # ElectroBright
 
-ElectroBright is an ambient lighting system. An ESP32-C3 drives a 12 V / 24 V LED strip, and a Flutter app controls it over Bluetooth Low Energy. There is one firmware per fixture type, all built from a shared core:
+ElectroBright is an ambient lighting system. An ESP32-C3 drives a 12 V / 24 V LED strip, and a Flutter app controls it over Bluetooth Low Energy. One universal firmware (3.7.0+) holds every fixture type; the light stores its type and the app can change it. Each sketch installs that firmware and only sets the type a new light gets:
 
-| Fixture | Channels | Firmware |
+| Fixture type | Channels | Sketch (default type) |
 |---|---|---|
 | RGBW | red, green, blue, white | `firmware/fixtures/ElectroBright_RGBW` |
 | RGB | red, green, blue | `firmware/fixtures/ElectroBright_RGB` |
@@ -16,7 +16,7 @@ ElectroBright is an ambient lighting system. An ESP32-C3 drives a 12 V / 24 V LE
 ElectroBright/
 ├── firmware/                      # ESP32-C3 firmware family (Arduino IDE)
 │   ├── core/ElectroBrightCore/    # shared core library: effects, BLE protocol, presets, timer, sound
-│   ├── fixtures/                  # one sketch per fixture type (RGBW, RGB, RGBCCT, CCT, W)
+│   ├── fixtures/                  # one sketch per default type (RGBW, RGB, RGBCCT, CCT, W)
 │   ├── test/                      # host unit, simulation and golden tests (make)
 │   └── tools/                     # IDE setup, build script, conformance suite, gamma-table generator
 ├── app/                           # Flutter app (iOS, Android)
@@ -32,7 +32,7 @@ ElectroBright/
 ### 1. Firmware (ESP32-C3)
 1. In the Arduino IDE, install the **esp32** board package (≥ 3.0) and the **NimBLE-Arduino** 2.x library.
 2. Once: run `firmware/tools/install_ide_core.sh`. It makes the shared core library visible to the IDE. Then restart the IDE.
-3. Click **File → Open...** and select your fixture's sketch, e.g. `firmware/fixtures/ElectroBright_RGB/ElectroBright_RGB.ino`.
+3. Click **File → Open...** and select the sketch of your fixture's type, e.g. `firmware/fixtures/ElectroBright_RGB/ElectroBright_RGB.ino` (a light that already has a type keeps it).
 4. Select Board: **ESP32C3 Dev Module**, select your USB port and click **Upload**.
 
 The [firmware README](firmware/README.md) covers:

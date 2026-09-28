@@ -22,6 +22,10 @@ enum EbIncompatibility {
 
   /// MODE_SETTINGS / MODES do not describe the 13 known modes.
   modeCount,
+
+  /// Firmware 3.7.0+ without a fixture type yet (CAPS `LAYOUT=NONE`): it
+  /// only accepts CAPS, VERSION, DIAG, PROBE, IDENTIFY and SET_TYPE.
+  setupNeeded,
 }
 
 /// A handshake reply that rules the light out; see [EbIdentity].
@@ -103,6 +107,8 @@ abstract final class EbIdentity {
       // Firmware before 3.6.0 announces no count: assume the current one.
       presetSlots: (caps.presetSlots ?? Eb.numPresets).clamp(1, Eb.numPresets),
       supportsIdentify: caps.identify,
+      supportsTypeChange: caps.types.isNotEmpty,
+      supportsProbe: caps.probe,
     );
   }
 }

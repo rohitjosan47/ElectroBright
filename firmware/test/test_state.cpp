@@ -8,11 +8,11 @@
 TEST(store_empty_flash_gives_defaults_and_no_presets) {
   MockKv kv;
   Stats st;
-  StateStore store(kv, st, fx::rgbw::kProfile);
+  StateStore store(kv, st, profiles::kRgbw);
   Scene s;
   Settings set;
   store.load(s, set);
-  const Scene d = state::defaultScene(fx::rgbw::kProfile.defaults);
+  const Scene d = state::defaultScene(profiles::kRgbw.defaults);
   CHECK(memcmp(&s, &d, sizeof(Scene)) == 0);
   CHECK_EQ(set.soundEnabled, 1);
   CHECK_EQ(store.presetMask(), 0u);
@@ -20,7 +20,7 @@ TEST(store_empty_flash_gives_defaults_and_no_presets) {
   // nothing and erase nothing.
   CHECK_EQ(kv.writes, 1);
   CHECK(kv.data["pv"] == std::vector<uint8_t>{StateStore::kPresetFormat});
-  StateStore store2(kv, st, fx::rgbw::kProfile);
+  StateStore store2(kv, st, profiles::kRgbw);
   const int erases = kv.erases;
   store2.load(s, set);
   CHECK_EQ(kv.writes, 1);
@@ -33,7 +33,7 @@ TEST(store_wipes_presets_of_older_firmware_once) {
   // scene and settings, no preset format marker.
   MockKv kv;
   Stats st;
-  Scene live = state::defaultScene(fx::rgbw::kProfile.defaults);
+  Scene live = state::defaultScene(profiles::kRgbw.defaults);
   live.mode = 9;
   live.color = {12, 34, 56, 78};
   std::vector<uint8_t> rec(scenecodec::recordSize(layouts::kRgbw));
@@ -43,7 +43,7 @@ TEST(store_wipes_presets_of_older_firmware_once) {
   kv.data["p14"] = rec;
   kv.data["p20"] = rec;
   {
-    StateStore seed(kv, st, fx::rgbw::kProfile);
+    StateStore seed(kv, st, profiles::kRgbw);
     Settings muted = state::defaultSettings();
     muted.soundEnabled = 0;
     CHECK(seed.saveSettings(muted));  // written without touching presets
@@ -52,7 +52,7 @@ TEST(store_wipes_presets_of_older_firmware_once) {
   const std::vector<uint8_t> settingsBefore = kv.data["set"];
   kv.writes = 0;
 
-  StateStore store(kv, st, fx::rgbw::kProfile);
+  StateStore store(kv, st, profiles::kRgbw);
   Scene s;
   Settings set;
   store.load(s, set);
@@ -77,13 +77,13 @@ TEST(store_keeps_presets_saved_on_the_current_format) {
   MockKv kv;
   Stats st;
   kv.markPresetFormat();
-  Scene p = state::defaultScene(fx::rgbw::kProfile.defaults);
+  Scene p = state::defaultScene(profiles::kRgbw.defaults);
   p.mode = 6;
   std::vector<uint8_t> rec(scenecodec::recordSize(layouts::kRgbw));
   scenecodec::pack(p, layouts::kRgbw, rec.data());
   kv.data["p05"] = rec;
 
-  StateStore store(kv, st, fx::rgbw::kProfile);
+  StateStore store(kv, st, profiles::kRgbw);
   Scene s;
   Settings set;
   store.load(s, set);
@@ -99,14 +99,14 @@ TEST(store_retries_the_wipe_when_an_erase_fails) {
   MockKv kv;
   Stats st;
   kv.failWrites = true;  // erases and writes fail
-  StateStore store(kv, st, fx::rgbw::kProfile);
+  StateStore store(kv, st, profiles::kRgbw);
   Scene s;
   Settings set;
   store.load(s, set);
   CHECK(kv.data.count("pv") == 0);  // not marked: the next boot wipes again
   CHECK(Stats::get(st.nvsFailures) > 0u);
   kv.failWrites = false;
-  StateStore store2(kv, st, fx::rgbw::kProfile);
+  StateStore store2(kv, st, profiles::kRgbw);
   store2.load(s, set);
   CHECK(kv.data["pv"] == std::vector<uint8_t>{StateStore::kPresetFormat});
 }
@@ -114,7 +114,7 @@ TEST(store_retries_the_wipe_when_an_erase_fails) {
 TEST(store_debounces_scene_writes) {
   MockKv kv;
   Stats st;
-  StateStore store(kv, st, fx::rgbw::kProfile);
+  StateStore store(kv, st, profiles::kRgbw);
   Scene s;
   Settings set;
   store.load(s, set);
@@ -140,7 +140,7 @@ TEST(store_debounces_scene_writes) {
 TEST(store_max_latency_bounds_continuous_streaming) {
   MockKv kv;
   Stats st;
-  StateStore store(kv, st, fx::rgbw::kProfile);
+  StateStore store(kv, st, profiles::kRgbw);
   Scene s;
   Settings set;
   store.load(s, set);
@@ -161,7 +161,7 @@ TEST(store_scene_and_settings_round_trip) {
   MockKv kv;
   Stats st;
   {
-    StateStore store(kv, st, fx::rgbw::kProfile);
+    StateStore store(kv, st, profiles::kRgbw);
     Scene s;
     Settings set;
     store.load(s, set);
@@ -173,7 +173,7 @@ TEST(store_scene_and_settings_round_trip) {
     set.soundEnabled = 0;
     CHECK(store.saveSettings(set));
   }
-  StateStore store2(kv, st, fx::rgbw::kProfile);
+  StateStore store2(kv, st, profiles::kRgbw);
   Scene s;
   Settings set;
   store2.load(s, set);
@@ -186,7 +186,7 @@ TEST(store_scene_and_settings_round_trip) {
 TEST(store_rejects_corrupt_or_foreign_records) {
   MockKv kv;
   Stats st;
-  StateStore store(kv, st, fx::rgbw::kProfile);
+  StateStore store(kv, st, profiles::kRgbw);
   kv.markPresetFormat();  // the bad presets are validated, not wiped
   // Wrong size.
   kv.data["scene"] = std::vector<uint8_t>(5, 0);
@@ -195,7 +195,7 @@ TEST(store_rejects_corrupt_or_foreign_records) {
   bad[0] = scenecodec::kSchema;
   kv.data["p00"] = bad;
   // Wrong schema.
-  Scene good = state::defaultScene(fx::rgbw::kProfile.defaults);
+  Scene good = state::defaultScene(profiles::kRgbw.defaults);
   std::vector<uint8_t> foreign(scenecodec::recordSize(layouts::kRgbw), 0);
   scenecodec::pack(good, layouts::kRgbw, foreign.data());
   foreign[0] = 99;
@@ -214,7 +214,7 @@ TEST(store_rejects_corrupt_or_foreign_records) {
 TEST(store_presets_save_load_delete_and_mask) {
   MockKv kv;
   Stats st;
-  StateStore store(kv, st, fx::rgbw::kProfile);
+  StateStore store(kv, st, profiles::kRgbw);
   Scene s;
   Settings set;
   store.load(s, set);
@@ -235,7 +235,7 @@ TEST(store_presets_save_load_delete_and_mask) {
 
   // Presets survive a reload (mask rebuilt from flash): the one-time wipe
   // ran on the first load only.
-  StateStore store2(kv, st, fx::rgbw::kProfile);
+  StateStore store2(kv, st, profiles::kRgbw);
   store2.load(s, set);
   CHECK_EQ(store2.presetMask(), 1u << 14);
 }
@@ -243,7 +243,7 @@ TEST(store_presets_save_load_delete_and_mask) {
 TEST(store_factory_reset_erases_everything) {
   MockKv kv;
   Stats st;
-  StateStore store(kv, st, fx::rgbw::kProfile);
+  StateStore store(kv, st, profiles::kRgbw);
   Scene s;
   Settings set;
   store.load(s, set);
@@ -258,7 +258,7 @@ TEST(store_factory_reset_erases_everything) {
 TEST(store_retries_after_write_failure) {
   MockKv kv;
   Stats st;
-  StateStore store(kv, st, fx::rgbw::kProfile);
+  StateStore store(kv, st, profiles::kRgbw);
   Scene s;
   Settings set;
   store.load(s, set);
@@ -277,7 +277,7 @@ TEST(store_retries_after_write_failure) {
 TEST(codec_keeps_the_legacy_flash_format_for_layouts_without_warm_white) {
   // RGBW / RGB records must stay byte-identical to firmware 3.4.0 (a schema
   // byte followed by the old 43-byte struct), so presets survive updates.
-  Scene s = state::defaultScene(fx::rgbw::kProfile.defaults);
+  Scene s = state::defaultScene(profiles::kRgbw.defaults);
   s.color = {1, 2, 3, 4};
   s.brightness = 5;
   s.mode = 6;

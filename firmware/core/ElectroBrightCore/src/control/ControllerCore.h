@@ -32,6 +32,8 @@ class IControllerEnv {
   virtual void publish(const RenderParams& params) = 0;
   virtual void playSound(SoundId id) = 0;
   virtual void systemDiag(SystemDiag& out) = 0;
+  // Restarts the light once the replies queued so far have been sent (SET_TYPE).
+  virtual void restart() = 0;
 
  protected:
   ~IControllerEnv() = default;
@@ -39,7 +41,10 @@ class IControllerEnv {
 
 class ControllerCore {
  public:
-  ControllerCore(IControllerEnv& env, StateStore& store, Stats& stats, const FixtureProfile& fixture);
+  // `system`: the store of the fixture type (fixture/FixtureSelect.h).
+  // `fixture`: the active profile; profiles::kNone runs setup-needed mode.
+  ControllerCore(IControllerEnv& env, StateStore& store, IKeyValueStore& system, Stats& stats,
+                 const FixtureProfile& fixture);
 
   void begin(uint32_t nowMs);
   void onConnect(uint32_t nowMs);
@@ -56,6 +61,9 @@ class ControllerCore {
   const Settings& settings() const { return settings_; }
   const FixtureProfile& fixture() const { return fixture_; }
   bool sleeping() const { return sleeping_; }
+  bool setupNeeded() const { return setup_; }
+  bool restartPending() const { return restartPending_; }
+  int probeOutput() const { return probe_ ? probe_ - 1 : -1; }
   bool timerActive() const { return timerActive_; }
   uint32_t timerRemainingSec(uint32_t nowMs) const;
 
@@ -71,9 +79,12 @@ class ControllerCore {
   void sendStatus(uint32_t nowMs);
   void sendDiag();
   void checkStorage(bool ok);
+  void setType(FixtureType type);
+  void endProbe();
 
   IControllerEnv& env_;
   StateStore& store_;
+  IKeyValueStore& system_;
   Stats& stats_;
   const FixtureProfile& fixture_;
 
@@ -88,5 +99,9 @@ class ControllerCore {
   bool haveSeq_ = false;
   uint8_t expectedSeq_ = 0;
   bool storageErrorReported_ = false;
+  const bool setup_;             // setup-needed mode: no fixture type
+  bool restartPending_ = false;  // SET_TYPE done: ignore everything until the restart
+  uint8_t probe_ = 0;            // RenderParams::probe
+  uint32_t probeDeadlineMs_ = 0;
   char buf_[384] = {};  // large enough for the DIAG line
 };

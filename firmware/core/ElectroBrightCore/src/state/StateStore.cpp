@@ -161,3 +161,17 @@ bool StateStore::factoryReset() {
   dirty_ = false;
   return ok;
 }
+
+bool StateStore::clearForTypeChange() {
+  bool ok = kv_.erase(kSceneKey);
+  for (uint8_t i = 0; i < kLegacyPresetSlots; ++i) {
+    char key[4];
+    presetKey(i, key);
+    ok = kv_.erase(key) && ok;
+  }
+  noteWrite(ok);
+  presetMask_ = 0;
+  shadowValid_ = false;
+  dirty_ = false;
+  return ok;
+}

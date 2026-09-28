@@ -44,6 +44,8 @@ inline constexpr ChannelLayout kRgb{"RGB", 3, {Channel::R, Channel::G, Channel::
 inline constexpr ChannelLayout kRgbcct{"RGBCCT", 5, {Channel::R, Channel::G, Channel::B, Channel::CW, Channel::WW}};
 inline constexpr ChannelLayout kCct{"CCT", 2, {Channel::CW, Channel::WW}};
 inline constexpr ChannelLayout kW{"W", 1, {Channel::W}, static_cast<uint16_t>(kAllModes & ~modeBit(kModeRainbow))};
+// Setup-needed mode (no fixture type chosen yet): no LED channels, no modes.
+inline constexpr ChannelLayout kNone{"NONE", 0, {}, 0};
 }  // namespace layouts
 
 namespace layout {

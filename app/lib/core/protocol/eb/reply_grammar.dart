@@ -37,6 +37,13 @@ ReplyMatch matchReply(EbExpect expect, EbReply reply) {
         return ReplyMatch.failure;
       }
       return ReplyMatch.none;
+    case EbExpect.typeChange:
+      // SET_TYPE: STORAGE is its own failure (the type did not change).
+      if (reply is EbOk) return ReplyMatch.success;
+      if (reply is EbError && reply.code != EbError.presetEmpty) {
+        return ReplyMatch.failure;
+      }
+      return ReplyMatch.none;
     case EbExpect.okStorageNote:
       if (reply is EbOk) return ReplyMatch.success;
       if (reply is EbError) {
@@ -88,6 +95,7 @@ ReplyMatch matchReply(EbExpect expect, EbReply reply) {
 }
 
 ReplyMatch _queryError(EbReply reply) =>
-    reply is EbError && reply.code == EbError.format
+    reply is EbError &&
+        (reply.code == EbError.format || reply.code == EbError.setupNeeded)
     ? ReplyMatch.failure
     : ReplyMatch.none;

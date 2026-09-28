@@ -2,6 +2,8 @@
 
 #include <stdio.h>
 
+#include "../config/Config.h"
+#include "../fixture/Profiles.h"
 #include "../render/ModeRegistry.h"
 
 namespace {
@@ -67,6 +69,24 @@ size_t capabilities(char* out, size_t cap, uint8_t mode) {
                            (m.hasSpeed && m.hasFrequency) ? "," : "", m.hasFrequency ? "FREQUENCY" : "",
                            m.hasColorMode ? ",COLOR_MODE" : ""),
                   cap);
+}
+
+size_t caps(char* out, size_t cap, const FixtureProfile& fixture) {
+  size_t len = clampLen(snprintf(out, cap, "CAPS:PROTOCOL=1,PWM=%u,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=%u,IDENTIFY=1,TYPES=",
+                                 static_cast<unsigned>(cfg::kPwmBits + cfg::kPwmDitherBits),
+                                 static_cast<unsigned>(cfg::kNumPresets)),
+                        cap);
+  bool first = true;
+  for (const FixtureProfile* p : profiles::kAll) {
+    len += clampLen(snprintf(out + len, cap - len, first ? "%s" : ",%s", p->layout->name), cap - len);
+    first = false;
+  }
+  const ChannelLayout& l = *fixture.layout;
+  len += clampLen(snprintf(out + len, cap - len, ",PROBE=1,LAYOUT=%s", l.name), cap - len);
+  if (fixture.type != FixtureType::None && l.modes != kAllModes) {
+    len += clampLen(snprintf(out + len, cap - len, ",MODES=%X", static_cast<unsigned>(l.modes)), cap - len);
+  }
+  return len;
 }
 
 size_t error(char* out, size_t cap, const char* code) {

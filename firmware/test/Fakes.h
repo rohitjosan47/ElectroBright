@@ -6,8 +6,8 @@
 #include <vector>
 
 #include "control/ControllerCore.h"
+#include "fixture/FixtureSelect.h"
 #include "state/KeyValueStore.h"
-#include "ElectroBright_RGBW/Fixture.h"
 
 class MockKv : public IKeyValueStore {
  public:
@@ -57,6 +57,7 @@ class FakeEnv : public IControllerEnv {
     d.minFreeHeap = 123456;
     d.uptimeSec = 42;
   }
+  void restart() override { ++restarts; }
 
   std::string last() const { return lines.empty() ? std::string() : lines.back(); }
   void clear() {
@@ -68,19 +69,24 @@ class FakeEnv : public IControllerEnv {
   std::vector<SoundId> sounds;
   RenderParams params{};
   int publishes = 0;
+  int restarts = 0;
 };
 
-// Bundles a controller with its fakes (default: the RGBW fixture).
+// Bundles a controller with its fakes. The universal firmware's boot path
+// picks the profile: a new light built with `buildDefault`'s type (default
+// RGBW); profiles::kNone is a build without a default (setup-needed mode).
 struct Rig {
+  MockKv system;  // the fixture type ("fx")
   const FixtureProfile& fixture;
   MockKv kv;
   Stats stats;
   StateStore store{kv, stats, fixture};
   FakeEnv env;
-  ControllerCore core{env, store, stats, fixture};
+  ControllerCore core{env, store, system, stats, fixture};
   uint32_t now = 1000;
 
-  explicit Rig(const FixtureProfile& f = fx::rgbw::kProfile) : fixture(f) {
+  explicit Rig(const FixtureProfile& buildDefault = profiles::kRgbw)
+      : fixture(fxselect::select(system, buildDefault.type)) {
     core.begin(now);
     env.clear();
   }

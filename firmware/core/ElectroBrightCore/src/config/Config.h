@@ -10,10 +10,9 @@
 namespace cfg {
 
 // --- Identity -------------------------------------------------------------------
-// Family version, shared by every fixture built from this core. A fixture's
-// own identity (model id, BLE name, CAPS, pins) lives in its FixtureProfile
-// (firmware/fixtures/<Name>/Fixture.h).
-constexpr const char* kFirmwareVersion = "3.6.2";
+// One universal image for every fixture type; a type's identity (model id,
+// BLE name, layout, pins) lives in the profile table (fixture/Profiles.h).
+constexpr const char* kFirmwareVersion = "3.7.0";
 
 // Nordic UART Service
 constexpr const char* kServiceUuid = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
@@ -39,6 +38,15 @@ constexpr uint16_t kIdentifyOnMs   = 150;
 constexpr uint16_t kIdentifyOffMs  = 150;
 constexpr uint8_t  kIdentifyFlashes = 2;
 
+// --- Probe (PROBE command) ------------------------------------------------------
+// One physical output at a moderate fixed level (plain PWM duty, no gamma),
+// whatever the active type, so the app can find out what is wired.
+constexpr uint16_t kProbeDuty = kPwmMaxDuty / 4;
+constexpr uint32_t kProbeMs   = 3000;   // then it switches itself off
+
+// --- Fixture type (SET_TYPE) ---------------------------------------------------
+constexpr uint32_t kRestartDelayMs = 300;  // after the OK has left, so the phone receives it
+
 // --- Model -------------------------------------------------------------------
 constexpr uint8_t kNumModes   = 13;
 constexpr uint8_t kNumPresets = 15;
@@ -58,6 +66,8 @@ constexpr uint16_t kBootFadeMs       = 600;    // fade-in from black after power
 // --- Persistence -------------------------------------------------------------
 constexpr uint32_t kPersistDebounceMs   = 3000;   // commit this long after the last change...
 constexpr uint32_t kPersistMaxLatencyMs = 15000;  // ...but never later than this after the first change
+constexpr const char* kNvsNamespace = "eb3";           // settings, scene, presets (FACTORY_RESET erases it)
+constexpr const char* kSystemNvsNamespace = "ebsys";  // the fixture type ("fx"); survives FACTORY_RESET
 constexpr const char* kLegacyNvsNamespace = "eeprom";  // old firmware's EEPROM emulation (wiped once, no migration)
 
 // --- Protocol / buffers -----------------------------------------------------------

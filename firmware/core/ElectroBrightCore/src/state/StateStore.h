@@ -50,6 +50,10 @@ class StateStore {
   // Erases every record; the caller then re-applies defaults.
   bool factoryReset();
 
+  // SET_TYPE: erases the scene and every preset slot (they belong to the old
+  // layout); settings stay. The next boot starts from the new type's defaults.
+  bool clearForTypeChange();
+
  private:
   struct SettingsRecord {
     uint8_t schema;

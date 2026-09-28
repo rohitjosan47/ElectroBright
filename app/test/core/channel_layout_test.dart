@@ -319,6 +319,33 @@ void main() {
       );
     });
 
+    test('CAPS TYPES= / PROBE=1 set supportsTypeChange / supportsProbe', () {
+      LightCapabilities of(String body) => EbIdentity.capabilities(
+        fromModel: ChannelLayout.rgb,
+        version: v35,
+        caps: caps(body),
+        modeSettingsPairs: 13,
+      );
+      const String base = 'PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL';
+      final LightCapabilities now = of(
+        '$base,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=RGB',
+      );
+      expect((now.supportsTypeChange, now.supportsProbe), (true, true));
+      final LightCapabilities before = of('$base,IDENTIFY=1,LAYOUT=RGB');
+      expect((before.supportsTypeChange, before.supportsProbe), (false, false));
+      for (final EbFixtureSpec f in EbFixtureCatalog.all) {
+        final EbCaps c = parseEbReply(f.capsReply) as EbCaps;
+        expect((c.types.isNotEmpty, c.probe), (true, true), reason: f.modelId);
+      }
+      // Saved with the fixture; older saved records read back as false.
+      expect(LightCapabilities.fromJson(now.toJson()), now);
+      final Map<String, Object> old = now.toJson()
+        ..remove('supportsTypeChange')
+        ..remove('supportsProbe');
+      final LightCapabilities read = LightCapabilities.fromJson(old)!;
+      expect((read.supportsTypeChange, read.supportsProbe), (false, false));
+    });
+
     test('capabilities saved with 25 slots come back with 15', () {
       final Map<String, Object> saved = const LightCapabilities(
         layout: ChannelLayout.cct,

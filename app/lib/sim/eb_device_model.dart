@@ -6,8 +6,9 @@ import '../core/protocol/eb/eb_constants.dart';
 import '../core/protocol/eb/eb_fixture_catalog.dart';
 import '../core/protocol/eb/eb_scene.dart';
 
-/// Dart twin of the ElectroBright firmware (v3.6.2, every fixture of the
-/// family via [EbFixtureSpec]): the command parser,
+/// Dart twin of the ElectroBright firmware (v3.7.0, the universal image: the
+/// fixture type is stored in the light, every type via [EbFixtureSpec]): the
+/// command parser,
 /// controller, persistence policy, reply buffer and the BLE/control-task glue,
 /// ported line for line from firmware/core/ElectroBrightCore/src and
 /// firmware/test/fwsim/SimDevice.cpp.
@@ -19,19 +20,51 @@ import '../core/protocol/eb/eb_scene.dart';
 ///
 /// Time is virtual: nothing happens between calls (see [pass], [advance]).
 final class EbDeviceModel {
-  /// Simulates [fixture] (`firmware/fixtures/<folder>/Fixture.h`).
-  EbDeviceModel({this.fixture = EbFixtureCatalog.rgbw}) {
+  /// The universal firmware built with [fixture] as a new light's type (the
+  /// sketch `firmware/fixtures/<folder>/`); null is a build without a default,
+  /// which starts in setup-needed mode until SET_TYPE.
+  EbDeviceModel({EbFixtureSpec? fixture = EbFixtureCatalog.rgbw})
+    : buildDefault = fixture {
     _rig = _Rig(this);
     boot();
   }
 
-  final EbFixtureSpec fixture;
+  final EbFixtureSpec? buildDefault;
+
+  /// The active type (fxselect::select at the last boot); [setupSpec] in
+  /// setup-needed mode.
+  EbFixtureSpec get fixture => _rig.fixture;
   ChannelLayout get layout => fixture.layout;
+
+  /// No type stored and none built in: all LED outputs off, CAPS `LAYOUT=NONE`.
+  bool get setupNeeded => identical(fixture, setupSpec);
+
+  /// Setup-needed mode (profiles::kNone). Its layout is a placeholder: no
+  /// command that takes a colour is accepted in this mode.
+  static const EbFixtureSpec setupSpec = EbFixtureSpec(
+    folder: '(no default type)',
+    fwsimName: 'none',
+    layout: ChannelLayout.rgbw,
+    modelId: 'EB-C3-NONE-V1',
+    bleName: 'ElectroBright_C3_SETUP',
+    capsReply:
+        'CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,'
+        'IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=NONE',
+    modeMask: 0,
+    colorValues: <int>[0, 0, 0, 0],
+    policeAValues: <int>[0, 0, 0, 0],
+    policeBValues: <int>[0, 0, 0, 0],
+    legacyFrames: false,
+  );
+
+  /// Times the light restarted itself (SET_TYPE); the link dropped each time.
+  int get restarts => _restarts;
+  int _restarts = 0;
 
   /// Makes flash writes fail (like fwsim `KVFAIL`), for fault tests.
   set flashWritesFail(bool fail) => _flash.failWrites = fail;
 
-  static const String firmwareVersion = '3.6.2';
+  static const String firmwareVersion = '3.7.0';
   String get modelId => fixture.modelId;
   String get capsReply => fixture.capsReply;
 
@@ -53,6 +86,7 @@ final class EbDeviceModel {
   static const int _identifyOnMs = 150;
   static const int _identifyOffMs = 150;
   static const int _identifyFlashes = 2;
+  static const int _probeMs = 3000;
 
   final _Flash _flash = _Flash();
   late _Rig _rig;
@@ -72,8 +106,16 @@ final class EbDeviceModel {
   // ---- Lifecycle ---------------------------------------------------------------
   void boot() => _rig.core.begin(_now);
 
-  /// Power cycle: RAM state is lost, flash survives, the link drops.
+  /// Power cycle: RAM state is lost, flash survives, the link drops, and the
+  /// stored fixture type is read again.
   void reboot() {
+    _delivered.clear();
+    _restartNow();
+  }
+
+  /// esp_restart(): like [reboot], except that notifications already
+  /// delivered to the phone stay delivered.
+  void _restartNow() {
     _rig = _Rig(this);
     _egress.clear();
     _assembler = _LineAssembler(_maxLineLength);
@@ -85,7 +127,6 @@ final class EbDeviceModel {
     _subscribed = false;
     _mtu = 23;
     _notifyFailures = 0;
-    _delivered.clear();
     _now += 1500;
     boot();
   }
@@ -111,7 +152,10 @@ final class EbDeviceModel {
   void write(List<int> data) {
     if (data.isEmpty) return;
     if (_isFrameCandidate(data)) {
-      final _ColorFrame? frame = _decodeFrame(data, fixture);
+      // Setup-needed mode has no layout: no frame length matches.
+      final _ColorFrame? frame = setupNeeded
+          ? null
+          : _decodeFrame(data, fixture);
       if (frame != null) {
         _mailbox = frame;
         _rig.stats.binaryOk++;
@@ -189,6 +233,12 @@ final class EbDeviceModel {
       _rig.stats.notifyRetries += _egress.retries - before;
     } else {
       _egress.clear();
+    }
+
+    // SET_TYPE: restart once the OK has gone out.
+    if (_rig.restartRequested && (_egress.pending == 0 || !_connected)) {
+      _restarts++;
+      _restartNow();
     }
   }
 
@@ -278,6 +328,7 @@ final class EbDeviceModel {
         'sleeping': _rig.params.sleeping ? 1 : 0,
         'fadeMs': _rig.params.fadeMs,
         'identify': _rig.params.identifyId,
+        'probe': _rig.params.probe,
       },
       'stats': <String, Object>{
         'rx': st.rxLines,
@@ -326,6 +377,7 @@ final class _Params {
     required this.fadeMs,
     this.identifyId = 0,
     this.identifyAt = 0,
+    this.probe = 0,
   });
   final EbScene scene;
   final bool sleeping;
@@ -334,21 +386,38 @@ final class _Params {
   /// Non-zero: IDENTIFY flashes (a new id restarts them); 0 cancels.
   final int identifyId;
 
+  /// PROBE: 0 = off, else physical output + 1.
+  final int probe;
+
   /// Virtual time the current [identifyId] was published.
   final int identifyAt;
 }
 
 /// Everything a reboot recreates (flash lives in [EbDeviceModel.flash]).
 final class _Rig {
-  _Rig(this.device) {
-    store = _StateStore(device._flash, stats, device.layout);
+  _Rig(this.device) : fixture = _select(device) {
+    store = _StateStore(device._flash, stats, fixture.layout);
     core = _Controller(this);
   }
+
+  /// fxselect::select: a stored type wins; without one the build default is
+  /// saved and used; a build without one starts in setup-needed mode.
+  static EbFixtureSpec _select(EbDeviceModel device) {
+    final EbFixtureSpec? stored = device._flash.type;
+    if (stored != null) return stored;
+    final EbFixtureSpec? fallback = device.buildDefault;
+    if (fallback == null) return EbDeviceModel.setupSpec;
+    device._flash.type = fallback;
+    return fallback;
+  }
+
   final EbDeviceModel device;
+  final EbFixtureSpec fixture;
+  bool restartRequested = false;
   final _Stats stats = _Stats();
   final List<String> sounds = <String>[];
   late _Params params = _Params(
-    EbScene.defaults(device.layout),
+    EbScene.defaults(fixture.layout),
     sleeping: false,
     fadeMs: 400,
   );
@@ -512,6 +581,8 @@ final class _Egress {
 
 // ---- MockKv (flash) + StateStore.cpp ----------------------------------------------------
 final class _Flash {
+  /// The fixture type ("fx", its own namespace: FACTORY_RESET keeps it).
+  EbFixtureSpec? type;
   EbScene? scene;
   bool? soundEnabled;
   final Map<int, EbScene> presets = <int, EbScene>{};
@@ -638,6 +709,21 @@ final class _StateStore {
     return _noteWrite(ok);
   }
 
+  /// StateStore::clearForTypeChange: scene and every preset slot go (they
+  /// belong to the old layout); settings stay.
+  bool clearForTypeChange() {
+    final bool ok = _noteWrite(!kv.failWrites);
+    if (ok) {
+      kv
+        ..scene = null
+        ..presets.clear();
+    }
+    presetSlots.clear();
+    _shadow = null;
+    _dirty = false;
+    return ok;
+  }
+
   bool factoryReset() {
     final bool ok = _noteWrite(!kv.failWrites);
     if (ok) {
@@ -687,6 +773,8 @@ enum _Cmd {
   ping,
   diag,
   identify,
+  setType,
+  probe,
 }
 
 final class _Spec {
@@ -820,13 +908,16 @@ const List<_Spec> _specs = <_Spec>[
   _Spec('PING', _Cmd.ping, 0, 0, 0, 0, 0, 'FORMAT'),
   _Spec('DIAG', _Cmd.diag, 0, 0, 0, 0, 0, 'FORMAT'),
   _Spec('IDENTIFY', _Cmd.identify, 0, 0, 0, 0, 0, 'FORMAT'),
+  _Spec('SET_TYPE', _Cmd.setType, 1, 0, 0, 0, 0, 'TYPE_INVALID'),
+  _Spec('PROBE', _Cmd.probe, 2, 0, 4, 0, 1, 'PROBE_INVALID'),
 ];
 
 enum _ParseStatus { ok, unknown, format, range }
 
 final class _Parsed {
   const _Parsed.ok(this.id, this.args) : status = _ParseStatus.ok, error = null;
-  const _Parsed.fail(this.status, this.error) : id = null, args = const <int>[];
+  const _Parsed.fail(this.status, this.error, [this.id])
+    : args = const <int>[];
   final _ParseStatus status;
   final _Cmd? id;
   final List<int> args;
@@ -891,8 +982,11 @@ _Parsed _parseCommand(String line, EbFixtureSpec fixture) {
   if (spec == null) {
     return const _Parsed.fail(_ParseStatus.unknown, 'UNKNOWN_CMD');
   }
-  // RGBW is the RGBW light's own alias of COLOR.
-  if (spec.name == 'RGBW' && !layout.acceptsRgbwAlias) {
+  // RGBW is the RGBW light's own alias of COLOR (setup-needed mode has no
+  // layout at all).
+  if (spec.name == 'RGBW' &&
+      (!layout.acceptsRgbwAlias ||
+          identical(fixture, EbDeviceModel.setupSpec))) {
     return const _Parsed.fail(_ParseStatus.unknown, 'UNKNOWN_CMD');
   }
   final int argc = _isColorCommand(spec.id) ? layout.n : spec.argc;
@@ -907,33 +1001,44 @@ _Parsed _parseCommand(String line, EbFixtureSpec fixture) {
   if (argc == 0) {
     return noArgText
         ? _Parsed.ok(spec.id, const <int>[])
-        : _Parsed.fail(_ParseStatus.format, spec.error);
+        : _Parsed.fail(_ParseStatus.format, spec.error, spec.id);
   }
   if (colon == null || noArgText) {
-    return _Parsed.fail(_ParseStatus.format, spec.error);
+    return _Parsed.fail(_ParseStatus.format, spec.error, spec.id);
   }
+  if (spec.id == _Cmd.setType) {
+    // A type name (case-insensitive), not a number: the catalogue index.
+    final int type = EbFixtureCatalog.all.indexWhere(
+      (EbFixtureSpec f) => f.layout.wire == line.substring(p, end).toUpperCase(),
+    );
+    return type < 0
+        ? _Parsed.fail(_ParseStatus.range, spec.error, spec.id)
+        : _Parsed.ok(spec.id, <int>[type]);
+  }
+  // PROBE separates its numbers with a colon (PROBE:3:1).
+  final int separator = spec.id == _Cmd.probe ? 0x3A : 0x2C;
 
   final List<int> values = <int>[];
   int fieldStart = args;
   for (int q = args; ; q++) {
-    if (q == end || line.codeUnitAt(q) == 0x2C) {
+    if (q == end || line.codeUnitAt(q) == separator) {
       if (values.length == argc) {
         int t = fieldStart;
         while (t < q && _isSpace(line.codeUnitAt(t))) {
           t++;
         }
         if (t != q || q != end) {
-          return _Parsed.fail(_ParseStatus.format, spec.error);
+          return _Parsed.fail(_ParseStatus.format, spec.error, spec.id);
         }
         break;
       }
       final (int rc, int v) = _parseField(line, fieldStart, q);
-      if (rc == 1) return _Parsed.fail(_ParseStatus.format, spec.error);
+      if (rc == 1) return _Parsed.fail(_ParseStatus.format, spec.error, spec.id);
       final bool first = values.isEmpty;
       final int lo = first ? spec.firstMin : spec.restMin;
       final int hi = first ? spec.firstMax : spec.restMax;
       if (rc == 2 || v < lo || v > hi) {
-        return _Parsed.fail(_ParseStatus.range, spec.error);
+        return _Parsed.fail(_ParseStatus.range, spec.error, spec.id);
       }
       values.add(v);
       if (q == end) break;
@@ -941,11 +1046,11 @@ _Parsed _parseCommand(String line, EbFixtureSpec fixture) {
     }
   }
   if (values.length != argc) {
-    return _Parsed.fail(_ParseStatus.format, spec.error);
+    return _Parsed.fail(_ParseStatus.format, spec.error, spec.id);
   }
   // A mode this fixture cannot show is out of range, like MODE:14.
   if (_takesMode(spec.id) && (fixture.modeMask >> (values[0] - 1)) & 1 == 0) {
-    return _Parsed.fail(_ParseStatus.range, spec.error);
+    return _Parsed.fail(_ParseStatus.range, spec.error, spec.id);
   }
   return _Parsed.ok(spec.id, values);
 }
@@ -974,7 +1079,11 @@ final class _Controller {
   _Controller(this._rig);
   final _Rig _rig;
 
-  late EbScene scene = EbScene.defaults(_rig.device.layout);
+  late EbScene scene = EbScene.defaults(_rig.fixture.layout);
+  late final bool _setup = identical(_rig.fixture, EbDeviceModel.setupSpec);
+  bool _restartPending = false;
+  int _probe = 0;
+  int _probeDeadline = 0;
   bool soundEnabled = true;
   bool sleeping = false;
   int _fadeMs = EbDeviceModel._sleepFadeMs;
@@ -988,9 +1097,12 @@ final class _Controller {
   int _identifyAt = 0;
 
   void begin(int now) {
-    final (EbScene s, bool sound) = _rig.store.load();
-    scene = s;
-    soundEnabled = sound;
+    // Setup-needed mode loads nothing; nothing is stored until SET_TYPE.
+    if (!_setup) {
+      final (EbScene s, bool sound) = _rig.store.load();
+      scene = s;
+      soundEnabled = sound;
+    }
     sleeping = false;
     timerActive = false;
     _fadeMs = EbDeviceModel._sleepFadeMs;
@@ -1003,6 +1115,11 @@ final class _Controller {
   void onDisconnect() => _haveSeq = false;
 
   void tick(int now) {
+    if (_probe != 0 && now - _probeDeadline >= 0) {
+      _probe = 0;
+      _publish();
+    }
+    if (_restartPending) return;
     if (timerActive && now - _timerDeadline >= 0) {
       timerActive = false;
       _identifying = false;
@@ -1021,6 +1138,8 @@ final class _Controller {
   }
 
   void onColorFrame(_ColorFrame f, int now) {
+    if (_setup || _restartPending) return;
+    _probe = 0;
     final int? seq = f.seq;
     if (seq != null) {
       if (_haveSeq && seq != _expectedSeq) _rig.stats.binarySeqGaps++;
@@ -1044,14 +1163,20 @@ final class _Controller {
           : EbDeviceModel._maxLinesPerBatch;
       final List<_Parsed> results = <_Parsed>[
         for (int k = 0; k < n; k++)
-          _parseCommand(lines[i + k], _rig.device.fixture),
+          _parseCommand(lines[i + k], _rig.fixture),
       ];
       for (int k = 0; k < n; k++) {
+        if (_restartPending) return;
         _rig.stats.rxLines++;
         final _Parsed r = results[k];
         if (r.status == _ParseStatus.unknown) {
           _rig.stats.unknownCommands++;
           _reportError(r.error!);
+          continue;
+        }
+        if (_setup && !_allowedInSetup(r.id!)) {
+          _rig.stats.commandErrors++;
+          _reportError('SETUP_NEEDED');
           continue;
         }
         if (r.status != _ParseStatus.ok) {
@@ -1078,9 +1203,14 @@ final class _Controller {
       _identifying = false;
       _publish();
     }
+    // Any other command ends a PROBE.
+    if (_probe != 0 && id != _Cmd.probe) {
+      _probe = 0;
+      _publish();
+    }
     switch (id) {
       case _Cmd.rgbw:
-        scene = scene.copyWith(color: ChannelColor(_rig.device.layout, a));
+        scene = scene.copyWith(color: ChannelColor(_rig.fixture.layout, a));
         _sceneChanged(now);
         _publish();
       case _Cmd.brightness:
@@ -1128,12 +1258,12 @@ final class _Controller {
         _publish();
         _rig.sendLine('OK');
       case _Cmd.policeColorA:
-        scene = scene.copyWith(policeA: ChannelColor(_rig.device.layout, a));
+        scene = scene.copyWith(policeA: ChannelColor(_rig.fixture.layout, a));
         _sceneChanged(now);
         _publish();
         _rig.sendLine('OK');
       case _Cmd.policeColorB:
-        scene = scene.copyWith(policeB: ChannelColor(_rig.device.layout, a));
+        scene = scene.copyWith(policeB: ChannelColor(_rig.fixture.layout, a));
         _sceneChanged(now);
         _publish();
         _rig.sendLine('OK');
@@ -1208,7 +1338,7 @@ final class _Controller {
         _rig.sendLine('OK');
       case _Cmd.factoryReset:
         _checkStorage(_rig.store.factoryReset());
-        scene = EbScene.defaults(_rig.device.layout);
+        scene = EbScene.defaults(_rig.fixture.layout);
         soundEnabled = true;
         timerActive = false;
         _wake();
@@ -1216,16 +1346,22 @@ final class _Controller {
         _sound('FactoryReset');
         _rig.sendLine('OK');
       case _Cmd.info:
-        _rig.sendLine('INFO:${_rig.device.modelId}');
+        _rig.sendLine('INFO:${_rig.fixture.modelId}');
       case _Cmd.version:
         _rig.sendLine('VERSION:${EbDeviceModel.firmwareVersion}');
       case _Cmd.caps:
-        _rig.sendLine(_rig.device.capsReply);
+        _rig.sendLine(_rig.fixture.capsReply);
       case _Cmd.ping:
         _rig.sendLine('OK');
       case _Cmd.diag:
         _sendDiag(now);
       case _Cmd.identify:
+        if (_setup) {
+          // No LED output is known yet: the buzzer only, whatever the mute.
+          _rig.sounds.add('Identify');
+          _rig.sendLine('OK');
+          return;
+        }
         // Flashes over whatever the light shows (even asleep), then resumes;
         // no state change, nothing persisted, no Sleep/Wake sounds.
         _identifySeq = (_identifySeq + 1) & 0xFFFF;
@@ -1235,7 +1371,47 @@ final class _Controller {
         _publish();
         _sound('Identify');
         _rig.sendLine('OK');
+      case _Cmd.setType:
+        _setType(EbFixtureCatalog.all[a[0]]);
+      case _Cmd.probe:
+        // One output at a time; nothing persists, the state is untouched.
+        if (a[1] == 1) {
+          _probe = a[0] + 1;
+          _probeDeadline = now + EbDeviceModel._probeMs;
+        } else if (_probe == a[0] + 1) {
+          _probe = 0;
+        }
+        _publish();
+        _rig.sendLine('OK');
     }
+  }
+
+  static bool _allowedInSetup(_Cmd id) => switch (id) {
+    _Cmd.caps ||
+    _Cmd.version ||
+    _Cmd.diag ||
+    _Cmd.probe ||
+    _Cmd.identify ||
+    _Cmd.setType => true,
+    _ => false,
+  };
+
+  /// ControllerCore::setType: clear the old layout's data, then store the
+  /// type, reply and restart as the new type.
+  void _setType(EbFixtureSpec type) {
+    if (identical(type, _rig.fixture)) {
+      _rig.sendLine('OK');
+      return;
+    }
+    if (!_rig.store.clearForTypeChange()) {
+      _reportError('STORAGE');
+      return;
+    }
+    _rig.device._flash.type = type;
+    _rig.stats.nvsWrites++;
+    _restartPending = true;
+    _rig.sendLine('OK');
+    _rig.restartRequested = true;
   }
 
   static const List<(bool, bool, bool)> _modeCaps = <(bool, bool, bool)>[
@@ -1276,6 +1452,7 @@ final class _Controller {
     fadeMs: _fadeMs,
     identifyId: _identifying ? _identifySeq : 0,
     identifyAt: _identifyAt,
+    probe: _probe,
   );
 
   void _sceneChanged(int now) => _rig.store.noteSceneChanged(now);

@@ -1,15 +1,17 @@
-# ElectroBright Firmware Family (ESP32-C3)
+# ElectroBright Firmware (ESP32-C3)
 
 Firmware for ElectroBright BLE light fixtures. One **shared core** holds everything the fixtures have in common:
 - all 13 modes and effects;
 - the BLE protocol;
 - 15 presets (`PRESET_SAVE` / `PRESET_LOAD` / `PRESET_DELETE` take slots 0..14), the sleep timer, sound, diagnostics and persistence.
 
-Each **fixture** is a small Arduino sketch that adds only its identity, channel layout and wiring. Every fixture works with the ElectroBright app. The protocol contract is in [`docs/protocol.md`](../docs/protocol.md), and the hardware is described in [`docs/wiring_guide.md`](../docs/wiring_guide.md).
+Since 3.7.0 it is **one universal image** for every fixture type. The core holds a **profile table** (`core/ElectroBrightCore/src/fixture/Profiles.h`) with each type's identity, channel layout, wiring and defaults. The light stores its **active type** in NVS, and the app can change it (`SET_TYPE`). Every board has the same pin layout: R GPIO 1, G 3, B 4, white/cool 5, warm 10, buzzer 6.
 
-Family version **3.6.2**
+Each **sketch** in `fixtures/` builds that same firmware. The only thing a sketch sets is the **default type for a first install**: a light that has no type yet takes the sketch's type. A light that already has a type keeps it, whichever sketch is flashed. Every type works with the ElectroBright app. The protocol contract is in [`docs/protocol.md`](../docs/protocol.md), and the hardware is described in [`docs/wiring_guide.md`](../docs/wiring_guide.md).
 
-| Fixture | Sketch | Channels | Model id | BLE name | Status |
+Firmware version **3.7.0**
+
+| Type | Sketch (default type) | Channels | Model id | BLE name | Status |
 |---|---|---|---|---|---|
 | RGBW | [`fixtures/ElectroBright_RGBW`](fixtures/ElectroBright_RGBW/README.md) | R, G, B, W | `EB-C3-RGBW-V1` | `ElectroBright_C3_V1` | shipping. Same behaviour as 3.4.0 except VERSION/CAPS, IDENTIFY and the handling of malformed 5- and 9-byte writes |
 | RGB | [`fixtures/ElectroBright_RGB`](fixtures/ElectroBright_RGB/README.md) | R, G, B | `EB-C3-RGB-V1` | `ElectroBright_C3_RGB_V1` | new; host-tested, awaiting a hardware run |
@@ -20,7 +22,7 @@ Family version **3.6.2**
 ```
 firmware/
   core/ElectroBrightCore/   Arduino library: the shared core (library.properties, src/)
-  fixtures/<Name>/          one sketch per fixture: <Name>.ino, Fixture.h, README.md
+  fixtures/<Name>/          one sketch per type: <Name>.ino (only sets a new light's type), README.md
   test/                     host tests, fwsim, golden baseline (make)
   tools/                    IDE setup, build script, conformance suite, gamma-table generator
 ```
@@ -41,21 +43,22 @@ firmware/
    - The script links `core/ElectroBrightCore` into `~/Documents/Arduino/libraries`, so every sketch always builds against the working tree.
    - `--copy` installs a plain copy instead; re-run it after every core change.
    - `--status` shows what is installed.
-2. **File → Open…** the fixture's sketch, for example `firmware/fixtures/ElectroBright_RGB/ElectroBright_RGB.ino`.
+2. **File → Open…** the sketch of the type a new light should get, for example `firmware/fixtures/ElectroBright_RGB/ElectroBright_RGB.ino`. (A light that already has a type keeps it.)
 3. Select the board and port, then **Upload**.
 
 A sketch built against a stale core copy fails at compile time with "ElectroBrightCore does not match this sketch".
 
 **Command line.** This uses the Arduino IDE's own `arduino-cli` and settings, and always builds against the working tree:
 ```bash
-firmware/tools/build.sh            # every fixture
-firmware/tools/build.sh RGB        # one fixture (folder suffix)
+firmware/tools/build.sh            # every sketch
+firmware/tools/build.sh RGB        # one sketch (folder suffix)
 ```
 
-Reference build (3.6.2), per fixture: ≈658 KB flash (50 %) and 31.0 KB static RAM (9 %), with zero compiler warnings under `--warnings all`.
+Reference build (3.7.0), identical for every sketch: 661,961 bytes flash (50 % of a 1,280 KB app slot) and 31.0 KB static RAM (9 %), with zero compiler warnings under `--warnings all`. The default partition scheme has two OTA app slots.
 
-**First boot starts clean.** Each fixture stores its settings and presets in its own NVS namespace: `eb3` for RGBW, `eb3rgb` for RGB and `eb3rgbcct` for RGBCCT, `eb3cct` for CCT and `eb3w` for W.
-- Updating to this firmware clears all saved presets once; colour, mode and the sound setting are kept.
+**Storage.** Every type keeps its settings, scene and presets in NVS namespace `eb3`. The fixture type is one byte, key `fx`, in its own namespace `ebsys`, so `FACTORY_RESET` (which erases `eb3`) keeps it.
+- At boot the stored type wins. Without one, the sketch's default type is saved and used. A build without a default never invents a type: it starts in setup-needed mode (see section 2).
+- Updating from 3.6.x: an RGBW light keeps its scene and presets (it always used `eb3`). The other types used their own namespaces (`eb3rgb`, `eb3rgbcct`, `eb3cct`, `eb3w`); 3.7.0 no longer reads them, so those lights start from their type's defaults.
 - Data from the original pre-3.x firmware (namespace `eeprom`) is erased once.
 
 > **MOSFET gate drive at 25 kHz (3.6.1+).** The PWM now switches about five
@@ -68,8 +71,8 @@ Reference build (3.6.2), per fixture: ≈658 KB flash (50 %) and 31.0 KB static 
 
 ## 2. Fixtures and channel layouts
 
-A fixture is described by a `FixtureProfile` (`core/ElectroBrightCore/src/fixture/FixtureProfile.h`). Its fields:
-- **Identity:** model id, BLE name, CAPS reply, NVS namespace.
+A fixture type is described by a `FixtureProfile` (`core/ElectroBrightCore/src/fixture/FixtureProfile.h`), one entry per type in the profile table (`fixture/Profiles.h`). Its fields:
+- **Identity:** type, model id, BLE name. The CAPS reply is built from the layout (`replies::caps`).
 - **Channel layout:** which LED channels exist, in wire order.
 - **Wiring:** one GPIO per channel, the buzzer pin, and unused outputs that must be held low.
 - **Scene defaults:** colour and police colours.
@@ -82,7 +85,7 @@ What differs between fixtures:
 
 | | RGBW | RGB | RGBCCT | CCT | W |
 |---|---|---|---|---|---|
-| **Outputs** | GPIO 1, 3, 4, 5 → R, G, B, W | GPIO 1, 3, 4 → R, G, B; GPIO 5 held low (W not fitted) | GPIO 1, 3, 4, 5, 10 → R, G, B, CW, WW | GPIO 5, 10 → CW, WW; GPIO 1, 3, 4 held low | GPIO 5 → W; GPIO 1, 3, 4, 10 held low |
+| **Outputs** | GPIO 1, 3, 4, 5 → R, G, B, W; GPIO 10 held low | GPIO 1, 3, 4 → R, G, B; GPIO 5, 10 held low | GPIO 1, 3, 4, 5, 10 → R, G, B, CW, WW | GPIO 5, 10 → CW, WW; GPIO 1, 3, 4 held low | GPIO 5 → W; GPIO 1, 3, 4, 10 held low |
 | **Colour command** | `COLOR:r,g,b,w` (alias `RGBW:`) | `COLOR:r,g,b` | `COLOR:r,g,b,cw,ww` | `COLOR:cw,ww` | `COLOR:w` |
 | **Binary frame** | 8 bytes, salt 0x55, plus the legacy 7/6-byte frames | 7 bytes, salt 0x56 | 9 bytes, salt 0x50 | 6 bytes, salt 0x57 | 5 bytes, salt 0x54 |
 | **STATUS** | 23 fields | 20 fields | 26 fields | 17 fields | 14 fields |
@@ -96,13 +99,20 @@ What differs between fixtures:
 
 `RGBW:` exists only on the RGBW light. On the other fixtures it gives `ERROR:UNKNOWN_CMD`.
 
-### Adding a fixture
+The active type drives only its own outputs; every other board output is held low as a plain GPIO from the first moment of boot.
+
+### Changing the type, finding the wiring, setup-needed mode (3.7.0)
+- **`SET_TYPE:<RGBW|RGB|RGBCCT|CCT|W>`** replies `OK`, stores the type, clears every preset and the scene (layouts differ; the sound setting stays) and restarts once the reply has gone out, so the link drops. The same type is an `OK` that changes nothing. Anything else is `ERROR:TYPE_INVALID`.
+- **`PROBE:<output 0-4>:<0|1>`** drives one physical output (0 red GPIO 1, 1 green GPIO 3, 2 blue GPIO 4, 3 white/cool GPIO 5, 4 warm GPIO 10) at 25 % duty, whatever the type, and every other LED output off. One output at a time; it switches itself off after 3 s, any other command switches it off, and nothing is stored. An output outside the active layout borrows the LEDC channel after the buzzer's.
+- **Setup-needed mode:** no stored type and no default. Every LED output stays low. The light advertises as `ElectroBright_C3_SETUP`, answers CAPS with `LAYOUT=NONE`, and accepts only `CAPS`, `VERSION`, `DIAG`, `PROBE`, `IDENTIFY` (buzzer chirp only) and `SET_TYPE`; anything else is `ERROR:SETUP_NEEDED`.
+- CAPS of every type carries `TYPES=RGBW,RGB,RGBCCT,CCT,W` and `PROBE=1`, before `LAYOUT=`.
+
+### Adding a fixture type
 1. **Layout.** If the layout is new, add it to `fixture/ChannelLayout.h`.
-2. **Folder.** Copy `fixtures/ElectroBright_RGB` to `fixtures/ElectroBright_<Name>`.
-   - Rename the `.ino` to match the folder.
-   - Edit `Fixture.h`: identity, pins, defaults, and a unique NVS namespace (≤ 15 chars).
-3. **Register.** Add it to `test/Fixtures.h` and to `FIXTURES` in `test/Makefile`. `tools/fw_conformance.py` needs the new layout in `LAYOUTS`.
-4. **Check.** Run `make -C firmware/test`, `make -C firmware/test conformance` and `firmware/tools/build.sh`.
+2. **Profile.** Add a `FixtureType` value (`fixture/FixtureProfile.h`; never renumber, the value is stored) and a profile to `fixture/Profiles.h`, including it in `profiles::kAll` (the CAPS `TYPES=` order).
+3. **Sketch.** Copy `fixtures/ElectroBright_RGB` to `fixtures/ElectroBright_<Name>`, rename the `.ino` to match the folder, and set its `App::start(FixtureType::<Name>)`.
+4. **Register.** Add it to `test/Fixtures.h` and to `FIXTURES` in `test/Makefile`. `tools/fw_conformance.py` needs the new layout in `LAYOUTS`.
+5. **Check.** Run `make -C firmware/test`, `make -C firmware/test conformance` and `firmware/tools/build.sh`.
 
 ---
 
@@ -169,7 +179,7 @@ All paths are under `core/ElectroBrightCore/src/` unless noted.
 | Path | Portable? | Purpose |
 |---|---|---|
 | `config/Config.h` | ✓ | Family version, rates, timings, buffer sizes (shared by every fixture) |
-| `fixture/` | ✓ | `ChannelLayout` (channels in wire order), `FixtureProfile` (what a sketch passes to `App::start`) |
+| `fixture/` | ✓ | `ChannelLayout` (channels in wire order), `FixtureProfile`, the profile table (`Profiles.h`), the stored type and PROBE routing (`FixtureSelect`) |
 | `core/` | ✓ | Types, math, RNG, noise, seqlock, stats |
 | `protocol/` | ✓ | Line assembler, parser, binary frames, reply formats, egress packing |
 | `state/` | ✓ | Scene/settings schema, flash record codec (`SceneCodec`), persistence policy |
@@ -177,7 +187,7 @@ All paths are under `core/ElectroBrightCore/src/` unless noted.
 | `render/` | ✓ | Colour pipeline, render engine, channel map, mode registry, 13 effects |
 | `feedback/` | ✓ | Buzzer melodies and sequencer |
 | `platform/` | ESP32 | LEDC PWM, buzzer, NVS, NimBLE NUS, tasks/timer wiring |
-| `fixtures/<Name>/Fixture.h` | ✓ | One fixture's identity, layout, pins, defaults (outside the library) |
+| `fixtures/<Name>/<Name>.ino` | ESP32 | A sketch: starts the core with a new light's default type (outside the library) |
 
 "Portable" code has no Arduino / ESP-IDF includes (enforced by `make portable`)
 and is fully covered by the host tests.
@@ -271,7 +281,7 @@ How this firmware differs from the original (pre-3.x) firmware:
 
 ## 6. Tests
 
-**Host tests** (`test/`: portable core, ASan + UBSan, `-Werror`): 175 tests.
+**Host tests** (`test/`: portable core, ASan + UBSan, `-Werror`): 201 tests.
 ```bash
 make -C firmware/test                 # portable check, all tests, fwsim
 make -C firmware/test run T=rgb       # filter by name
@@ -313,9 +323,12 @@ What they cover:
   - the measurement that shows Rainbow is flat on one LED while every other mode varies;
   - parity with the RGBW W LED.
 - **Scene codec** (`test_state.cpp`): the legacy flash format, byte for byte, plus round trips for every fixture.
-- **Per-fixture invariants** (`test_layouts.cpp`): identity and wiring, `3n + 11` STATUS fields, colour arity, frame round trips, binary data never reaching the text parser, and bounded rendering. These run for every fixture in `test/Fixtures.h`.
+- **Per-fixture invariants** (`test_layouts.cpp`): identity and wiring (driven plus parked = all five board outputs), CAPS, `3n + 11` STATUS fields, colour arity, frame round trips, binary data never reaching the text parser, and bounded rendering. These run for every type in `test/Fixtures.h`.
+- **Universal firmware** (`test_universal.cpp`): the boot choice of type (stored, build default, none); `SET_TYPE` (stored, presets cleared, scene reset, restart, invalid names, same type); setup-needed mode (outputs off, only the setup commands); `PROBE` (the right pin for every output and type, expiry, cancellation, nothing stored); `FACTORY_RESET` keeping the type; the parked outputs of every type.
 
-**fwsim** (`test/fwsim`) runs the real core behind a stdin/stdout protocol for the app's firmware-in-the-loop tests. Select the fixture with `--fixture rgbw|rgb|rgbcct|cct|w` (the default is rgbw).
+The per-fixture tests run the universal build with each type selected: `Rig` and `SimDevice` boot through the same type selection as the device (`fxselect::select`).
+
+**fwsim** (`test/fwsim`) runs the real core behind a stdin/stdout protocol for the app's firmware-in-the-loop tests. `--fixture rgbw|rgb|rgbcct|cct|w` sets the build's default type (the default is rgbw); `--fixture none` is a build without one (setup-needed mode). `SET_TYPE` restarts the simulated light as the new type and drops the link.
 
 **On-device suite** (`pip install bleak`). It reads the layout from INFO/CAPS:
 ```bash
@@ -353,7 +366,7 @@ python3 firmware/tools/fw_conformance.py --persist       # power-cycle check
 - task priorities and stack sizes;
 - `kConnectChirp` (beep on connect).
 
-**Per-fixture settings** are in `fixtures/<Name>/Fixture.h`: pins, defaults and `whiteMix`. The white light that effects add is set in two constants: Club `kWhite` and the Fireworks burst flash.
+**Per-type settings** are in the profile table, `fixture/Profiles.h`: pins, defaults and `whiteMix`. The white light that effects add is set in two constants: Club `kWhite` and the Fireworks burst flash.
 
 Regenerate the gamma table with `tools/gen_gamma_lut.py`.
 
@@ -366,7 +379,7 @@ Regenerate the gamma table with `tools/gen_gamma_lut.py`.
 - **Modes per layout:** a layout can drop modes it cannot show (its `modes` mask, announced as CAPS `MODES`).
 - **App:** the app (`app/`) reads each light's layout and CAPS `MODES`, and builds its controls from them. It offers a colour temperature control on CCT and RGBCCT and an intensity-only control on W. See [`docs/app.md`](../docs/app.md).
 - **A new fixture type** is added in three places:
-  - the firmware: a `layouts::` entry and a fixture sketch;
+  - the firmware: a `layouts::` entry, a profile in `fixture/Profiles.h` and a sketch;
   - `firmware/test/Fixtures.h`;
   - the app's `EbFixtureCatalog`.
 

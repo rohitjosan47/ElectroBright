@@ -1,6 +1,7 @@
 import 'package:meta/meta.dart';
 
 import '../../model/channel_color.dart';
+import '../../model/channel_layout.dart';
 import 'eb_constants.dart';
 import 'eb_scene.dart';
 
@@ -11,6 +12,9 @@ enum EbExpect {
 
   /// Optional `ERROR:STORAGE` (a warning, once per boot), then `OK`.
   okStorageNote,
+
+  /// `OK`, or `ERROR:<code>` with STORAGE final too (SET_TYPE).
+  typeChange,
 
   /// `OK`, `ERROR:PRESET_ID`, or `ERROR:STORAGE` (provisional: an unsolicited
   /// background STORAGE error may precede a real `OK`).
@@ -274,7 +278,27 @@ final class Identify extends EbCommand {
   String get mergeKey => 'identify';
 }
 
-// ---- Presets and reset (barriers) -----------------------------------------------------
+/// Drives one physical LED output (0 red, 1 green, 2 blue, 3 white/cool,
+/// 4 warm) at a fixed level whatever the light's type, so the app can find
+/// out what is wired (only when CAPS has `PROBE=1`). It switches itself off
+/// after 3 s, and any other command switches it off. Nothing is stored.
+final class Probe extends EbCommand {
+  Probe(this.output, {required this.on}) {
+    _range(output, 0, outputs - 1, 'output');
+  }
+
+  static const int outputs = 5;
+  final int output;
+  final bool on;
+  @override
+  String get wire => 'PROBE:$output:${on ? 1 : 0}';
+  @override
+  EbExpect get expect => EbExpect.ok;
+  @override
+  String get mergeKey => 'probe';
+}
+
+// ---- Presets, reset and type (barriers) -------------------------------------------------
 
 final class PresetSave extends EbCommand {
   PresetSave(this.slot) {
@@ -341,4 +365,24 @@ final class FactoryReset extends EbCommand {
   bool get idempotent => false;
   @override
   Duration get timeout => const Duration(seconds: 4);
+}
+
+/// Makes the light a [layout] fixture (only when CAPS `TYPES=` lists it). The
+/// light clears its presets and scene, replies OK and restarts as the new
+/// type, so the link drops; the same type is an OK that changes nothing.
+final class SetType extends EbCommand {
+  const SetType(this.layout);
+  final ChannelLayout layout;
+  @override
+  String get wire => 'SET_TYPE:${layout.wire}';
+  @override
+  EbExpect get expect => EbExpect.typeChange;
+  @override
+  bool get isBarrier => true;
+  @override
+  bool get holdsStream => true;
+  @override
+  bool get idempotent => false;
+  @override
+  Duration get timeout => const Duration(seconds: 3);
 }

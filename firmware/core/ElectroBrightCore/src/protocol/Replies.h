@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include "../fixture/ChannelLayout.h"
+#include "../fixture/FixtureProfile.h"
 #include "../state/DeviceState.h"
 
 struct StatusView {
@@ -34,6 +35,13 @@ size_t presets(char* out, size_t cap, uint32_t mask);
 
 // CAPABILITIES:NONE | CAPABILITIES:FREQUENCY | CAPABILITIES:SPEED,FREQUENCY[,COLOR_MODE]
 size_t capabilities(char* out, size_t cap, uint8_t mode);
+
+// CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,
+//      TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=<layout>[,MODES=<hex>]
+// TYPES lists every selectable type (its value runs over commas up to the
+// next KEY=); LAYOUT is the active one, NONE in setup-needed mode. MODES
+// appears only when the layout lacks a mode.
+size_t caps(char* out, size_t cap, const FixtureProfile& fixture);
 
 // ERROR:<code>   or   ERROR:PRESET_EMPTY:<id>
 size_t error(char* out, size_t cap, const char* code);

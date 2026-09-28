@@ -36,6 +36,12 @@ final class EbError extends EbReply {
   static const String modeSpeedInvalid = 'MODE_SPEED_INVALID';
   static const String modeFrequencyInvalid = 'MODE_FREQUENCY_INVALID';
 
+  /// 3.7.0+: the light has no fixture type yet (setup-needed mode) and only
+  /// accepts CAPS, VERSION, DIAG, PROBE, IDENTIFY and SET_TYPE.
+  static const String setupNeeded = 'SETUP_NEEDED';
+  static const String typeInvalid = 'TYPE_INVALID';
+  static const String probeInvalid = 'PROBE_INVALID';
+
   @override
   String toString() =>
       presetId == null ? 'ERROR:$code' : 'ERROR:$code:$presetId';
@@ -65,6 +71,20 @@ final class EbCaps extends EbReply {
 
   /// `LAYOUT=` (absent on RGBW firmware 3.4.0).
   String? get layout => fields['LAYOUT'];
+
+  /// `LAYOUT=NONE` (3.7.0+): no fixture type chosen yet (setup-needed mode).
+  bool get setupNeeded => fields['LAYOUT'] == noLayout;
+  static const String noLayout = 'NONE';
+
+  /// `TYPES=RGBW,RGB,...` (3.7.0+): the fixture types SET_TYPE accepts;
+  /// empty when absent.
+  List<String> get types {
+    final String? v = fields['TYPES'];
+    return v == null || v.isEmpty ? const <String>[] : v.split(',');
+  }
+
+  /// `PROBE=1` (3.7.0+): the light answers PROBE.
+  bool get probe => fields['PROBE'] == '1';
 
   /// `MODES=<hex mask>`; null when absent (all modes) or not strict hex.
   int? get modesMask {
@@ -221,16 +241,25 @@ EbReply _versionReply(String line, String body) {
   );
 }
 
+final RegExp _capsListItem = RegExp(r'^[A-Z0-9_]+$');
+
 EbReply _caps(String line, String body) {
   final Map<String, String> fields = <String, String>{};
+  String? last;
   for (final String part in body.split(',')) {
     final int eq = part.indexOf('=');
+    // A list value runs over commas up to the next KEY= (TYPES=RGBW,RGB,...).
+    if (eq < 0 && last != null && _capsListItem.hasMatch(part)) {
+      fields[last] = '${fields[last]},$part';
+      continue;
+    }
     if (eq <= 0 || eq == part.length - 1) {
       return EbMalformed(line, 'caps field');
     }
     final String key = part.substring(0, eq);
     if (!_capsKey.hasMatch(key)) return EbMalformed(line, 'caps key');
     fields[key] = part.substring(eq + 1);
+    last = key;
   }
   return EbCaps(Map<String, String>.unmodifiable(fields));
 }

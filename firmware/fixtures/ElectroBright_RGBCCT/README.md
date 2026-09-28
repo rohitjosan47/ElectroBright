@@ -5,15 +5,15 @@ A five-channel ElectroBright light: red, green and blue make colours, and cool w
 - 15 presets (slots 0..14), the sleep timer and sound;
 - DIAG and factory reset.
 
-This sketch is the shared core ([`firmware/core`](../../core/ElectroBrightCore)) plus [`Fixture.h`](Fixture.h).
+This sketch installs the universal ElectroBright firmware (the shared core, [`firmware/core`](../../core/ElectroBrightCore)) and only sets the type a new light gets: **RGBCCT**. A light that already has a type keeps it; the app changes it with `SET_TYPE`. This type's data is in the core's profile table ([`fixture/Profiles.h`](../../core/ElectroBrightCore/src/fixture/Profiles.h)).
 
 | | |
 |---|---|
 | Model id / BLE name | `EB-C3-RGBCCT-V1` / `ElectroBright_C3_RGBCCT_V1` |
-| CAPS | `CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=RGBCCT` |
+| CAPS | `CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=RGBCCT` |
 | Channels (wire order) | R, G, B, CW, WW |
 | Colour on the wire | `COLOR:r,g,b,cw,ww` and `POLICE_COLOR_A/B:r,g,b,cw,ww`; 9-byte binary frame `[AA, seq, R, G, B, CW, WW, Br, cs]`, salt 0x50; STATUS has 26 fields |
-| Flash namespace | `eb3rgbcct` (separate from the other fixtures); 47-byte scene/preset records |
+| Flash namespace | `eb3` (every type; the type itself is in `ebsys`); 47-byte scene/preset records |
 
 ## Wiring
 
@@ -25,7 +25,7 @@ This is the RGBW board plus one channel. The W position becomes cool white, and 
 | Green | GPIO 3 | same |
 | Blue | GPIO 4 | same |
 | Cool white | GPIO 5 | same |
-| Warm white | GPIO 10 | same. GPIO 10 is not a strapping, USB or UART pin. If your C3 board doesn't break it out, change `kPinWarmWhite` in `Fixture.h` |
+| Warm white | GPIO 10 | same. GPIO 10 is not a strapping, USB or UART pin. If your C3 board doesn't break it out, change `board::kPinWarm` in `fixture/Profiles.h` (every type shares the board pins) |
 | Buzzer | GPIO 6 | passive piezo, optional 100 Ω series resistor |
 
 - **Parts:** five logic-level N-MOSFETs, five gate resistors and five pull-downs.

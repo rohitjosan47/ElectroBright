@@ -5,15 +5,15 @@ A tunable-white ElectroBright light with two channels: cool white (CW) and warm 
 - 15 presets (slots 0..14), the sleep timer and sound;
 - DIAG and factory reset.
 
-This sketch is the shared core ([`firmware/core`](../../core/ElectroBrightCore)) plus [`Fixture.h`](Fixture.h).
+This sketch installs the universal ElectroBright firmware (the shared core, [`firmware/core`](../../core/ElectroBrightCore)) and only sets the type a new light gets: **CCT**. A light that already has a type keeps it; the app changes it with `SET_TYPE`. This type's data is in the core's profile table ([`fixture/Profiles.h`](../../core/ElectroBrightCore/src/fixture/Profiles.h)).
 
 | | |
 |---|---|
 | Model id / BLE name | `EB-C3-CCT-V1` / `ElectroBright_C3_CCT_V1` |
-| CAPS | `CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=CCT` |
+| CAPS | `CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=CCT` |
 | Channels (wire order) | CW, WW |
 | Colour on the wire | `COLOR:cw,ww` and `POLICE_COLOR_A/B:cw,ww`; 6-byte binary frame `[AA, seq, CW, WW, Br, cs]`, salt 0x57; STATUS has 17 fields |
-| Flash namespace | `eb3cct` (separate from the other fixtures) |
+| Flash namespace | `eb3` (every type; the type itself is in `ebsys`) |
 
 ## Wiring
 
@@ -22,7 +22,7 @@ This uses the white positions of the RGBCCT board.
 | Function | ESP32-C3 pin | Notes |
 |---|---|---|
 | Cool white | GPIO 5 | 220 Ω to the MOSFET gate, 10 kΩ gate pull-down |
-| Warm white | GPIO 10 | same. If your C3 board doesn't break it out, change `kPinWarmWhite` in `Fixture.h` |
+| Warm white | GPIO 10 | same. If your C3 board doesn't break it out, change `board::kPinWarm` in `fixture/Profiles.h` (every type shares the board pins) |
 | Buzzer | GPIO 6 | passive piezo, optional 100 Ω series resistor |
 | *(unused colour positions)* | GPIO 1, 3, 4 | not fitted; the firmware holds them low |
 

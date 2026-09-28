@@ -11,11 +11,14 @@
 #include <freertos/task.h>
 #include <string.h>
 
+#include <atomic>
+
 #include "../config/Config.h"
 #include "../control/ControllerCore.h"
 #include "../core/SeqLock.h"
 #include "../core/Stats.h"
 #include "../feedback/SoundSequencer.h"
+#include "../fixture/FixtureSelect.h"
 #include "../protocol/Egress.h"
 #include "../protocol/LineAssembler.h"
 #include "../render/RenderEngine.h"
@@ -30,11 +33,13 @@ namespace {
 constexpr const char* kTag = "EB";
 
 // ---- Shared objects (static storage, no heap) --------------------------------
-FixtureProfile g_fixture{};  // copy of the sketch's profile, lives for the whole run
+const FixtureProfile* g_fixture = nullptr;  // the active type's profile (profiles::kNone: setup needed)
 Stats g_stats;
 PwmOutput g_pwm;
 Buzzer g_buzzer;
-NvsStore g_nvs;
+NvsStore g_nvs;     // settings, scene, presets
+NvsStore g_system;  // the fixture type
+std::atomic<uint32_t> g_restartAtMs{0};  // SET_TYPE: restart due (0 = none)
 SoundSequencer g_sound;
 SeqLock<RenderParams> g_params;
 Egress g_egress;  // control task only
@@ -65,6 +70,10 @@ class DeviceEnv final : public IControllerEnv {
     d.renderStackFree = g_renderTask ? uxTaskGetStackHighWaterMark(g_renderTask) : 0;
     d.resetReason = static_cast<uint32_t>(esp_reset_reason());
     d.uptimeSec = static_cast<uint32_t>(esp_timer_get_time() / 1000000);
+  }
+  void restart() override {
+    const uint32_t at = nowMs() + cfg::kRestartDelayMs;
+    g_restartAtMs = at ? at : 1;
   }
 };
 
@@ -135,6 +144,14 @@ void controlTask(void*) {
       g_egress.clear();
     }
 
+    // 6. SET_TYPE: restart once the OK has gone out (and had time to leave).
+    const uint32_t restartAt = g_restartAtMs.load();
+    if (restartAt && (g_egress.pending() == 0 || !ble::connected()) &&
+        static_cast<int32_t>(nowMs() - restartAt) >= 0) {
+      ESP_LOGI(kTag, "fixture type changed: restarting");
+      esp_restart();
+    }
+
     esp_task_wdt_reset();
   }
 }
@@ -158,6 +175,7 @@ void renderTask(void*) {
     g_params.tryRead(params);  // on a torn read keep last frame's params
     const uint32_t now = static_cast<uint32_t>(t0 / 1000);
     g_engine->frame(params, now, duty);
+    g_pwm.probe(probe::apply(*g_fixture, params.probe, duty));
     g_pwm.write(duty);
     g_sound.tick(now, g_buzzer);
 
@@ -181,48 +199,53 @@ void configureWatchdog() {
 
 namespace App {
 
-void start(const FixtureProfile& fixture) {
-  g_fixture = fixture;
+void start(FixtureType buildDefault) {
+  // 1. Outputs first: every board LED output held low from the earliest
+  // moment, before the type is known.
+  PwmOutput::holdLow(profiles::kNone);
 
-  // 1. Outputs first: every LED channel held at 0 % from the earliest moment.
-  if (!g_pwm.begin(g_fixture)) ESP_LOGE(kTag, "LEDC init failed");
+  // 2. Storage (clean start: the old firmware's EEPROM data is discarded) and
+  // the fixture type.
+  NvsStore::wipeNamespace(cfg::kLegacyNvsNamespace);
+  if (!g_system.begin(cfg::kSystemNvsNamespace)) ESP_LOGE(kTag, "NVS unavailable: fixture type unknown");
+  g_fixture = &fxselect::select(g_system, buildDefault);
+  if (!g_nvs.begin(cfg::kNvsNamespace)) ESP_LOGE(kTag, "NVS unavailable; running with defaults");
+
+  // 3. The active type's outputs at 0 %, its unused ones held low.
+  if (!g_pwm.begin(*g_fixture)) ESP_LOGE(kTag, "LEDC init failed");
   // The buzzer takes the first LEDC channel after the LED outputs.
-  if (!g_buzzer.begin(g_fixture.buzzerPin, g_fixture.layout->count)) ESP_LOGW(kTag, "buzzer init failed");
+  if (!g_buzzer.begin(g_fixture->buzzerPin, g_fixture->layout->count)) ESP_LOGW(kTag, "buzzer init failed");
 
   configureWatchdog();
 
-  // 2. Storage (clean start: the old firmware's EEPROM data is discarded).
-  NvsStore::wipeNamespace(cfg::kLegacyNvsNamespace);
-  if (!g_nvs.begin(g_fixture.nvsNamespace)) ESP_LOGE(kTag, "NVS unavailable; running with defaults");
-
-  // 3. State + first render snapshot (the renderer fades in from black).
-  static StateStore store(g_nvs, g_stats, g_fixture);
-  static RenderEngine engine(0x5EEDu, *g_fixture.layout, g_fixture.whiteMix);
-  static ControllerCore core(g_env, store, g_stats, g_fixture);
+  // 4. State + first render snapshot (the renderer fades in from black).
+  static StateStore store(g_nvs, g_stats, *g_fixture);
+  static RenderEngine engine(0x5EEDu, *g_fixture->layout, g_fixture->whiteMix);
+  static ControllerCore core(g_env, store, g_system, g_stats, *g_fixture);
   g_engine = &engine;
   g_core = &core;
   g_engine->reseed(esp_random());
   g_core->begin(nowMs());
 
-  // 4. IPC + tasks.
+  // 5. IPC + tasks.
   g_rxText = xStreamBufferCreate(cfg::kRxStreamBytes, 1);
   g_colorMailbox = xQueueCreate(1, sizeof(ColorFrame));
   g_events = xQueueCreate(8, sizeof(uint8_t));
   xTaskCreate(renderTask, "eb-render", cfg::kRenderStackBytes, nullptr, cfg::kRenderPriority, &g_renderTask);
   xTaskCreate(controlTask, "eb-control", cfg::kControlStackBytes, nullptr, cfg::kControlPriority, &g_controlTask);
 
-  // 5. Fixed-rate frame clock.
+  // 6. Fixed-rate frame clock.
   esp_timer_create_args_t timerArgs = {};
   timerArgs.callback = onFrameTimer;
   timerArgs.name = "eb-frame";
   esp_timer_create(&timerArgs, &g_frameTimer);
   esp_timer_start_periodic(g_frameTimer, cfg::kRenderPeriodUs);
 
-  // 6. Radio last: by now every consumer of its callbacks exists.
+  // 7. Radio last: by now every consumer of its callbacks exists.
   BleSinks sinks{g_rxText, g_colorMailbox, g_events, g_controlTask, &g_stats};
-  if (!ble::begin(sinks, g_fixture)) ESP_LOGE(kTag, "BLE advertising failed to start");
+  if (!ble::begin(sinks, *g_fixture)) ESP_LOGE(kTag, "BLE advertising failed to start");
 
-  ESP_LOGI(kTag, "ElectroBright %s %s ready", g_fixture.modelId, cfg::kFirmwareVersion);
+  ESP_LOGI(kTag, "ElectroBright %s %s ready", g_fixture->modelId, cfg::kFirmwareVersion);
 }
 
 }  // namespace App

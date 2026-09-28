@@ -1,6 +1,7 @@
-// Invariants every fixture profile (fixtures/*/Fixture.h) must satisfy, run for
-// each entry of kAllFixtures: identity, wiring, protocol widths, binary frame
-// routing and rendering. A new fixture is covered by adding it to Fixtures.h.
+// Invariants every profile of the table (core fixture/Profiles.h) must
+// satisfy, run for each entry of kAllFixtures: identity, wiring, protocol
+// widths, binary frame routing and rendering. A new type is covered by adding
+// it to Fixtures.h.
 
 #include <stdio.h>
 #include <string.h>
@@ -15,6 +16,7 @@
 #include "core/Rng.h"
 #include "fwsim/SimDevice.h"
 #include "protocol/BinaryFrame.h"
+#include "protocol/Replies.h"
 #include "render/RenderEngine.h"
 
 namespace {
@@ -27,33 +29,52 @@ size_t fieldCount(const std::string& line) {
   return n;
 }
 
-// CAPS:KEY=VALUE,... -> map.
+// CAPS:KEY=VALUE,... -> map. A part without '=' continues the previous value
+// (TYPES=RGBW,RGB,...).
 std::map<std::string, std::string> capsFields(const std::string& caps) {
   std::map<std::string, std::string> out;
+  std::string last;
   size_t start = caps.find(':') + 1;
   while (start < caps.size()) {
     size_t end = caps.find(',', start);
     if (end == std::string::npos) end = caps.size();
     const std::string part = caps.substr(start, end - start);
     const size_t eq = part.find('=');
-    if (eq != std::string::npos) out[part.substr(0, eq)] = part.substr(eq + 1);
+    if (eq != std::string::npos) {
+      last = part.substr(0, eq);
+      out[last] = part.substr(eq + 1);
+    } else if (!last.empty()) {
+      out[last] += "," + part;
+    }
     start = end + 1;
   }
   return out;
 }
 
+std::string capsOf(const FixtureProfile& f) {
+  char buf[256];
+  replies::caps(buf, sizeof(buf), f);
+  return buf;
+}
+
 }  // namespace
 
 TEST(fixtures_identity_is_consistent_and_unique) {
-  std::set<std::string> models, names, namespaces, cli;
+  std::set<std::string> models, names, cli;
+  std::set<int> types;
   for (const NamedFixture& nf : kAllFixtures) {
     const FixtureProfile& f = *nf.profile;
     const std::string layoutName = f.layout->name;
     CHECK(f.layout->count >= 1 && f.layout->count <= kMaxChannels);
     CHECK_STR(f.modelId, "EB-C3-" + layoutName + "-V1");
-    const std::map<std::string, std::string> caps = capsFields(f.capsReply);
+    const std::map<std::string, std::string> caps = capsFields(capsOf(f));
     CHECK(caps.count("LAYOUT") == 1 && caps.at("LAYOUT") == layoutName);
-    CHECK(strncmp(f.capsReply, "CAPS:PROTOCOL=1,", 16) == 0);
+    CHECK(capsOf(f).rfind("CAPS:PROTOCOL=1,", 0) == 0);
+    CHECK(caps.count("TYPES") == 1 && caps.at("TYPES") == "RGBW,RGB,RGBCCT,CCT,W");
+    CHECK(caps.count("PROBE") == 1 && caps.at("PROBE") == "1");
+    CHECK(&profiles::forType(f.type) == &f);
+    CHECK(profiles::forName(layoutName.c_str(), layoutName.size()) == &f);
+    CHECK(types.insert(static_cast<int>(f.type)).second);
     // MODES (hex mask) is announced exactly when some mode is unsupported.
     if (f.layout->modes == kAllModes) {
       CHECK(caps.count("MODES") == 0);
@@ -64,10 +85,8 @@ TEST(fixtures_identity_is_consistent_and_unique) {
     }
     CHECK(strncmp(f.deviceName, "ElectroBright_C3_", 17) == 0);
     CHECK(strlen(f.deviceName) <= 29);  // fits the 31-byte scan response
-    CHECK(strlen(f.nvsNamespace) >= 1 && strlen(f.nvsNamespace) <= 15);
     CHECK(models.insert(f.modelId).second);
     CHECK(names.insert(f.deviceName).second);
-    CHECK(namespaces.insert(f.nvsNamespace).second);
     CHECK(cli.insert(nf.name).second);
     // Defaults fit the layout (channels it lacks are 0).
     CHECK(layout::fits(*f.layout, f.defaults.color));
@@ -84,8 +103,13 @@ TEST(fixtures_wiring_uses_each_gpio_once) {
     std::set<int> pins;
     for (uint8_t i = 0; i < f.layout->count; ++i) CHECK(pins.insert(f.pins[i]).second);
     CHECK(pins.insert(f.buzzerPin).second);
-    CHECK(f.parkLowCount <= 4);
+    CHECK(f.parkLowCount <= 5);
     for (uint8_t i = 0; i < f.parkLowCount; ++i) CHECK(pins.insert(f.parkLowPins[i]).second);
+    // Driven + parked = exactly the board's five LED outputs: nothing floats.
+    std::set<int> leds(pins);
+    leds.erase(f.buzzerPin);
+    CHECK_EQ(leds.size(), size_t{board::kNumOutputs});
+    for (uint8_t pin : board::kOutputPins) CHECK(leds.count(pin) == 1);
     for (int p : pins) CHECK(p != 2 && p != 8 && p != 9 && p != 7);  // strapping / old status LED
     // The buzzer's LEDC channel is the first one after the LED outputs.
     CHECK(f.layout->count < 6);
@@ -98,7 +122,7 @@ TEST(fixtures_status_has_3n_plus_11_fields) {
     r.send("STATUS");
     CHECK_EQ(fieldCount(r.env.last()), size_t{3u * nf.profile->layout->count + 11u});
     r.send("CAPS");
-    CHECK_STR(r.env.last(), nf.profile->capsReply);
+    CHECK_STR(r.env.last(), capsOf(*nf.profile));
     r.send("INFO");
     CHECK_STR(r.env.last(), std::string("INFO:") + nf.profile->modelId);
   }

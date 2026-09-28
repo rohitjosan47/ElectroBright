@@ -10,6 +10,10 @@ abstract final class Eb {
   /// Advertised-name prefix of firmware 3.x (name is in the scan response).
   static const String namePrefix = 'ElectroBright_C3_';
 
+  /// Advertised name of firmware 3.7.0+ without a fixture type yet
+  /// (setup-needed mode, CAPS `LAYOUT=NONE`).
+  static const String setupName = 'ElectroBright_C3_SETUP';
+
   /// Advertised name of the original (pre-3.x) firmware.
   static const String legacyName = 'ElectroBright_BLE';
 

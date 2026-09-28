@@ -18,7 +18,7 @@
 
 namespace {
 
-const FixtureProfile& kRgb = fx::rgb::kProfile;
+const FixtureProfile& kRgb = profiles::kRgb;
 constexpr uint32_t kFrameMs = cfg::kRenderPeriodUs / 1000;
 
 size_t fieldCount(const std::string& line) {
@@ -63,7 +63,7 @@ TEST(rgb_reports_its_identity_and_layout) {
   r.send("CAPS");
   CHECK_STR(r.env.lines[0], "INFO:EB-C3-RGB-V1");
   CHECK_STR(r.env.lines[1], std::string("VERSION:") + cfg::kFirmwareVersion);
-  CHECK_STR(r.env.lines[2], "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=RGB");
+  CHECK_STR(r.env.lines[2], "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=RGB");
 }
 
 // ---- Text protocol ------------------------------------------------------------------

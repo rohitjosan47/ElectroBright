@@ -132,6 +132,48 @@ void main() {
     });
   });
 
+  group('3.7.0 CAPS (universal firmware)', () {
+    test('TYPES= runs over commas; PROBE; LAYOUT=NONE', () {
+      final EbCaps caps = parseEbReply(
+        'CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,'
+        'IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=W,MODES=1DFF',
+      ) as EbCaps;
+      expect(caps.types, <String>['RGBW', 'RGB', 'RGBCCT', 'CCT', 'W']);
+      expect(caps.probe, isTrue);
+      expect(caps.layout, 'W');
+      expect(caps.modesMask, 0x1DFF);
+      expect(caps.setupNeeded, isFalse);
+      final EbCaps setup = parseEbReply(
+        'CAPS:PROTOCOL=1,TYPES=RGBW,W,PROBE=1,LAYOUT=NONE',
+      ) as EbCaps;
+      expect(setup.setupNeeded, isTrue);
+      // Earlier firmware: no list, no probe.
+      final EbCaps old = parseEbReply(
+        'CAPS:PROTOCOL=1,PWM=15,IDENTIFY=1,LAYOUT=RGBW',
+      ) as EbCaps;
+      expect(old.types, isEmpty);
+      expect(old.probe, isFalse);
+      // A bare item with nothing to continue, or an empty one, is malformed.
+      expect(parseEbReply('CAPS:RGBW,PROTOCOL=1'), isA<EbMalformed>());
+      expect(parseEbReply('CAPS:TYPES=RGBW,,W'), isA<EbMalformed>());
+    });
+
+    test('SET_TYPE and PROBE replies', () {
+      expect(const SetType(ChannelLayout.rgbcct).wire, 'SET_TYPE:RGBCCT');
+      expect(Probe(2, on: true).wire, 'PROBE:2:1');
+      expect(
+        matchReply(EbExpect.typeChange, const EbError(EbError.storage)),
+        ReplyMatch.failure,
+      );
+      expect(matchReply(EbExpect.typeChange, const EbOk()), ReplyMatch.success);
+      // Setup-needed mode answers a query it does not accept at once.
+      expect(
+        matchReply(EbExpect.info, const EbError(EbError.setupNeeded)),
+        ReplyMatch.failure,
+      );
+    });
+  });
+
   group('line reassembler', () {
     test('lines span notifications and share them', () {
       final LineReassembler a = LineReassembler();

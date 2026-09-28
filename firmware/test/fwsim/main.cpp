@@ -1,7 +1,10 @@
 // fwsim: the real portable firmware core behind a line protocol on
 // stdin/stdout, driven by the Flutter app's tests (app/test/support/fwsim/).
 //
-// Usage: fwsim [--fixture rgbw|rgb|rgbcct|cct|w]   (default rgbw)
+// Usage: fwsim [--fixture rgbw|rgb|rgbcct|cct|w|none]   (default rgbw)
+// The universal firmware built with that type as the default of a first
+// install; "none" is a build without a default (setup-needed mode). SET_TYPE
+// restarts the simulated light (the link drops) as the new type.
 //
 // Every request line produces zero or more event lines, then a line ".".
 //   HELLO            -> I fwsim/1 fw=<version> model=<model>
@@ -120,11 +123,12 @@ std::string stateJson(SimDevice& dev) {
   }
   snprintf(b, sizeof(b),
            "],\"now\":%lu,\"connected\":%u,\"mtu\":%u,\"subscribed\":%u,\"pendingText\":%lu,"
-           "\"mailbox\":%u,\"pendingReplies\":%lu,\"render\":{\"sleeping\":%u,\"fadeMs\":%u,\"identify\":%u},",
+           "\"mailbox\":%u,\"pendingReplies\":%lu,\"render\":{\"sleeping\":%u,\"fadeMs\":%u,\"identify\":%u,"
+           "\"probe\":%u},",
            static_cast<unsigned long>(dev.now()), dev.connected() ? 1u : 0u, dev.mtu(), dev.subscribed() ? 1u : 0u,
            static_cast<unsigned long>(dev.pendingText()), dev.mailboxFull() ? 1u : 0u,
            static_cast<unsigned long>(dev.pendingReplies()), dev.lastParams().sleeping, dev.lastParams().fadeMs,
-           dev.lastParams().identifyId);
+           dev.lastParams().identifyId, dev.lastParams().probe);
   j += b;
   snprintf(b, sizeof(b),
            "\"stats\":{\"rx\":%lu,\"ovf\":%lu,\"rej\":%lu,\"sdrop\":%lu,\"unk\":%lu,\"err\":%lu,\"coal\":%lu,"
@@ -154,10 +158,11 @@ void emitNotifications(SimDevice& dev) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  const FixtureProfile* fixture = &fx::rgbw::kProfile;
+  const FixtureProfile* fixture = &profiles::kRgbw;
   for (int i = 1; i < argc; ++i) {
     if (strcmp(argv[i], "--fixture") == 0 && i + 1 < argc) {
-      fixture = findFixture(argv[++i]);
+      ++i;
+      fixture = strcmp(argv[i], "none") == 0 ? &profiles::kNone : findFixture(argv[i]);
       if (fixture == nullptr) {
         fprintf(stderr, "fwsim: unknown fixture %s\n", argv[i]);
         return 2;

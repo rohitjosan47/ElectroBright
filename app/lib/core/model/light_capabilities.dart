@@ -33,6 +33,8 @@ final class LightCapabilities {
     this.hasTimer = true,
     this.hasSound = true,
     this.supportsIdentify = false,
+    this.supportsTypeChange = false,
+    this.supportsProbe = false,
   });
 
   /// A light whose firmware has not been read yet (e.g. from its BLE name or
@@ -53,6 +55,14 @@ final class LightCapabilities {
 
   /// CAPS `IDENTIFY=1` (3.6.1+); false when absent or not read yet.
   final bool supportsIdentify;
+
+  /// CAPS `TYPES=` (3.7.0+): the fixture type can be changed (SET_TYPE);
+  /// false when absent or not read yet.
+  final bool supportsTypeChange;
+
+  /// CAPS `PROBE=1` (3.7.0+): single LED outputs can be tested (PROBE);
+  /// false when absent or not read yet.
+  final bool supportsProbe;
 
   bool supportsMode(int mode) =>
       mode >= 1 && mode <= modeCount && (modeMask >> (mode - 1)) & 1 == 1;
@@ -79,6 +89,8 @@ final class LightCapabilities {
     'hasTimer': hasTimer,
     'hasSound': hasSound,
     'supportsIdentify': supportsIdentify,
+    'supportsTypeChange': supportsTypeChange,
+    'supportsProbe': supportsProbe,
   };
 
   static LightCapabilities? fromJson(Object? json) {
@@ -104,6 +116,8 @@ final class LightCapabilities {
       hasTimer: json['hasTimer'] != false,
       hasSound: json['hasSound'] != false,
       supportsIdentify: json['supportsIdentify'] == true,
+      supportsTypeChange: json['supportsTypeChange'] == true,
+      supportsProbe: json['supportsProbe'] == true,
     );
   }
 
@@ -116,7 +130,9 @@ final class LightCapabilities {
       other.presetSlots == presetSlots &&
       other.hasTimer == hasTimer &&
       other.hasSound == hasSound &&
-      other.supportsIdentify == supportsIdentify;
+      other.supportsIdentify == supportsIdentify &&
+      other.supportsTypeChange == supportsTypeChange &&
+      other.supportsProbe == supportsProbe;
 
   @override
   int get hashCode => Object.hash(
@@ -127,6 +143,8 @@ final class LightCapabilities {
     hasTimer,
     hasSound,
     supportsIdentify,
+    supportsTypeChange,
+    supportsProbe,
   );
 
   @override

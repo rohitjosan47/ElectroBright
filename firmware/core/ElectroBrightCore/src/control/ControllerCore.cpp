@@ -3,10 +3,34 @@
 #include <stdio.h>
 
 #include "../config/Config.h"
+#include "../fixture/FixtureSelect.h"
 #include "../protocol/Replies.h"
 
-ControllerCore::ControllerCore(IControllerEnv& env, StateStore& store, Stats& stats, const FixtureProfile& fixture)
-    : env_(env), store_(store), stats_(stats), fixture_(fixture) {
+namespace {
+// Setup-needed mode: what the app needs to find out the wiring and choose a type.
+bool allowedInSetup(CmdId id) {
+  switch (id) {
+    case CmdId::Caps:
+    case CmdId::Version:
+    case CmdId::Diag:
+    case CmdId::Probe:
+    case CmdId::Identify:
+    case CmdId::SetType:
+      return true;
+    default:
+      return false;
+  }
+}
+}  // namespace
+
+ControllerCore::ControllerCore(IControllerEnv& env, StateStore& store, IKeyValueStore& system, Stats& stats,
+                               const FixtureProfile& fixture)
+    : env_(env),
+      store_(store),
+      system_(system),
+      stats_(stats),
+      fixture_(fixture),
+      setup_(fixture.type == FixtureType::None) {
   scene_ = state::defaultScene(fixture_.defaults);
   settings_ = state::defaultSettings();
   fadeMs_ = cfg::kSleepFadeMs;
@@ -14,7 +38,9 @@ ControllerCore::ControllerCore(IControllerEnv& env, StateStore& store, Stats& st
 
 // ------------------------------------------------------------------ lifecycle
 void ControllerCore::begin(uint32_t) {
-  store_.load(scene_, settings_);
+  // Setup-needed mode has no layout to load a scene for; nothing is stored
+  // until SET_TYPE.
+  if (!setup_) store_.load(scene_, settings_);
   sleeping_ = false;  // sleep is never persisted: power-up means light on
   timerActive_ = false;
   fadeMs_ = cfg::kSleepFadeMs;
@@ -30,6 +56,11 @@ void ControllerCore::onConnect(uint32_t) {
 void ControllerCore::onDisconnect(uint32_t) { haveSeq_ = false; }
 
 void ControllerCore::tick(uint32_t nowMs) {
+  if (probe_ && static_cast<int32_t>(nowMs - probeDeadlineMs_) >= 0) {
+    endProbe();
+    publish();
+  }
+  if (restartPending_) return;  // the new type starts from a clean scene
   if (timerActive_ && static_cast<int32_t>(nowMs - timerDeadlineMs_) >= 0) {
     timerActive_ = false;
     endIdentify();
@@ -49,6 +80,8 @@ uint32_t ControllerCore::timerRemainingSec(uint32_t nowMs) const {
 
 // ------------------------------------------------------------------ ingress
 void ControllerCore::onColorFrame(const ColorFrame& f, uint32_t nowMs) {
+  if (setup_ || restartPending_) return;
+  endProbe();
   if (f.hasSeq) {
     if (haveSeq_ && f.seq != expectedSeq_) Stats::inc(stats_.binarySeqGaps);
     haveSeq_ = true;
@@ -72,11 +105,17 @@ void ControllerCore::processLines(const char* const* lines, size_t count, uint32
     for (size_t k = 0; k < n; ++k) results[k] = parseCommand(lines[i + k], *fixture_.layout);
 
     for (size_t k = 0; k < n; ++k) {
+      if (restartPending_) return;  // SET_TYPE: the rest of the batch is for the old type
       Stats::inc(stats_.rxLines);
       const ParseResult& r = results[k];
       if (r.status == ParseStatus::Unknown) {
         Stats::inc(stats_.unknownCommands);
         reportError(r.errorCode);
+        continue;
+      }
+      if (setup_ && !allowedInSetup(r.cmd.id)) {
+        Stats::inc(stats_.commandErrors);
+        reportError("SETUP_NEEDED");
         continue;
       }
       if (r.status != ParseStatus::Ok) {
@@ -102,6 +141,11 @@ void ControllerCore::execute(const Command& c, uint32_t nowMs) {
   // normally (and republishes if it changes the output).
   if (identifying_ && c.id != CmdId::Identify && !isQuery(c.id)) {
     endIdentify();
+    publish();
+  }
+  // Any other command ends a PROBE.
+  if (probe_ && c.id != CmdId::Probe) {
+    endProbe();
     publish();
   }
   switch (c.id) {
@@ -293,7 +337,8 @@ void ControllerCore::execute(const Command& c, uint32_t nowMs) {
       return;
 
     case CmdId::Caps:
-      env_.sendLine(fixture_.capsReply);
+      replies::caps(buf_, sizeof(buf_), fixture_);
+      env_.sendLine(buf_);
       return;
 
     case CmdId::Ping:
@@ -305,6 +350,12 @@ void ControllerCore::execute(const Command& c, uint32_t nowMs) {
       return;
 
     case CmdId::Identify:
+      if (setup_) {
+        // No LED output is known yet: the buzzer only, whatever the mute setting.
+        env_.playSound(SoundId::Identify);
+        env_.sendLine("OK");
+        return;
+      }
       // Flashes the light on top of whatever it shows (even asleep) and then
       // resumes it; no state changes, nothing persists, no Sleep/Wake sounds.
       // A fresh id every time, so the renderer restarts even if it never saw
@@ -316,6 +367,24 @@ void ControllerCore::execute(const Command& c, uint32_t nowMs) {
       sound(SoundId::Identify);
       env_.sendLine("OK");
       return;
+
+    case CmdId::SetType:
+      setType(static_cast<FixtureType>(a[0]));
+      return;
+
+    case CmdId::Probe: {
+      // One output at a time; nothing persists, the light's state is untouched.
+      const uint8_t output = static_cast<uint8_t>(a[0] + 1);
+      if (a[1]) {
+        probe_ = output;
+        probeDeadlineMs_ = nowMs + cfg::kProbeMs;
+      } else if (probe_ == output) {
+        endProbe();
+      }
+      publish();
+      env_.sendLine("OK");
+      return;
+    }
   }
 }
 
@@ -336,10 +405,34 @@ void ControllerCore::publish() {
   p.sleeping = sleeping_ ? 1 : 0;
   p.fadeMs = fadeMs_;
   p.identifyId = identifying_ ? identifySeq_ : 0;
+  p.probe = probe_;
   env_.publish(p);
 }
 
 void ControllerCore::endIdentify() { identifying_ = false; }
+
+void ControllerCore::endProbe() { probe_ = 0; }
+
+void ControllerCore::setType(FixtureType type) {
+  if (type == fixture_.type) {
+    env_.sendLine("OK");  // already this type: nothing changes
+    return;
+  }
+  // Presets and the scene belong to the old layout. They go first and the type
+  // last, so a power cut in between leaves the old type with its defaults.
+  bool ok = store_.clearForTypeChange();
+  if (ok) {
+    ok = fxselect::write(system_, type);
+    Stats::inc(ok ? stats_.nvsWrites : stats_.nvsFailures);
+  }
+  if (!ok) {
+    reportError("STORAGE");  // the type is unchanged; no restart
+    return;
+  }
+  restartPending_ = true;
+  env_.sendLine("OK");
+  env_.restart();  // boots as the new type, with its defaults
+}
 
 void ControllerCore::sceneChanged(uint32_t nowMs) { store_.noteSceneChanged(nowMs); }
 

@@ -253,6 +253,13 @@ final class FixtureSession {
     EbIncompatibility? incompatibility,
     String? detail,
   }) {
+    if (phase == LinkPhase.incompatible) {
+      _setupNeeded =
+          (incompatibility ?? _status.incompatibility) ==
+          EbIncompatibility.setupNeeded;
+    } else if (phase == LinkPhase.ready) {
+      _setupNeeded = false;
+    }
     _set(
       FixtureStatus(
         phase: phase,
@@ -267,9 +274,18 @@ final class FixtureSession {
     );
   }
 
+  /// The light last reported setup-needed mode (no fixture type): the next
+  /// handshake starts with CAPS, which that mode accepts, instead of INFO.
+  bool _setupNeeded = false;
+
   /// Takes over a fresh link: handshake, then replay recent offline changes.
   /// Throws what [EbSession.start] throws (the caller decides on retries).
-  Future<void> attach(BleLink link, {EbSessionOptions? options}) async {
+  /// [setupFirst]: the light advertises setup-needed mode ([Eb.setupName]).
+  Future<void> attach(
+    BleLink link, {
+    EbSessionOptions? options,
+    bool setupFirst = false,
+  }) async {
     await _detach();
     final EbSession s = EbSession(
       link: link,
@@ -282,7 +298,7 @@ final class FixtureSession {
     _pick = null;
     setPhase(LinkPhase.handshaking);
     try {
-      await s.start();
+      await s.start(setupFirst: setupFirst || _setupNeeded);
     } on Object {
       await _detach();
       rethrow;

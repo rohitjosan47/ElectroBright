@@ -225,7 +225,13 @@ final class EbSession {
 
   /// Subscribes, identifies the light and loads its complete state. Throws
   /// [EbNoResponse], [EbIncompatible] or [LinkClosedException].
-  Future<EbFirmware> start() async {
+  ///
+  /// A light without a fixture type (firmware 3.7.0+ setup-needed mode)
+  /// throws [EbIncompatibility.setupNeeded] after CAPS and VERSION, the only
+  /// handshake queries that mode accepts. [setupFirst] (the light was in that
+  /// mode last time) asks CAPS before INFO, so such a light is never sent a
+  /// command outside that set.
+  Future<EbFirmware> start({bool setupFirst = false}) async {
     _phase = EbPhase.handshaking;
     _changed();
     _notifications = _link
@@ -233,12 +239,34 @@ final class EbSession {
         .listen(_onBytes, onError: (Object _) {});
     unawaited(_link.closed.then(_onLinkClosed));
 
+    if (setupFirst) {
+      final EbResult caps = await _commands.enqueue(
+        const CapsQuery(),
+        seq: ++_seq,
+        attempts: options.handshakeAttempts,
+      );
+      _throwIfClosed(caps);
+      if (caps.isSuccess && (caps.reply! as EbCaps).setupNeeded) {
+        await _setupNeeded();
+      }
+      // Given a type since (or older firmware): the usual handshake.
+    }
     final EbResult info = await _commands.enqueue(
       const InfoQuery(),
       seq: ++_seq,
       attempts: options.handshakeAttempts,
     );
     _throwIfClosed(info);
+    if (info.code == EbError.setupNeeded) {
+      final EbResult caps = await _commands.enqueue(
+        const CapsQuery(),
+        seq: ++_seq,
+      );
+      _throwIfClosed(caps);
+      if (caps.isSuccess && (caps.reply! as EbCaps).setupNeeded) {
+        await _setupNeeded();
+      }
+    }
     if (!info.isSuccess) throw const EbNoResponse();
     final String model = (info.reply! as EbInfo).model;
     // The model id names the layout, so the pipelined STATUS below is parsed
@@ -316,6 +344,23 @@ final class EbSession {
     _armTimerWatch();
     _changed();
     return _firmware!;
+  }
+
+  /// Ends the handshake of a light in setup-needed mode: VERSION for the
+  /// record, then [EbIncompatibility.setupNeeded]. Nothing else is sent.
+  Future<Never> _setupNeeded() async {
+    final EbResult v = await _commands.enqueue(
+      const VersionQuery(),
+      seq: ++_seq,
+    );
+    _throwIfClosed(v);
+    final String version = v.isSuccess
+        ? (v.reply! as EbVersion).version
+        : '?';
+    throw EbIncompatible(
+      EbIncompatibility.setupNeeded,
+      'no fixture type yet (firmware $version)',
+    );
   }
 
   /// Stops using the link (the owner disconnects it).
@@ -631,6 +676,28 @@ final class EbSession {
   /// IDENTIFY (firmware with CAPS `IDENTIFY=1`): the light flashes twice,
   /// chirps once and restores itself; no state changes.
   Future<EbResult> identify() => _send(const Identify(), const <String>[]);
+
+  /// PROBE (CAPS `PROBE=1`): drives one physical LED output (0 red, 1 green,
+  /// 2 blue, 3 white/cool, 4 warm) for up to 3 s, or ends that. Any other
+  /// command also ends it; nothing is stored.
+  Future<EbResult> probe(int output, {required bool on}) {
+    if (!(_firmware?.capabilities.supportsProbe ?? false)) return _skipped;
+    return _send(Probe(output, on: on), const <String>[]);
+  }
+
+  /// SET_TYPE (CAPS `TYPES=`): makes the light a [layout] fixture. On OK the
+  /// light has cleared its presets and scene and restarts as the new type, so
+  /// the link drops; the next handshake identifies it as that type. The same
+  /// type is an OK that changes nothing.
+  Future<EbResult> setType(ChannelLayout layout) {
+    final EbFirmware? fw = _firmware;
+    if (fw == null ||
+        !fw.capabilities.supportsTypeChange ||
+        !fw.caps.types.contains(layout.wire)) {
+      return _skipped;
+    }
+    return _send(SetType(layout), const <String>[]);
+  }
 
   /// Round-trip time of a PING, or null.
   Future<Duration?> ping() async {

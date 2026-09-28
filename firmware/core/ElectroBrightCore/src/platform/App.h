@@ -5,6 +5,8 @@
 #include "../fixture/FixtureProfile.h"
 
 namespace App {
-// Starts the fixture described by `fixture` (copied; call once from setup()).
-void start(const FixtureProfile& fixture);
+// Starts the light as the fixture type stored in it. Without a stored type,
+// `buildDefault` is saved and used (a sketch's first install); a build without
+// one (FixtureType::None) starts in setup-needed mode. Call once from setup().
+void start(FixtureType buildDefault = FixtureType::None);
 }

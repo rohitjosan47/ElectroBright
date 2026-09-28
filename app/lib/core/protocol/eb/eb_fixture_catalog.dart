@@ -4,9 +4,11 @@ import '../../color/led_white_points.dart';
 import '../../model/channel_color.dart';
 import '../../model/channel_layout.dart';
 
-/// One ElectroBright firmware fixture, as its sketch defines it
-/// (`firmware/fixtures/<folder>/Fixture.h`). The cross-repo tests keep every
-/// entry equal to the firmware, except [whitePoints] (app-only product data).
+/// One ElectroBright fixture type, as the firmware's profile table defines it
+/// (`firmware/core/ElectroBrightCore/src/fixture/Profiles.h`; since 3.7.0 one
+/// universal image holds every type and the light stores its own). The
+/// cross-repo tests keep every entry equal to the firmware, except
+/// [whitePoints] (app-only product data).
 @immutable
 final class EbFixtureSpec {
   const EbFixtureSpec({
@@ -16,7 +18,6 @@ final class EbFixtureSpec {
     required this.modelId,
     required this.bleName,
     required this.capsReply,
-    required this.nvsNamespace,
     required this.modeMask,
     required this.colorValues,
     required this.policeAValues,
@@ -25,7 +26,8 @@ final class EbFixtureSpec {
     this.whitePoints = const LedWhitePoints(),
   });
 
-  /// Sketch folder under firmware/fixtures/.
+  /// Sketch folder under firmware/fixtures/: installs the universal firmware
+  /// with this type as a new light's default.
   final String folder;
 
   /// `fwsim --fixture` name.
@@ -34,7 +36,6 @@ final class EbFixtureSpec {
   final String modelId;
   final String bleName;
   final String capsReply;
-  final String nvsNamespace;
 
   /// Supported modes (bit m-1); 0x1FFF = all 13.
   final int modeMask;
@@ -59,7 +60,8 @@ final class EbFixtureSpec {
   String toString() => 'EbFixtureSpec($modelId)';
 }
 
-/// Every fixture of the firmware family (docs/protocol.md).
+/// Every fixture type of the universal firmware (docs/protocol.md), in CAPS
+/// `TYPES=` order.
 abstract final class EbFixtureCatalog {
   static const EbFixtureSpec rgbw = EbFixtureSpec(
     folder: 'ElectroBright_RGBW',
@@ -67,8 +69,7 @@ abstract final class EbFixtureCatalog {
     layout: ChannelLayout.rgbw,
     modelId: 'EB-C3-RGBW-V1',
     bleName: 'ElectroBright_C3_V1',
-    capsReply: 'CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=RGBW',
-    nvsNamespace: 'eb3',
+    capsReply: 'CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=RGBW',
     modeMask: 0x1FFF,
     colorValues: <int>[255, 255, 255, 0],
     policeAValues: <int>[255, 165, 0, 0],
@@ -83,8 +84,7 @@ abstract final class EbFixtureCatalog {
     layout: ChannelLayout.rgb,
     modelId: 'EB-C3-RGB-V1',
     bleName: 'ElectroBright_C3_RGB_V1',
-    capsReply: 'CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=RGB',
-    nvsNamespace: 'eb3rgb',
+    capsReply: 'CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=RGB',
     modeMask: 0x1FFF,
     colorValues: <int>[255, 255, 255],
     policeAValues: <int>[255, 165, 0],
@@ -100,8 +100,7 @@ abstract final class EbFixtureCatalog {
     layout: ChannelLayout.rgbcct,
     modelId: 'EB-C3-RGBCCT-V1',
     bleName: 'ElectroBright_C3_RGBCCT_V1',
-    capsReply: 'CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=RGBCCT',
-    nvsNamespace: 'eb3rgbcct',
+    capsReply: 'CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=RGBCCT',
     modeMask: 0x1FFF,
     colorValues: <int>[0, 0, 0, 255, 255],
     policeAValues: <int>[255, 165, 0, 0, 0],
@@ -116,8 +115,7 @@ abstract final class EbFixtureCatalog {
     layout: ChannelLayout.cct,
     modelId: 'EB-C3-CCT-V1',
     bleName: 'ElectroBright_C3_CCT_V1',
-    capsReply: 'CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=CCT',
-    nvsNamespace: 'eb3cct',
+    capsReply: 'CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=CCT',
     modeMask: 0x1FFF,
     colorValues: <int>[255, 255],
     policeAValues: <int>[0, 255],
@@ -132,8 +130,7 @@ abstract final class EbFixtureCatalog {
     layout: ChannelLayout.w,
     modelId: 'EB-C3-W-V1',
     bleName: 'ElectroBright_C3_W_V1',
-    capsReply: 'CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=W,MODES=1DFF',
-    nvsNamespace: 'eb3w',
+    capsReply: 'CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=W,MODES=1DFF',
     modeMask: 0x1DFF,
     colorValues: <int>[255],
     policeAValues: <int>[255],
@@ -149,6 +146,15 @@ abstract final class EbFixtureCatalog {
     cct,
     w,
   ];
+
+  /// The type SET_TYPE / CAPS `TYPES=` call [wire] (e.g. RGBCCT); null when
+  /// unknown.
+  static EbFixtureSpec? forType(String wire) {
+    for (final EbFixtureSpec f in all) {
+      if (f.layout.wire == wire) return f;
+    }
+    return null;
+  }
 
   static EbFixtureSpec forLayout(ChannelLayout layout) =>
       all.firstWhere((EbFixtureSpec f) => f.layout == layout);

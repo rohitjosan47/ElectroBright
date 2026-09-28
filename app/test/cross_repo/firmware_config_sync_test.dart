@@ -1,3 +1,4 @@
+import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/protocol/eb/eb_command.dart';
 import 'package:electrobright/core/protocol/eb/eb_constants.dart';
 import 'package:electrobright/sim/eb_device_model.dart';
@@ -20,9 +21,15 @@ void main() {
     expect(c['kServiceUuid']!.toLowerCase(), Eb.serviceUuid);
     expect(c['kRxCharUuid']!.toLowerCase(), Eb.rxUuid);
     expect(c['kTxCharUuid']!.toLowerCase(), Eb.txUuid);
-    expect(c['kDeviceName'], startsWith(Eb.namePrefix));
-    expect(Eb.modelPattern.hasMatch(c['kModelId']!), isTrue);
-    expect(c['kCapsReply'], contains('PROTOCOL=${Eb.protocolVersion}'));
+    for (final FirmwareFixture f in firmwareFixtureList()) {
+      final List<String> identity = profileStrings(f.source);
+      expect(identity[1], startsWith(Eb.namePrefix));
+      expect(Eb.modelPattern.hasMatch(identity[0]), isTrue);
+    }
+    expect(
+      firmwareCaps('RGBW', 0x1FFF),
+      contains('PROTOCOL=${Eb.protocolVersion}'),
+    );
     expect(
       int.parse(c['kFirmwareVersion']!.split('.').first),
       greaterThanOrEqualTo(Eb.minFirmwareMajor),
@@ -30,9 +37,10 @@ void main() {
   });
 
   test('the Dart firmware twin reports the firmware identity', () {
+    final List<String> rgbw = profileStrings(profileSource('Rgbw'));
     expect(EbDeviceModel.firmwareVersion, c['kFirmwareVersion']);
-    expect(EbDeviceModel().modelId, c['kModelId']);
-    expect(EbDeviceModel().capsReply, c['kCapsReply']);
+    expect(EbDeviceModel().modelId, rgbw[0]);
+    expect(EbDeviceModel().capsReply, firmwareCaps('RGBW', 0x1FFF));
   });
 
   test('typed commands accept exactly the firmware parser ranges', () {
@@ -60,9 +68,22 @@ void main() {
               value(m.group(6)!),
             ),
         };
-    expect(ranges.length, 32, reason: 'every parser row found');
+    expect(ranges.length, 34, reason: 'every parser row found');
     expect(ranges['IDENTIFY'], (0, 0, 0, 0));
     expect(const Identify().wire, 'IDENTIFY');
+    // PROBE:<output>:<0|1>; SET_TYPE takes a type name (TYPES=).
+    expect(ranges['PROBE'], (0, Probe.outputs - 1, 0, 1));
+    expect(Probe(Probe.outputs - 1, on: true).wire, 'PROBE:4:1');
+    expect(Probe(0, on: false).wire, 'PROBE:0:0');
+    expect(() => Probe(Probe.outputs, on: true), throwsA(anything));
+    expect(() => Probe(-1, on: true), throwsA(anything));
+    expect(ranges.containsKey('SET_TYPE'), isTrue);
+    for (final String type in firmwareTypes()) {
+      expect(
+        SetType(ChannelLayout.fromWire(type)!).wire,
+        'SET_TYPE:$type',
+      );
+    }
 
     void accepts(
       String name,

@@ -1,14 +1,14 @@
 # ElectroBright RGBW fixture
 
-The original ElectroBright light: four channels, red, green, blue and a white LED, on an ESP32-C3. This sketch is the shared core ([`firmware/core`](../../core/ElectroBrightCore)) plus [`Fixture.h`](Fixture.h).
+The original ElectroBright light: four channels, red, green, blue and a white LED, on an ESP32-C3. This sketch installs the universal ElectroBright firmware (the shared core, [`firmware/core`](../../core/ElectroBrightCore)) and only sets the type a new light gets: **RGBW**. A light that already has a type keeps it; the app changes it with `SET_TYPE`. This type's data is in the core's profile table ([`fixture/Profiles.h`](../../core/ElectroBrightCore/src/fixture/Profiles.h)).
 
 | | |
 |---|---|
 | Model id / BLE name | `EB-C3-RGBW-V1` / `ElectroBright_C3_V1` |
-| CAPS | `CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=RGBW` |
+| CAPS | `CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=RGBW` |
 | Channels (wire order) | R, G, B, W |
 | Colour on the wire | `COLOR:r,g,b,w` (alias `RGBW:`); 8-byte binary frame, plus the legacy 7/6-byte frames; STATUS has 23 fields |
-| Flash namespace | `eb3`: updating clears saved presets once; colour, mode and the sound setting are kept |
+| Flash namespace | `eb3` (every type; the type itself is in `ebsys`) |
 
 ## Wiring
 

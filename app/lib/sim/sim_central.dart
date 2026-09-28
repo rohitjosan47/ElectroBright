@@ -12,21 +12,25 @@ import 'eb_device_model.dart';
 /// A simulated light for Demo mode and tests: the firmware twin plus radio
 /// behaviour (advertising, range, power).
 final class SimFixture {
-  /// A light running the [fixture] firmware (advertised under its BLE name
-  /// unless [name] overrides it).
+  /// A light running the universal firmware, new with the [fixture] type
+  /// (advertised under its type's BLE name unless [name] overrides it).
   SimFixture.electroBright({
     required this.id,
     EbFixtureSpec fixture = EbFixtureCatalog.rgbw,
-    String? name,
+    this._name,
     this.rssi = -58,
-  }) : name = name ?? fixture.bleName,
-       model = EbDeviceModel(fixture: fixture);
+  }) : model = EbDeviceModel(fixture: fixture);
+
+  /// A light whose firmware has no fixture type yet (setup-needed mode).
+  SimFixture.setupNeeded({required this.id, this.rssi = -58})
+    : _name = null,
+      model = EbDeviceModel(fixture: null);
 
   /// A light still running the original (pre-3.x) ElectroBright firmware:
   /// it advertises `ElectroBright_BLE` and answers INFO with the old model
   /// name, so the app shows "Firmware update needed".
   SimFixture.legacy({required this.id, this.rssi = -66})
-    : name = Eb.legacyName,
+    : _name = Eb.legacyName,
       model = EbDeviceModel(fixture: _legacyFirmware);
 
   static const EbFixtureSpec _legacyFirmware = EbFixtureSpec(
@@ -36,7 +40,6 @@ final class SimFixture {
     modelId: Eb.legacyInfo,
     bleName: Eb.legacyName,
     capsReply: 'CAPS:PROTOCOL=0',
-    nvsNamespace: 'eeprom',
     modeMask: 0x1FFF,
     colorValues: <int>[255, 255, 255, 0],
     policeAValues: <int>[255, 165, 0, 0],
@@ -45,7 +48,10 @@ final class SimFixture {
   );
 
   final String id;
-  final String name;
+  final String? _name;
+
+  /// Advertised name: the active type's (it changes with SET_TYPE).
+  String get name => _name ?? model.fixture.bleName;
   int rssi;
   final EbDeviceModel model;
 
@@ -245,7 +251,7 @@ final class SimCentral implements BleCentral {
       f.model
         ..connect()
         ..pass();
-      final _SimLink link = _SimLink(f);
+      final _SimLink link = _SimLink(f, f.model.restarts);
       f._link = link;
       ready.complete(link);
     }
@@ -273,9 +279,13 @@ final class SimCentral implements BleCentral {
 }
 
 final class _SimLink implements BleLink {
-  _SimLink(this._fixture);
+  _SimLink(this._fixture, this._restarts);
 
   final SimFixture _fixture;
+
+  /// The light's restart count when this link was made: a restart (SET_TYPE)
+  /// drops the link.
+  final int _restarts;
   final StreamController<Uint8List> _notes =
       StreamController<Uint8List>.broadcast();
   final Completer<LinkLossReason> _closed = Completer<LinkLossReason>();
@@ -316,6 +326,7 @@ final class _SimLink implements BleLink {
     for (final Uint8List n in _fixture.model.takeNotifications()) {
       if (!_notes.isClosed) _notes.add(n);
     }
+    if (_fixture.model.restarts != _restarts) _drop(LinkLossReason.lost);
   }
 
   void _drop(LinkLossReason reason) {

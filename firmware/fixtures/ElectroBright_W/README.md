@@ -5,15 +5,15 @@ A single-channel ElectroBright light for single-colour white strips. It has the 
 - DIAG and factory reset;
 - **12 of the 13 modes**: every mode except Rainbow.
 
-This sketch is the shared core ([`firmware/core`](../../core/ElectroBrightCore)) plus [`Fixture.h`](Fixture.h).
+This sketch installs the universal ElectroBright firmware (the shared core, [`firmware/core`](../../core/ElectroBrightCore)) and only sets the type a new light gets: **W**. A light that already has a type keeps it; the app changes it with `SET_TYPE`. This type's data is in the core's profile table ([`fixture/Profiles.h`](../../core/ElectroBrightCore/src/fixture/Profiles.h)).
 
 | | |
 |---|---|
 | Model id / BLE name | `EB-C3-W-V1` / `ElectroBright_C3_W_V1` |
-| CAPS | `CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,LAYOUT=W,MODES=1DFF` |
+| CAPS | `CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=W,MODES=1DFF` |
 | Channels | W |
 | Colour on the wire | `COLOR:w` and `POLICE_COLOR_A/B:w`; 5-byte binary frame `[AA, seq, W, Br, cs]`, salt 0x54; STATUS has 14 fields |
-| Flash namespace | `eb3w` (separate from the other fixtures) |
+| Flash namespace | `eb3` (every type; the type itself is in `ebsys`) |
 
 ## Wiring
 

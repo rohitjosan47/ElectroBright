@@ -50,7 +50,6 @@ void main() {
     capsReply:
         'CAPS:PROTOCOL=1,PWM=14,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,'
         'LAYOUT=RGB,MODES=17F7',
-    nvsNamespace: 'eb3rgb',
     modeMask: 0x17F7,
     colorValues: <int>[255, 255, 255],
     policeAValues: <int>[255, 165, 0],

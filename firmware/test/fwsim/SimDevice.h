@@ -6,7 +6,8 @@
 // It mirrors, step for step (keep in sync when the platform layer changes):
 //   src/platform/BleNus.cpp  RxCallbacks::onWrite, ServerCallbacks::onConnect /
 //                            onDisconnect / onMTUChange, ble::notify, ble::maxPayload
-//   src/platform/App.cpp     controlTask() steps 1-5 and DeviceEnv
+//   src/platform/App.cpp     App::start() (fixture type), controlTask() steps 1-6
+//                            and DeviceEnv
 //
 // Time is virtual: nothing happens between calls. A "pass" is one iteration of
 // the control task loop; passBegin()/passEnd() split it at the point where
@@ -27,16 +28,22 @@
 
 class SimDevice {
  public:
-  // Simulates the fixture `fixture` (default: the RGBW light the app drives).
-  explicit SimDevice(const FixtureProfile& fixture = fx::rgbw::kProfile);
+  // The universal firmware built with `buildDefault` as the type of a first
+  // install (default: the RGBW light the app drives); FixtureType::None is a
+  // build without a default (setup-needed mode until SET_TYPE).
+  explicit SimDevice(FixtureType buildDefault = FixtureType::Rgbw);
+  explicit SimDevice(const FixtureProfile& buildDefault) : SimDevice(buildDefault.type) {}
   // The controller's environment keeps a reference to this object.
   SimDevice(const SimDevice&) = delete;
   SimDevice& operator=(const SimDevice&) = delete;
 
-  // App::start() step 3 (state load, first publish, boot sound).
+  // App::start() step 4 (state load, first publish, boot sound).
   void boot();
-  // Power cycle: RAM state is lost, flash (MockKv) survives, the link drops.
+  // Power cycle: RAM state is lost, flash (MockKv) survives, the link drops,
+  // and the stored fixture type is read again.
   void reboot();
+  // Times the light restarted itself (SET_TYPE).
+  int restarts() const { return restarts_; }
 
   // --- Radio (BleNus.cpp) ------------------------------------------------------
   void connect();                 // ServerCallbacks::onConnect (MTU back to 23)
@@ -62,12 +69,13 @@ class SimDevice {
   std::vector<SoundId> takeSounds();
 
   // --- Inspection -------------------------------------------------------------------
-  const FixtureProfile& fixture() const { return fixture_; }
+  const FixtureProfile& fixture() const { return rig_->fixture; }
   const ControllerCore& core() const { return rig_->core; }
   const StateStore& store() const { return rig_->store; }
   const Stats& stats() const { return rig_->stats; }
   const RenderParams& lastParams() const { return rig_->env.params; }
   MockKv& flash() { return kv_; }
+  MockKv& systemFlash() { return system_; }
   uint32_t now() const { return now_; }
   bool connected() const { return connected_; }
   uint16_t mtu() const { return mtu_; }
@@ -85,6 +93,8 @@ class SimDevice {
     void publish(const RenderParams& p) override { params = p; }
     void playSound(SoundId id) override { sounds.push_back(id); }
     void systemDiag(SystemDiag& d) override;
+    void restart() override { restartRequested = true; }
+    bool restartRequested = false;
     RenderParams params{};
     std::vector<SoundId> sounds;
 
@@ -92,10 +102,15 @@ class SimDevice {
     SimDevice& dev_;
   };
 
-  // Everything that a reboot recreates (flash lives outside, in kv_).
+  // Everything that a reboot recreates (flash lives outside, in kv_ and
+  // system_); App::start() picks the profile first.
   struct Rig {
-    Rig(SimDevice& dev, MockKv& kv, const FixtureProfile& fixture)
-        : env(dev), store(kv, stats, fixture), core(env, store, stats, fixture) {}
+    Rig(SimDevice& dev, MockKv& kv, MockKv& system, FixtureType buildDefault)
+        : fixture(fxselect::select(system, buildDefault)),
+          env(dev),
+          store(kv, stats, fixture),
+          core(env, store, system, stats, fixture) {}
+    const FixtureProfile& fixture;
     Env env;
     Stats stats;
     StateStore store;
@@ -105,8 +120,12 @@ class SimDevice {
   bool notify(const uint8_t* data, size_t len);  // ble::notify
   size_t maxPayload() const { return mtu_ > 3 ? static_cast<size_t>(mtu_ - 3) : 20; }
 
-  const FixtureProfile& fixture_;
+  void restartNow();
+
+  const FixtureType buildDefault_;
   MockKv kv_;
+  MockKv system_;
+  int restarts_ = 0;
   std::unique_ptr<Rig> rig_;
   Egress egress_;
   LineAssembler assembler_;

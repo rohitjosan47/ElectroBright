@@ -3,6 +3,7 @@
 //
 // The core holds everything the fixtures have in common (modes and effects,
 // the BLE protocol, presets, sleep timer, sound). A fixture sketch in
-// firmware/fixtures/<Name>/ only adds its identity and wiring and starts it.
+// firmware/fixtures/<Name>/ only chooses the fixture type of a first install;
+// every type is in the profile table (fixture/Profiles.h).
 
 #include "platform/App.h"

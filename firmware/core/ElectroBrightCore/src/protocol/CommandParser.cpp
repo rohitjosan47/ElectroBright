@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "../config/Config.h"
+#include "../fixture/Profiles.h"
 
 namespace {
 
@@ -56,6 +57,8 @@ constexpr Spec kSpecs[] = {
   {"PING",                CmdId::Ping,              0, 0, 0,          0, 0,         "FORMAT"},
   {"DIAG",                CmdId::Diag,              0, 0, 0,          0, 0,         "FORMAT"},
   {"IDENTIFY",            CmdId::Identify,          0, 0, 0,          0, 0,         "FORMAT"},
+  {"SET_TYPE",            CmdId::SetType,           1, 0, 0,          0, 0,         "TYPE_INVALID"},
+  {"PROBE",               CmdId::Probe,             2, 0, 4,          0, 1,         "PROBE_INVALID"},
 };
 // clang-format on
 
@@ -92,6 +95,11 @@ ParseResult fail(ParseStatus status, const char* code) {
   ParseResult r{};
   r.status = status;
   r.errorCode = code;
+  return r;
+}
+ParseResult fail(ParseStatus status, const Spec& spec) {
+  ParseResult r = fail(status, spec.errorCode);
+  r.cmd.id = spec.id;
   return r;
 }
 
@@ -143,38 +151,46 @@ ParseResult parseCommand(const char* line, const ChannelLayout& layout) {
 
   if (argc == 0) {
     // "STATUS" and "STATUS:" are both fine; "STATUS:5" is not.
-    if (!noArgText) return fail(ParseStatus::Format, spec->errorCode);
+    if (!noArgText) return fail(ParseStatus::Format, *spec);
     return r;
   }
-  if (colon == nullptr || noArgText) return fail(ParseStatus::Format, spec->errorCode);
+  if (colon == nullptr || noArgText) return fail(ParseStatus::Format, *spec);
+
+  if (spec->id == CmdId::SetType) {
+    const FixtureProfile* type = profiles::forName(p, static_cast<size_t>(end - p));
+    if (type == nullptr) return fail(ParseStatus::Range, *spec);
+    r.cmd.args[0] = static_cast<int32_t>(type->type);
+    return r;
+  }
+  const char separator = spec->id == CmdId::Probe ? ':' : ',';
 
   uint8_t field = 0;
   const char* fieldStart = args;
   for (const char* q = args;; ++q) {
-    if (q == end || *q == ',') {
+    if (q == end || *q == separator) {
       if (field == argc) {
         // Only a single, empty trailing field (a trailing comma) is tolerated.
         const char* t = fieldStart;
         while (t < q && isSpace(*t)) ++t;
-        if (t != q || q != end) return fail(ParseStatus::Format, spec->errorCode);
+        if (t != q || q != end) return fail(ParseStatus::Format, *spec);
         break;
       }
       int32_t v = 0;
       const int rc = parseField(fieldStart, q, v);
-      if (rc == 1) return fail(ParseStatus::Format, spec->errorCode);
+      if (rc == 1) return fail(ParseStatus::Format, *spec);
       const int32_t lo = field == 0 ? spec->firstMin : spec->restMin;
       const int32_t hi = field == 0 ? spec->firstMax : spec->restMax;
-      if (rc == 2 || v < lo || v > hi) return fail(ParseStatus::Range, spec->errorCode);
+      if (rc == 2 || v < lo || v > hi) return fail(ParseStatus::Range, *spec);
       r.cmd.args[field++] = v;
       if (q == end) break;
       fieldStart = q + 1;
     }
   }
-  if (field != argc) return fail(ParseStatus::Format, spec->errorCode);
+  if (field != argc) return fail(ParseStatus::Format, *spec);
   // A mode this fixture cannot show is out of range, like MODE:14.
   const bool takesMode = spec->id == CmdId::Mode || spec->id == CmdId::ModeSpeed ||
                          spec->id == CmdId::ModeFrequency || spec->id == CmdId::ModeCapabilities;
-  if (takesMode && !layout::supportsMode(layout, r.cmd.args[0])) return fail(ParseStatus::Range, spec->errorCode);
+  if (takesMode && !layout::supportsMode(layout, r.cmd.args[0])) return fail(ParseStatus::Range, *spec);
   return r;
 }
 

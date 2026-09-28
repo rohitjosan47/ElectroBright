@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "ElectroBright_RGBW/Fixture.h"
+#include "fixture/Profiles.h"
 #include "Fixtures.h"
 #include "protocol/BinaryFrame.h"
 #include "protocol/CommandParser.h"
@@ -186,7 +186,7 @@ TEST(binary_frames_round_trip_and_validate) {
 
 // ------------------------------------------------------------------ replies
 TEST(status_reply_has_exact_23_field_format) {
-  Scene s = state::defaultScene(fx::rgbw::kProfile.defaults);
+  Scene s = state::defaultScene(profiles::kRgbw.defaults);
   s.color = {10, 20, 30, 40};
   s.brightness = 200;
   s.mode = 3;
@@ -199,7 +199,7 @@ TEST(status_reply_has_exact_23_field_format) {
 }
 
 TEST(mode_settings_and_presets_replies) {
-  Scene s = state::defaultScene(fx::rgbw::kProfile.defaults);
+  Scene s = state::defaultScene(profiles::kRgbw.defaults);
   s.speed[0] = 1;
   s.freq[12] = 10;
   char buf[256];
@@ -304,7 +304,9 @@ TEST(egress_drops_oldest_whole_lines_when_full) {
 
 TEST(caps_announce_the_preset_count_of_every_fixture) {
   for (const NamedFixture& f : kAllFixtures) {
-    const std::string caps = f.profile->capsReply;
+    char buf[256];
+    replies::caps(buf, sizeof(buf), *f.profile);
+    const std::string caps = buf;
     CHECK_EQ(caps.rfind("CAPS:", 0), size_t{0});
     // Exactly one PRESETS= field, equal to the slot count the firmware has.
     int found = 0;
