@@ -208,6 +208,12 @@ final class EbResult {
   static const EbResult timedOut = EbResult(EbOutcome.timedOut);
   static const EbResult disconnected = EbResult(EbOutcome.disconnected);
 
+  /// The link refused the write while still connected (never sent).
+  static const EbResult writeFailed = EbResult(
+    EbOutcome.failed,
+    code: 'WRITE_FAILED',
+  );
+
   final EbOutcome outcome;
 
   /// Firmware error code for [EbOutcome.failed].

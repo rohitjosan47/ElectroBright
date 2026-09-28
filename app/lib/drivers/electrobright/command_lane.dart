@@ -177,11 +177,18 @@ final class CommandLane {
     return false;
   }
 
-  /// Fails everything outstanding; the link is gone.
+  /// Fails everything outstanding; the link is gone. That includes a job
+  /// still being fenced (waiting for the stream's fence or its PING), which
+  /// is neither active nor queued.
   void close() {
     if (_closed) return;
     _closed = true;
-    final List<_Job> all = <_Job>[?_active, ..._queries, ..._queue];
+    final List<_Job> all = <_Job>[
+      ?_startingJob,
+      ?_active,
+      ..._queries,
+      ..._queue,
+    ];
     _queue.clear();
     for (final _Job j in all) {
       _finish(j, EbResult.disconnected, pump: false);
@@ -239,7 +246,14 @@ final class CommandLane {
     try {
       if (job.fence) {
         await _stream.fenceAndHold();
+        // The fence holds the stream; the job releases it when it finishes
+        // (also when close() already finished it meanwhile).
         job.holding = true;
+        if (job.done.isCompleted) {
+          job.holding = false;
+          _stream.release();
+          return;
+        }
         final _Job ping = _Job(
           const Ping(),
           -1,
@@ -249,7 +263,10 @@ final class CommandLane {
         _active = ping;
         await _transmit(ping);
         final EbResult pong = await ping.done.future;
-        if (_closed) return;
+        if (_closed) {
+          _finish(job, EbResult.disconnected);
+          return;
+        }
         if (pong.outcome != EbOutcome.ok) {
           _finish(job, pong);
           return;
@@ -258,11 +275,18 @@ final class CommandLane {
         _stream.hold();
         job.holding = true;
       }
+      if (_closed) {
+        _finish(job, EbResult.disconnected);
+        return;
+      }
       _active = job;
       if (identical(_startingJob, job)) _startingJob = null;
       await _transmit(job);
     } on LinkClosedException {
       _finish(job, EbResult.disconnected);
+    } on Object {
+      // The fence frame could not be written on a live link.
+      _finish(job, _closed ? EbResult.disconnected : EbResult.writeFailed);
     } finally {
       if (identical(_startingJob, job)) _startingJob = null;
     }
@@ -289,6 +313,21 @@ final class CommandLane {
       sent++;
     } on LinkClosedException {
       _finish(job, EbResult.disconnected);
+    } on Object {
+      // Refused on a live link. Once the final chunk went out its timeout is
+      // armed (line reset, resend); before that nothing would ever end it.
+      if (_closed) {
+        _finish(job, EbResult.disconnected);
+      } else if (!job.sent) {
+        // Discard any chunks the light already holds, before anything else
+        // is written (the writer keeps order).
+        unawaited(
+          _writer
+              .write(_rx, lineResetWrite, withResponse: true)
+              .catchError((Object _) {}),
+        );
+        _finish(job, EbResult.writeFailed);
+      }
     }
   }
 

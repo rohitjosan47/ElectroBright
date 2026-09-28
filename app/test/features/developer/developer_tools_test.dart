@@ -281,6 +281,63 @@ void main() {
     await DemoApp.shutDown(t);
   });
 
+  testWidgets('SET_TYPE reached the light but its OK was lost to the drop: '
+      'back as the new type, the change is done', (WidgetTester t) async {
+    final DemoApp d = await start(t);
+    final String id = d.id('Hallway');
+    final String device = d.app.registry.byId(id)!.deviceId;
+    await openDeveloper(t, d, 'Hallway');
+    await t.tap(key('dev-type-RGB'));
+    await settle(t, 1);
+    await t.tap(key('dev-change-type'));
+    await settle(t, 1);
+    // The light takes SET_TYPE, but its OK never gets out; then the link
+    // drops (and the light restarts as RGB).
+    d.model('Hallway').failNextNotifies(1 << 20);
+    await t.tap(key('change-type-confirm'));
+    await settleRestart(t, 1);
+    d.radio.setAvailable(device, available: false);
+    await settleRestart(t, 1);
+    expect(find.text('Restarting as RGB…'), findsOneWidget);
+    d.radio.setAvailable(device, available: true);
+    await settleRestart(t, 8);
+    expect(find.text('Hallway is now a RGB light'), findsWidgets);
+    expect(d.model('Hallway').fixture.layout, ChannelLayout.rgb);
+    expect(d.app.registry.byId(id)!.layout, ChannelLayout.rgb);
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('the link drops before SET_TYPE is sent: once the light is '
+      'back as its old type the page says so, never stuck', (
+    WidgetTester t,
+  ) async {
+    final DemoApp d = await start(t);
+    final String id = d.id('Hallway');
+    final String device = d.app.registry.byId(id)!.deviceId;
+    await openDeveloper(t, d, 'Hallway');
+    await t.tap(key('dev-type-RGB'));
+    await settle(t, 1);
+    await t.tap(key('dev-change-type'));
+    await settle(t, 1);
+    // Gone while the dialog is open; back two seconds later.
+    d.radio.setAvailable(device, available: false);
+    await t.tap(key('change-type-confirm'));
+    await settleRestart(t, 2);
+    expect(find.text('Restarting as RGB…'), findsOneWidget);
+    d.radio.setAvailable(device, available: true);
+    await settleRestart(t, 6);
+    expect(
+      find.text(
+        "The type wasn't changed. Check the light is connected and try again.",
+      ),
+      findsOneWidget,
+    );
+    expect(d.model('Hallway').restarts, 0);
+    expect(d.app.registry.byId(id)!.layout, ChannelLayout.w);
+    expect(d.session('Hallway').status.isReady, isTrue);
+    await DemoApp.shutDown(t);
+  });
+
   testWidgets('a light without a type: "Setup needed" on Home, only the '
       'setup flow, in no group until set up', (WidgetTester t) async {
     final DemoApp d = await start(t);

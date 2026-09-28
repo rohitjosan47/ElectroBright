@@ -7,6 +7,7 @@ import 'package:electrobright/core/model/channel_color.dart';
 import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/protocol/eb/eb_command.dart';
 import 'package:electrobright/core/protocol/eb/eb_reply.dart';
+import 'package:electrobright/core/protocol/eb/text_chunker.dart';
 import 'package:electrobright/core/util/scheduler.dart';
 import 'package:electrobright/drivers/electrobright/command_lane.dart';
 import 'package:electrobright/drivers/electrobright/eb_types.dart';
@@ -676,23 +677,127 @@ void main() {
       expect(r.link.writes, isEmpty);
     });
 
-    test(
-      'closing while a fenced command waits for its PING fails the '
-      'command',
-      () async {
-        final _Rig r = _Rig();
-        unawaited(r.send(PresetSave(0)));
+    test('closing while a fenced command waits for its PING fails the '
+        'command', () async {
+      final _Rig r = _Rig();
+      unawaited(r.send(PresetSave(0)));
+      await _pump();
+      expect(r.lines, <String>['PING']);
+      r.lane.close();
+      await _pump();
+      expect(r.results['PRESET_SAVE:0']?.outcome, EbOutcome.disconnected);
+      expect(r.done.single.command.wire, 'PRESET_SAVE:0');
+    });
+
+    test('the session teardown order (writer, stream, lane) while the fence '
+        'PING is being written ends the fenced command disconnected', () async {
+      final _Rig r = _Rig();
+      r.link.manual = true;
+      unawaited(r.send(PresetLoad(2)));
+      await _pump();
+      expect(r.lines, <String>['PING']);
+      // The link drops before the PING's write is confirmed.
+      r.writer.close(LinkLossReason.lost);
+      r.stream.close();
+      r.lane.close();
+      await _pump();
+      expect(r.results['PRESET_LOAD:2']?.outcome, EbOutcome.disconnected);
+      expect(r.done.single.result.outcome, EbOutcome.disconnected);
+      expect(r.lane.isIdle, isTrue);
+    });
+
+    test('closing while a fenced command waits for the stream\'s fence frame '
+        'fails it and releases the stream', () async {
+      final _Rig r = _Rig();
+      r.link.manual = true;
+      r.stream.submit();
+      await _pump();
+      r.link.writes.single.done.complete();
+      await _pump();
+      r.clock.advance(const Duration(milliseconds: 30));
+      unawaited(r.send(FactoryReset()));
+      await _pump();
+      // The reliable fence frame is in flight; no PING yet.
+      expect(r.lines, <String>['FRAME', 'FRAME']);
+      r.lane.close();
+      await _pump();
+      expect(r.results['FACTORY_RESET']?.outcome, EbOutcome.disconnected);
+      // The fence frame lands after all: the hold it took is given back.
+      r.link.writes.last.done.complete();
+      await _pump();
+      expect(r.stream.isIdle, isTrue);
+      expect(r.lane.isIdle, isTrue);
+    });
+
+    test('fenced commands at every stage end disconnected when the link drops: '
+        'awaiting the reply, waiting for PING, queued', () async {
+      final _Rig r = _Rig();
+      unawaited(r.send(PresetSave(0)));
+      await _pump();
+      r.lane.onReply(const EbOk()); // PING answered
+      await _pump();
+      expect(r.lines, <String>['PING', 'PRESET_SAVE:0']);
+      unawaited(r.send(PresetLoad(1)));
+      unawaited(r.send(SetMode(3), fence: true));
+      await _pump();
+      r.writer.close(LinkLossReason.lost);
+      r.stream.close();
+      r.lane.close();
+      await _pump();
+      expect(r.results['PRESET_SAVE:0']?.outcome, EbOutcome.disconnected);
+      expect(r.results['PRESET_LOAD:1']?.outcome, EbOutcome.disconnected);
+      expect(r.results['MODE:3']?.outcome, EbOutcome.disconnected);
+      expect(r.done, hasLength(3));
+    });
+
+    test('a write refused on a live link before the last chunk ends the '
+        'command (WRITE_FAILED); the next one goes', () async {
+      final _Rig r = _Rig();
+      r.mtu = 23; // 20-byte chunks: MODE_FREQUENCY:12,10 takes two
+      r.link.manual = true;
+      final Future<EbResult> f = r.send(SetModeFrequency(12, 10));
+      unawaited(r.send(SetMode(5)));
+      await _pump();
+      expect(r.link.writes, hasLength(1));
+      r.link.writes.first.done.completeError(StateError('refused'));
+      await _pump();
+      final EbResult result = await f;
+      expect(result.outcome, EbOutcome.failed);
+      expect(result.code, EbResult.writeFailed.code);
+      expect(r.done.first.result.code, 'WRITE_FAILED');
+      // A line reset first (the light drops the half line), then the next
+      // command: not stuck.
+      expect(r.link.writes, hasLength(2));
+      expect(r.link.writes.last.value, lineResetWrite);
+      r.link.writes.last.done.complete();
+      await _pump();
+      expect(r.link.writes, hasLength(3));
+      expect(String.fromCharCodes(r.link.writes.last.value), 'MODE:5\n');
+    });
+
+    test('a fence frame refused three times on a live link fails the fenced '
+        'command (WRITE_FAILED) and frees the lane', () async {
+      final _Rig r = _Rig();
+      r.link.manual = true;
+      r.stream.submit();
+      await _pump();
+      r.link.writes.single.done.complete();
+      await _pump();
+      r.clock.advance(const Duration(milliseconds: 30));
+      final Future<EbResult> f = r.send(PresetSave(1));
+      unawaited(r.send(SetMode(6)));
+      for (int i = 0; i < StreamLane.fenceAttempts; i++) {
         await _pump();
-        expect(r.lines, <String>['PING']);
-        r.lane.close();
+        expect(r.link.writes.last.withResponse, isTrue);
+        r.link.writes.last.done.completeError(StateError('refused'));
         await _pump();
-        expect(r.results['PRESET_SAVE:0']?.outcome, EbOutcome.disconnected);
-        expect(r.done.single.command.wire, 'PRESET_SAVE:0');
-      },
-      skip:
-          'lib bug: CommandLane._start returns on `if (_closed) return;` '
-          'after the fence PING without finishing the job, and close() does '
-          'not see it (_active is the PING), so the command never completes',
-    );
+        r.clock.advance(const Duration(milliseconds: 30));
+      }
+      final EbResult result = await f;
+      expect(result.code, 'WRITE_FAILED');
+      expect(r.lines.where((String l) => l == 'PING'), isEmpty);
+      await _pump();
+      expect(r.lines.last, 'MODE:6', reason: 'the lane goes on');
+    });
   });
 }

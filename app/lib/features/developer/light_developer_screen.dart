@@ -16,6 +16,7 @@ import '../../design/components/settings_list.dart';
 import '../../design/haptics/haptics.dart';
 import '../../design/haptics/haptics_scope.dart';
 import '../../design/tokens/tokens.dart';
+import '../../drivers/electrobright/eb_session.dart';
 import '../../drivers/electrobright/eb_types.dart';
 import '../../l10n/app_localizations.dart';
 import '../../sessions/connection_manager.dart';
@@ -132,17 +133,32 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
       _change = _Change.sending;
       _target = to;
     });
+    final EbSession? link = s.session;
     final EbResult r = await s.setType(to);
     if (!mounted) return;
-    if (!r.isSuccess) {
+    // The link dropped before the reply: the light may have taken the type
+    // (its OK lost to the restart) or not; its next handshake tells.
+    final bool dropped = r.outcome == EbOutcome.disconnected;
+    if (!r.isSuccess && !dropped) {
+      setState(() => _change = _Change.failed);
+      return;
+    }
+    setState(() => _change = _Change.restarting);
+    final bool back = await _cameBackAs(
+      s,
+      to,
+      droppedFrom: dropped ? link : null,
+    );
+    if (!mounted) return;
+    if (dropped && !back && s.status.isReady) {
+      // Back as it was: the type was not changed.
       setState(() => _change = _Change.failed);
       return;
     }
     // The light erased its presets: so do their names here.
-    ref.read(presetMetaProvider(f.id).notifier).clearAll();
-    setState(() => _change = _Change.restarting);
-    final bool back = await _cameBackAs(s, to);
-    if (!mounted) return;
+    if (back || !dropped) {
+      ref.read(presetMetaProvider(f.id).notifier).clearAll();
+    }
     HapticsScope.of(context)
         .play(back ? HapticEvent.success : HapticEvent.selection);
     setState(() {
@@ -154,8 +170,14 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
   }
 
   /// Whether the light restarts and is identified as [to] (the registry
-  /// re-identifies it) within [typeChangeReconnectLimit].
-  Future<bool> _cameBackAs(FixtureSession s, ChannelLayout to) async {
+  /// re-identifies it) within [typeChangeReconnectLimit]. After a link
+  /// that [droppedFrom] before SET_TYPE was answered, a light back on a new
+  /// link as another type ends the wait at once (false).
+  Future<bool> _cameBackAs(
+    FixtureSession s,
+    ChannelLayout to, {
+    EbSession? droppedFrom,
+  }) async {
     final AppSession app = ref.read(appSessionProvider)!;
     bool isBack() {
       final Fixture? f = app.registry.byId(widget.fixtureId);
@@ -166,15 +188,30 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
           s.status.view?.firmware?.layout == to;
     }
 
+    bool backAsOther() {
+      final ChannelLayout? now = s.status.view?.firmware?.layout;
+      return droppedFrom != null &&
+          !identical(s.session, droppedFrom) &&
+          s.status.isReady &&
+          now != null &&
+          now != to;
+    }
+
     final Completer<bool> done = Completer<bool>();
     void check([Object? _]) {
-      if (isBack() && !done.isCompleted) done.complete(true);
+      if (done.isCompleted) return;
+      if (isBack()) {
+        done.complete(true);
+      } else if (backAsOther()) {
+        done.complete(false);
+      }
     }
 
     final StreamSubscription<FixtureStatus> a = s.statuses.listen(check);
     final StreamSubscription<List<Fixture>> b = app.registry.changes.listen(
       check,
     );
+    check();
     final Timer limit = Timer(typeChangeReconnectLimit, () {
       if (!done.isCompleted) done.complete(false);
     });

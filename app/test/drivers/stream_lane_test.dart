@@ -31,6 +31,9 @@ final class _Write {
 final class _FakeLink implements BleLink {
   bool manual = false;
   bool failNext = false;
+
+  /// The next writes are refused on a live link (not a closed one).
+  int refuse = 0;
   final List<_Write> writes = <_Write>[];
 
   _Write get last => writes.last;
@@ -56,7 +59,10 @@ final class _FakeLink implements BleLink {
   }) {
     final _Write w = _Write(ref, value, withResponse);
     writes.add(w);
-    if (failNext) {
+    if (refuse > 0) {
+      refuse--;
+      w.done.completeError(StateError('refused'));
+    } else if (failNext) {
       failNext = false;
       w.done.completeError(const LinkClosedException(LinkLossReason.failed));
     } else if (!manual) {
@@ -508,6 +514,51 @@ void main() {
       r.lane.close();
       await _pump();
       expect(error, isA<LinkClosedException>());
+    });
+
+    test('a fence frame refused on a live link is sent again; the fence '
+        'completes', () async {
+      final _Rig r = _Rig();
+      r.lane.submit();
+      await _pump();
+      r.clock.advance(const Duration(milliseconds: 25));
+      r.link.refuse = 1;
+      bool done = false;
+      unawaited(r.lane.fenceAndHold().then((_) => done = true));
+      await _pump();
+      expect(r.link.writes, hasLength(2));
+      expect(done, isFalse);
+      r.clock.advance(const Duration(milliseconds: 25));
+      await _pump();
+      expect(r.link.writes, hasLength(3));
+      expect(r.link.last.withResponse, isTrue);
+      expect(done, isTrue);
+    });
+
+    test('a fence frame refused ${StreamLane.fenceAttempts} times on a live '
+        'link fails the fence (FenceFailed), never waits forever', () async {
+      final _Rig r = _Rig();
+      r.lane.submit();
+      await _pump();
+      r.clock.advance(const Duration(milliseconds: 25));
+      r.link.refuse = StreamLane.fenceAttempts;
+      Object? error;
+      unawaited(
+        r.lane.fenceAndHold().then((_) {}, onError: (Object e) => error = e),
+      );
+      for (int i = 0; i < StreamLane.fenceAttempts; i++) {
+        await _pump();
+        r.clock.advance(const Duration(milliseconds: 25));
+      }
+      await _pump();
+      expect(error, isA<FenceFailed>());
+      expect(r.link.writes, hasLength(1 + StreamLane.fenceAttempts));
+      // No hold was taken: frames still flow.
+      r.lane.submit();
+      await _pump();
+      r.clock.advance(const Duration(milliseconds: 25));
+      await _pump();
+      expect(r.link.writes, hasLength(2 + StreamLane.fenceAttempts));
     });
 
     test('a closed writer fails frames without breaking the lane', () async {

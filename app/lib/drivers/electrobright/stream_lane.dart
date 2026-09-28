@@ -8,6 +8,12 @@ import '../../core/util/scheduler.dart';
 
 typedef StreamValue = ({ChannelColor color, int brightness});
 
+/// A fence's reliable frame was refused [StreamLane.fenceAttempts] times in a
+/// row on a link that is still up.
+final class FenceFailed implements Exception {
+  const FenceFailed();
+}
+
 /// Colour and master brightness as binary frames. The firmware keeps only the
 /// newest frame (a one-deep mailbox), so this lane is latest-wins: a frame is
 /// built from the session's *desired* state at the moment it is written and
@@ -53,6 +59,10 @@ final class StreamLane {
 
   int framesWritten = 0;
   int reliableFrames = 0;
+
+  /// Reliable frames a fence may have refused in a row before it fails.
+  static const int fenceAttempts = 3;
+  int _fenceFailures = 0;
 
   /// Nothing waiting, nothing in flight, everything written reliably.
   bool get isIdle => !_dirty && !_inFlight && _unfenced == 0;
@@ -139,8 +149,24 @@ final class StreamLane {
           )
           .then(
             (_) => _delivered(value, reliable: reliable),
-            onError: (Object _) {
-              // The link failed; the session tears everything down.
+            onError: (Object e) {
+              // A closed link: the session tears everything down (close()
+              // fails the fences). A refused write on a live link must not
+              // leave a fence waiting forever: send it again, then give up.
+              if (_closed || !reliable || _fenceWaiters.isEmpty) return;
+              if (e is LinkClosedException) return;
+              if (++_fenceFailures >= fenceAttempts) {
+                _fenceFailures = 0;
+                final List<Completer<void>> failed =
+                    List<Completer<void>>.of(_fenceWaiters);
+                _fenceWaiters.clear();
+                for (final Completer<void> c in failed) {
+                  c.completeError(const FenceFailed());
+                }
+                return;
+              }
+              _dirty = true;
+              _terminal = true;
             },
           )
           .whenComplete(() {
@@ -159,6 +185,7 @@ final class StreamLane {
       return;
     }
     reliableFrames++;
+    _fenceFailures = 0;
     _unfenced = 0;
     _onDelivered(value);
     if (_fenceWaiters.isEmpty) return;
