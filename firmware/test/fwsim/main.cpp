@@ -14,12 +14,18 @@
 //   ADV <ms>         advance virtual time (idle passes every 50 ms)
 //   NFAIL <k>        the next k notifications fail (stack out of buffers)
 //   KVFAIL <0|1>     flash writes fail
-//   REBOOT           power cycle (flash survives)
+//   REBOOT           power cycle (flash survives; the bootloader's rollback rules apply)
+//   OC <hex>         one write to the update control characteristic (then a pass with AUTO=1)
+//   OD <hex>         one write to the update data characteristic (then a pass with AUTO=1)
+//   OSUB <0|1>       update control notifications on / off
+//   OTA <knob> <n>   fake update flash: slot <bytes> | fail <0|1> (writes) |
+//                    invalid <0|1> (esp_ota_end rejects the image)
 //   STATE            -> S {json}   (colours: one value per layout channel)
 //   SOUNDS           -> B name,name,...   (and clears the list)
 //   QUIT
 // After each request, notifications delivered to the phone are reported as
-// "N <hex>" lines (in order). Errors: "! <message>".
+// "N <hex>" lines (in order), then update-control notifications as "O <hex>".
+// Errors: "! <message>".
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -121,14 +127,24 @@ std::string stateJson(SimDevice& dev) {
       first = false;
     }
   }
+  const MockOtaFlash& fl = dev.otaFlash();
+  const OtaReceiver& ota = dev.ota();
   snprintf(b, sizeof(b),
-           "],\"now\":%lu,\"connected\":%u,\"mtu\":%u,\"subscribed\":%u,\"pendingText\":%lu,"
+           "],\"ota\":{\"active\":%u,\"next\":%lu,\"size\":%lu,\"restarting\":%u,\"resume\":%u,"
+           "\"running\":%d,\"boot\":%d,\"pending\":%u,\"rolledBack\":%u,\"fast\":%u,\"written\":%lu}",
+           ota.active() ? 1u : 0u, static_cast<unsigned long>(ota.next()), static_cast<unsigned long>(ota.size()),
+           ota.restarting() ? 1u : 0u, ota.canResume() ? 1u : 0u, fl.running, fl.boot, fl.pendingVerify() ? 1u : 0u,
+           fl.rolledBack() ? 1u : 0u, dev.fastLink() ? 1u : 0u,
+           static_cast<unsigned long>(fl.slot[fl.spare()].size()));
+  j += b;
+  snprintf(b, sizeof(b),
+           ",\"now\":%lu,\"connected\":%u,\"mtu\":%u,\"subscribed\":%u,\"pendingText\":%lu,"
            "\"mailbox\":%u,\"pendingReplies\":%lu,\"render\":{\"sleeping\":%u,\"fadeMs\":%u,\"identify\":%u,"
-           "\"probe\":%u},",
+           "\"probe\":%u,\"ota\":%u},",
            static_cast<unsigned long>(dev.now()), dev.connected() ? 1u : 0u, dev.mtu(), dev.subscribed() ? 1u : 0u,
            static_cast<unsigned long>(dev.pendingText()), dev.mailboxFull() ? 1u : 0u,
            static_cast<unsigned long>(dev.pendingReplies()), dev.lastParams().sleeping, dev.lastParams().fadeMs,
-           dev.lastParams().identifyId, dev.lastParams().probe);
+           dev.lastParams().identifyId, dev.lastParams().probe, dev.lastParams().ota);
   j += b;
   snprintf(b, sizeof(b),
            "\"stats\":{\"rx\":%lu,\"ovf\":%lu,\"rej\":%lu,\"sdrop\":%lu,\"unk\":%lu,\"err\":%lu,\"coal\":%lu,"
@@ -150,6 +166,11 @@ std::string stateJson(SimDevice& dev) {
 void emitNotifications(SimDevice& dev) {
   for (const auto& n : dev.takeNotifications()) {
     fputs("N ", stdout);
+    for (uint8_t byte : n) printf("%02X", byte);
+    fputc('\n', stdout);
+  }
+  for (const auto& n : dev.takeOtaNotifications()) {
+    fputs("O ", stdout);
     for (uint8_t byte : n) printf("%02X", byte);
     fputc('\n', stdout);
   }
@@ -207,6 +228,33 @@ int main(int argc, char** argv) {
       } else {
         dev.write(bytes.data(), bytes.size());
         if (autoPass) dev.pass();
+      }
+    } else if ((strcmp(cmd, "OC") == 0 || strcmp(cmd, "OD") == 0) && arg) {
+      if (!parseHex(arg, bytes)) {
+        puts("! bad hex");
+      } else {
+        if (cmd[1] == 'C') {
+          dev.otaControl(bytes.data(), bytes.size());
+        } else {
+          dev.otaData(bytes.data(), bytes.size());
+        }
+        if (autoPass) dev.pass();
+      }
+    } else if (strcmp(cmd, "OSUB") == 0 && arg) {
+      dev.setOtaSubscribed(atoi(arg) != 0);
+    } else if (strcmp(cmd, "OTA") == 0 && arg) {
+      char knob[16] = {};
+      unsigned long value = 0;
+      if (sscanf(arg, "%15s %lu", knob, &value) != 2) {
+        puts("! OTA <knob> <value>");
+      } else if (strcmp(knob, "slot") == 0) {
+        dev.otaFlash().capacity = value;
+      } else if (strcmp(knob, "fail") == 0) {
+        dev.otaFlash().failWrites = value != 0;
+      } else if (strcmp(knob, "invalid") == 0) {
+        dev.otaFlash().forceInvalid = value != 0;
+      } else {
+        printf("! unknown OTA knob %s\n", knob);
       }
     } else if (strcmp(cmd, "BEGIN") == 0) {
       dev.passBegin();

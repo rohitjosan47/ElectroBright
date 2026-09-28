@@ -79,8 +79,18 @@ uint32_t ControllerCore::timerRemainingSec(uint32_t nowMs) const {
 }
 
 // ------------------------------------------------------------------ ingress
+void ControllerCore::setOtaBusy(bool busy) {
+  if (busy == otaBusy_) return;
+  otaBusy_ = busy;
+  if (busy) {
+    endIdentify();
+    endProbe();
+  }
+  publish();
+}
+
 void ControllerCore::onColorFrame(const ColorFrame& f, uint32_t nowMs) {
-  if (setup_ || restartPending_) return;
+  if (setup_ || restartPending_ || otaBusy_) return;
   endProbe();
   if (f.hasSeq) {
     if (haveSeq_ && f.seq != expectedSeq_) Stats::inc(stats_.binarySeqGaps);
@@ -116,6 +126,11 @@ void ControllerCore::processLines(const char* const* lines, size_t count, uint32
       if (setup_ && !allowedInSetup(r.cmd.id)) {
         Stats::inc(stats_.commandErrors);
         reportError("SETUP_NEEDED");
+        continue;
+      }
+      if (otaBusy_ && !isQuery(r.cmd.id)) {
+        Stats::inc(stats_.commandErrors);
+        reportError("BUSY");
         continue;
       }
       if (r.status != ParseStatus::Ok) {
@@ -406,6 +421,7 @@ void ControllerCore::publish() {
   p.fadeMs = fadeMs_;
   p.identifyId = identifying_ ? identifySeq_ : 0;
   p.probe = probe_;
+  p.ota = otaBusy_ ? 1 : 0;
   env_.publish(p);
 }
 
@@ -462,7 +478,7 @@ void ControllerCore::sendDiag() {
   snprintf(buf_, sizeof(buf_),
            "DIAG:rx=%lu,ovf=%lu,rej=%lu,sdrop=%lu,unk=%lu,err=%lu,coal=%lu,bin=%lu,binbad=%lu,gaps=%lu,"
            "nretry=%lu,edrop=%lu,nvsw=%lu,nvsf=%lu,frames=%lu,overrun=%lu,rmaxus=%lu,heapmin=%lu,"
-           "stkc=%lu,stkr=%lu,rst=%lu,up=%lu",
+           "stkc=%lu,stkr=%lu,rst=%lu,up=%lu,slot=%lu,rb=%lu",
            (unsigned long)Stats::get(stats_.rxLines), (unsigned long)Stats::get(stats_.rxLineOverflows),
            (unsigned long)Stats::get(stats_.rxRejectedBytes), (unsigned long)Stats::get(stats_.rxStreamDrops),
            (unsigned long)Stats::get(stats_.unknownCommands), (unsigned long)Stats::get(stats_.commandErrors),
@@ -473,7 +489,7 @@ void ControllerCore::sendDiag() {
            (unsigned long)Stats::get(stats_.renderFrames), (unsigned long)Stats::get(stats_.renderOverruns),
            (unsigned long)Stats::get(stats_.renderMaxUs), (unsigned long)d.minFreeHeap,
            (unsigned long)d.controlStackFree, (unsigned long)d.renderStackFree, (unsigned long)d.resetReason,
-           (unsigned long)d.uptimeSec);
+           (unsigned long)d.uptimeSec, (unsigned long)d.runningSlot, (unsigned long)d.rolledBack);
   env_.sendLine(buf_);
 }
 

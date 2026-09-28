@@ -23,6 +23,13 @@ class PwmOutput {
   // cfg::kProbeDuty, or parks it low again for probe::kNoPin. Only acts on a change.
   void probe(uint8_t pin);
 
+  // Wireless update: the channels in `mask` breathe slowly at a low level on
+  // the LEDC's hardware fade (render/OtaGlow.h), every other channel off.
+  // Call every frame while it lasts; the CPU only reverses the ramp. glowOff()
+  // stops it, and the next write() sets every channel again.
+  void glow(uint32_t nowMs, uint8_t mask);
+  void glowOff();
+
   // Applies one duty (0..cfg::kPwmMaxDuty, in 1/16 counts) per layout channel:
   // 0 is off, full output holds the pin high (see PwmPlan.h). Unchanged
   // channels are not touched.
@@ -31,5 +38,11 @@ class PwmOutput {
  private:
   uint8_t count_ = 0;
   uint8_t probePin_ = 0xFF;  // probe::kNoPin
+  bool glowing_ = false;
+  bool rising_ = false;
+  uint8_t glowMask_ = 0;
+  uint32_t turnMs_ = 0;
+  bool fadeInstalled_ = false;
+  void fadeTo(uint16_t counts);
   uint16_t last_[kMaxChannels] = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF};
 };

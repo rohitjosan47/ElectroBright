@@ -7,6 +7,7 @@
 
 #include "control/ControllerCore.h"
 #include "fixture/FixtureSelect.h"
+#include "ota/OtaFlash.h"
 #include "state/KeyValueStore.h"
 
 class MockKv : public IKeyValueStore {
@@ -70,6 +71,99 @@ class FakeEnv : public IControllerEnv {
   RenderParams params{};
   int publishes = 0;
   int restarts = 0;
+};
+
+// Two OTA app slots in RAM plus the bootloader's rollback rules
+// (ESP-IDF, CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE):
+//  * setBoot() marks the spare slot NEW and selects it;
+//  * booting a NEW slot makes it PENDING_VERIFY;
+//  * booting a PENDING_VERIFY slot again (it never confirmed) marks it ABORTED
+//    and boots the other slot: the rollback.
+// A slot's image is valid when it starts with the ESP image magic 0xE9.
+class MockOtaFlash : public IOtaFlash {
+ public:
+  enum class SlotState : uint8_t { Valid, New, PendingVerify, Aborted, Invalid };
+
+  size_t spareSize() override { return capacity; }
+  Status begin() override {
+    if (state[running] == SlotState::PendingVerify) return Status::Busy;
+    if (failBegin) return Status::Error;
+    slot[spare()].clear();
+    open = true;
+    ++begins;
+    return Status::Ok;
+  }
+  Status resume(size_t offset) override {
+    if (state[running] == SlotState::PendingVerify) return Status::Busy;
+    if (offset > slot[spare()].size()) return Status::Error;
+    slot[spare()].resize(offset);
+    open = true;
+    ++resumes;
+    return Status::Ok;
+  }
+  bool write(const uint8_t* data, size_t len) override {
+    if (!open || failWrites || slot[spare()].size() + len > capacity) return false;
+    slot[spare()].insert(slot[spare()].end(), data, data + len);
+    return true;
+  }
+  Status finish() override {
+    if (!open) return Status::Error;
+    open = false;
+    const std::vector<uint8_t>& img = slot[spare()];
+    return (!img.empty() && img[0] == 0xE9 && !forceInvalid) ? Status::Ok : Status::Invalid;
+  }
+  void abort() override { open = false; }
+  bool read(size_t offset, uint8_t* out, size_t len) override {
+    const std::vector<uint8_t>& img = slot[spare()];
+    if (offset + len > img.size()) return false;
+    memcpy(out, img.data() + offset, len);
+    return true;
+  }
+  bool setBoot() override {
+    if (failSetBoot) return false;
+    boot = spare();
+    state[boot] = SlotState::New;
+    return true;
+  }
+
+  // ---- the bootloader and the running firmware's rollback calls ----
+  int spare() const { return 1 - running; }
+  // A restart: picks the slot to run (open writes are lost).
+  void bootloader() {
+    open = false;
+    if (state[boot] == SlotState::New) {
+      state[boot] = SlotState::PendingVerify;
+    } else if (state[boot] == SlotState::PendingVerify) {
+      state[boot] = SlotState::Aborted;  // never confirmed: roll back
+      boot = 1 - boot;
+    }
+    running = boot;
+  }
+  bool pendingVerify() const { return state[running] == SlotState::PendingVerify; }
+  void confirm() { state[running] = SlotState::Valid; }         // esp_ota_mark_app_valid_cancel_rollback
+  void markInvalid() {                                           // ..._invalid_rollback_and_reboot (before the restart)
+    state[running] = SlotState::Invalid;
+    boot = 1 - running;
+  }
+  bool rolledBack() const {
+    for (SlotState st : state) {
+      if (st == SlotState::Aborted || st == SlotState::Invalid) return true;
+    }
+    return false;
+  }
+
+  size_t capacity = 0x140000;
+  std::vector<uint8_t> slot[2];
+  SlotState state[2] = {SlotState::Valid, SlotState::Valid};
+  int running = 0;
+  int boot = 0;
+  bool open = false;
+  bool failWrites = false;
+  bool failBegin = false;
+  bool failSetBoot = false;
+  bool forceInvalid = false;
+  int begins = 0;
+  int resumes = 0;
 };
 
 // Bundles a controller with its fakes. The universal firmware's boot path

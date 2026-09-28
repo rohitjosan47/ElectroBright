@@ -35,6 +35,8 @@ ElectroBright/
 3. Click **File → Open...** and select the sketch of your fixture's type, e.g. `firmware/fixtures/ElectroBright_RGB/ElectroBright_RGB.ino` (a light that already has a type keeps it).
 4. Select Board: **ESP32C3 Dev Module**, select your USB port and click **Upload**.
 
+Or from a terminal (macOS/Linux, with the Arduino IDE installed): `firmware/tools/flash.sh RGB` builds that sketch, flashes the one connected board (at least 4 MB of flash) and prints the version it reports. Once flashed, lights update wirelessly (firmware 3.8.0+; the update image comes from `firmware/tools/build_update_image.sh`).
+
 The [firmware README](firmware/README.md) covers:
 - the architecture;
 - every lighting mode;

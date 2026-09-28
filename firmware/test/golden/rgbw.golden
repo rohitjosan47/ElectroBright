@@ -68,7 +68,7 @@ S 1
 > INFO
 N INFO:EB-C3-RGBW-V1\x0A
 > VERSION
-N VERSION:3.7.0\x0A
+N VERSION:3.8.0\x0A
 > CAPS
 N CAPS:PROTOCOL=1,PWM=
 N 15,GAMMA=2.2,MASTER=
@@ -98,7 +98,8 @@ N edrop=0,nvsw=1,nvsf=
 N 0,frames=0,overrun=0
 N ,rmaxus=0,heapmin=18
 N 0000,stkc=3000,stkr=
-N 2000,rst=1,up=1\x0A
+N 2000,rst=1,up=1,slot
+N =0,rb=0\x0A
 > PING
 N OK\x0A
 > MODE_CAPABILITIES:1
@@ -423,7 +424,7 @@ N STATUS:9,9,9,9,50,1,5,5,0,0,1,1,0,0,1,255,165,0,0,0,0,0,255\x0A
 > raw AA0401020304C89D
 > raw AAC801020304059C
 > DIAG
-N DIAG:rx=7,ovf=0,rej=0,sdrop=0,unk=0,err=0,coal=0,bin=8,binbad=3,gaps=1,nretry=0,edrop=0,nvsw=1,nvsf=0,frames=0,overrun=0,rmaxus=0,heapmin=180000,stkc=3000,stkr=2000,rst=1,up=1\x0A
+N DIAG:rx=7,ovf=0,rej=0,sdrop=0,unk=0,err=0,coal=0,bin=8,binbad=3,gaps=1,nretry=0,edrop=0,nvsw=1,nvsf=0,frames=0,overrun=0,rmaxus=0,heapmin=180000,stkc=3000,stkr=2000,rst=1,up=1,slot=0,rb=0\x0A
 > advance 20000
 KV pv=02
 KV scene=010102030405010505050505050505050505050505050505050505050505050505000001FFA50000000000FF
@@ -450,7 +451,8 @@ N edrop=0,nvsw=1,nvsf=
 N 0,frames=0,overrun=0
 N ,rmaxus=0,heapmin=18
 N 0000,stkc=3000,stkr=
-N 2000,rst=1,up=1\x0A
+N 2000,rst=1,up=1,slot
+N =0,rb=0\x0A
 > split write
 N STATUS:255,255,255,0
 N ,255,1,5,5,0,0,1,0,0
@@ -459,7 +461,7 @@ N ,0,255\x0A
 N OK\x0A
 > batch
 N OK\x0AINFO:EB-C3-RGBW-V
-N 1\x0AVERSION:3.7.0\x0ACAPS
+N 1\x0AVERSION:3.8.0\x0ACAPS
 N :PROTOCOL=1,PWM=15,G
 N AMMA=2.2,MASTER=PERC
 N EPTUAL,PRESETS=15,ID
@@ -495,7 +497,7 @@ S 3
 > PRESET_LIST
 N PRESETS:1,\x0A
 > DIAG
-N DIAG:rx=8,ovf=0,rej=0,sdrop=0,unk=0,err=0,coal=0,bin=0,binbad=0,gaps=0,nretry=0,edrop=0,nvsw=4,nvsf=344,frames=0,overrun=0,rmaxus=0,heapmin=180000,stkc=3000,stkr=2000,rst=1,up=21\x0A
+N DIAG:rx=8,ovf=0,rej=0,sdrop=0,unk=0,err=0,coal=0,bin=0,binbad=0,gaps=0,nretry=0,edrop=0,nvsw=4,nvsf=344,frames=0,overrun=0,rmaxus=0,heapmin=180000,stkc=3000,stkr=2000,rst=1,up=21,slot=0,rb=0\x0A
 > advance 20000
 KV p01=0105050505FF010505050505050505050505050505050505050505050505050505000001FFA50000000000FF
 KV pv=02

@@ -24,6 +24,8 @@ struct SystemDiag {
   uint32_t renderStackFree = 0;
   uint32_t resetReason = 0;
   uint32_t uptimeSec = 0;
+  uint32_t runningSlot = 0;  // OTA app slot the firmware runs from
+  uint32_t rolledBack = 0;   // 1: the last update was rolled back
 };
 
 class IControllerEnv {
@@ -56,12 +58,17 @@ class ControllerCore {
   void handleLine(const char* line, uint32_t nowMs) { processLines(&line, 1, nowMs); }
   // Timer expiry and persistence; call at least every ~100 ms.
   void tick(uint32_t nowMs);
+  // A wireless update is receiving (or verified and about to restart): normal
+  // commands are refused as busy, queries still answer, colour frames are
+  // ignored, and effects, identify and probes stop.
+  void setOtaBusy(bool busy);
 
   const Scene& scene() const { return scene_; }
   const Settings& settings() const { return settings_; }
   const FixtureProfile& fixture() const { return fixture_; }
   bool sleeping() const { return sleeping_; }
   bool setupNeeded() const { return setup_; }
+  bool otaBusy() const { return otaBusy_; }
   bool restartPending() const { return restartPending_; }
   int probeOutput() const { return probe_ ? probe_ - 1 : -1; }
   bool timerActive() const { return timerActive_; }
@@ -101,6 +108,7 @@ class ControllerCore {
   bool storageErrorReported_ = false;
   const bool setup_;             // setup-needed mode: no fixture type
   bool restartPending_ = false;  // SET_TYPE done: ignore everything until the restart
+  bool otaBusy_ = false;
   uint8_t probe_ = 0;            // RenderParams::probe
   uint32_t probeDeadlineMs_ = 0;
   char buf_[384] = {};  // large enough for the DIAG line

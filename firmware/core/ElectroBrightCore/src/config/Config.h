@@ -12,7 +12,7 @@ namespace cfg {
 // --- Identity -------------------------------------------------------------------
 // One universal image for every fixture type; a type's identity (model id,
 // BLE name, layout, pins) lives in the profile table (fixture/Profiles.h).
-constexpr const char* kFirmwareVersion = "3.7.0";
+constexpr const char* kFirmwareVersion = "3.8.0";
 
 // Nordic UART Service
 constexpr const char* kServiceUuid = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
@@ -75,10 +75,12 @@ constexpr size_t kMaxLineLength   = 96;    // longer text lines are discarded, n
 constexpr size_t kMaxLinesPerBatch = 24;
 constexpr size_t kRxStreamBytes   = 1024;
 constexpr size_t kEgressBytes     = 1024;
-constexpr uint16_t kPreferredMtu  = 247;
+constexpr uint16_t kPreferredMtu  = 517;   // the largest ATT MTU; the phone settles lower
+constexpr size_t kOtaDataBufferBytes = 12288;  // > one update window (ota::kWindow) of DATA writes
+constexpr size_t kOtaMaxWrite = 516;           // longest DATA write taken (MTU 517 - 3 + margin)
 
 // --- Tasks ----------------------------------------------------------------------
-constexpr uint32_t kControlStackBytes = 6144;
+constexpr uint32_t kControlStackBytes = 8192;  // esp_ota_end verifies the image on this task
 constexpr uint32_t kRenderStackBytes  = 4096;
 constexpr uint32_t kControlPriority   = 6;
 constexpr uint32_t kRenderPriority    = 10;

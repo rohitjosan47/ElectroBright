@@ -3,6 +3,8 @@
 #include <string.h>
 
 #include "config/Config.h"
+#include "ota/ImageIdentity.h"
+#include "ota/SelfCheck.h"
 #include "protocol/BinaryFrame.h"
 
 namespace {
@@ -21,23 +23,54 @@ void SimDevice::Env::systemDiag(SystemDiag& d) {
   d.renderStackFree = 2000;
   d.resetReason = 1;  // ESP_RST_POWERON
   d.uptimeSec = dev_.now_ / 1000;
+  d.runningSlot = static_cast<uint32_t>(dev_.otaFlash_.running);
+  d.rolledBack = dev_.otaFlash_.rolledBack() ? 1 : 0;
+}
+
+// ---- OtaEnv (App.cpp) ------------------------------------------------------------------
+void SimDevice::OtaEnv::otaActive(bool active) {
+  dev_.rig_->core.setOtaBusy(active);
+  dev_.fastLink_ = active && dev_.connected_;  // ble::setUpdateLink
+}
+
+void SimDevice::OtaEnv::otaRestart() {
+  fxselect::rememberForUpdate(dev_.system_, dev_.fixture().type);
+  dev_.rig_->env.restart();
+}
+
+FirmwareVersion SimDevice::Rig::runningVersion() {
+  FirmwareVersion v{};
+  imageid::parseVersion(imageid::running().version, v);
+  return v;
 }
 
 // ---- Lifecycle ------------------------------------------------------------------
 SimDevice::SimDevice(FixtureType buildDefault)
     : buildDefault_(buildDefault), rig_(std::make_unique<Rig>(*this, kv_, system_, buildDefault)) {}
 
-void SimDevice::boot() { rig_->core.begin(now_); }
+void SimDevice::boot() {
+  rig_->core.begin(now_);
+  selfChecking_ = otaFlash_.pendingVerify();
+  bootMs_ = now_;
+}
 
 void SimDevice::reboot() {
   delivered_.clear();
+  otaDelivered_.clear();
   restartNow();
 }
 
 // esp_restart(): like a power cycle, except that notifications already
 // delivered to the phone stay delivered.
 void SimDevice::restartNow() {
+  otaFlash_.bootloader();
   rig_ = std::make_unique<Rig>(*this, kv_, system_, buildDefault_);
+  otaControl_.clear();
+  otaData_.clear();
+  otaDataBytes_ = 0;
+  otaReplies_.clear();
+  otaSubscribed_ = false;
+  fastLink_ = false;
   egress_.clear();
   assembler_ = LineAssembler();
   seen_ = {};
@@ -57,12 +90,15 @@ void SimDevice::connect() {
   mtu_ = 23;
   connected_ = true;
   subscribed_ = false;
+  otaSubscribed_ = false;
   events_.push_back(kConnected);
 }
 
 void SimDevice::disconnect() {
   connected_ = false;
   subscribed_ = false;
+  otaSubscribed_ = false;
+  fastLink_ = false;  // a new link starts with the normal parameters
   events_.push_back(kDisconnected);
 }
 
@@ -83,6 +119,21 @@ void SimDevice::write(const uint8_t* data, size_t len) {
   } else {
     Stats::inc(rig_->stats.rxStreamDrops);
   }
+}
+
+void SimDevice::otaControl(const uint8_t* data, size_t len) {
+  if (otaControl_.size() >= 4) return;  // xQueueSend(…, 0) on a full queue
+  // OtaControlMsg: longer writes arrive as an empty (malformed) request.
+  if (len > 48) len = 0;
+  otaControl_.emplace_back(data, data + len);
+}
+
+void SimDevice::otaData(const uint8_t* data, size_t len) {
+  if (len == 0 || len > cfg::kOtaMaxWrite) return;
+  // xMessageBufferSend: each message also stores its length (4 bytes).
+  if (otaDataBytes_ + len + 4 > cfg::kOtaDataBufferBytes) return;
+  otaData_.emplace_back(data, data + len);
+  otaDataBytes_ += len + 4;
 }
 
 bool SimDevice::notify(const uint8_t* data, size_t len) {
@@ -143,6 +194,21 @@ void SimDevice::passEnd() {
   }
   flushBatch();
 
+  // 3b. Wireless update: requests, then data.
+  rig_->ota.setBlocked(rig_->core.restartPending());
+  while (!otaControl_.empty()) {
+    const std::vector<uint8_t> m = otaControl_.front();
+    otaControl_.pop_front();
+    rig_->ota.onControl(m.data(), m.size(), now_);
+  }
+  while (!otaData_.empty()) {
+    const std::vector<uint8_t> m = otaData_.front();
+    otaData_.pop_front();
+    otaDataBytes_ -= m.size() + 4;
+    rig_->ota.onData(m.data(), m.size(), now_);
+  }
+  rig_->ota.tick(now_);
+
   const LineAssembler::Counters& c = assembler_.counters();
   Stats::inc(rig_->stats.rxLineOverflows, c.overflows - seen_.overflows);
   Stats::inc(rig_->stats.rxRejectedBytes, c.rejected - seen_.rejected);
@@ -156,15 +222,43 @@ void SimDevice::passEnd() {
     const uint32_t retriesBefore = egress_.retries();
     egress_.flush(maxPayload(), [this](const uint8_t* d, size_t n) { return notify(d, n); });
     Stats::inc(rig_->stats.notifyRetries, egress_.retries() - retriesBefore);
+    otaReplies_.flush([this](const uint8_t* d, size_t n) {
+      if (otaSubscribed_) otaDelivered_.emplace_back(d, d + n);  // ble::otaNotify
+      return true;
+    });
   } else {
     egress_.clear();
+    otaReplies_.clear();
   }
 
-  // 6. SET_TYPE: restart once the OK has gone out (the device also waits
-  // cfg::kRestartDelayMs; virtual time needs no wait).
-  if (rig_->env.restartRequested && (egress_.pending() == 0 || !connected_)) {
+  // 6. SET_TYPE / update: restart once the reply has gone out (the device
+  // also waits cfg::kRestartDelayMs; virtual time needs no wait).
+  if (rig_->env.restartRequested && ((egress_.pending() == 0 && otaReplies_.empty()) || !connected_)) {
     ++restarts_;
     restartNow();
+    return;
+  }
+  selfCheck();
+}
+
+void SimDevice::selfCheck() {
+  if (!selfChecking_) return;
+  // The render task runs 200 frames a second from boot.
+  const uint32_t since = now_ - bootMs_;
+  const selfcheck::Inputs in{true, fxselect::typeLoaded(system_, fixture().type), since / 5u, true};
+  switch (selfcheck::evaluate(in, since)) {
+    case selfcheck::Verdict::Pending:
+      return;
+    case selfcheck::Verdict::Pass:
+      selfChecking_ = false;
+      otaFlash_.confirm();
+      fxselect::forgetUpdate(system_);
+      return;
+    case selfcheck::Verdict::Fail:
+      otaFlash_.markInvalid();  // esp_ota_mark_app_invalid_rollback_and_reboot
+      ++restarts_;
+      restartNow();
+      return;
   }
 }
 
@@ -180,6 +274,12 @@ void SimDevice::advance(uint32_t ms) {
 std::vector<std::vector<uint8_t>> SimDevice::takeNotifications() {
   std::vector<std::vector<uint8_t>> out;
   out.swap(delivered_);
+  return out;
+}
+
+std::vector<std::vector<uint8_t>> SimDevice::takeOtaNotifications() {
+  std::vector<std::vector<uint8_t>> out;
+  out.swap(otaDelivered_);
   return out;
 }
 

@@ -23,6 +23,8 @@
 #include <vector>
 
 #include "../Fakes.h"
+#include "ota/OtaReceiver.h"
+#include "ota/OtaReplies.h"
 #include "protocol/Egress.h"
 #include "protocol/LineAssembler.h"
 
@@ -53,6 +55,10 @@ class SimDevice {
   void write(const uint8_t* data, size_t len);  // RxCallbacks::onWrite
   // Makes the next `count` notify() calls fail (stack out of buffers).
   void failNextNotifies(int count) { notifyFailures_ = count; }
+  // The update service (BleNus.cpp OtaControlCallbacks / OtaDataCallbacks).
+  void otaControl(const uint8_t* data, size_t len);
+  void otaData(const uint8_t* data, size_t len);
+  void setOtaSubscribed(bool on) { otaSubscribed_ = on; }
 
   // --- Control task (App.cpp) ----------------------------------------------------
   void passBegin();  // steps 1-2: connection events, one mailbox frame
@@ -67,6 +73,8 @@ class SimDevice {
   // Notifications the phone received since the last call (each <= MTU-3 bytes).
   std::vector<std::vector<uint8_t>> takeNotifications();
   std::vector<SoundId> takeSounds();
+  // Update-control notifications the phone received since the last call.
+  std::vector<std::vector<uint8_t>> takeOtaNotifications();
 
   // --- Inspection -------------------------------------------------------------------
   const FixtureProfile& fixture() const { return rig_->fixture; }
@@ -76,6 +84,10 @@ class SimDevice {
   const RenderParams& lastParams() const { return rig_->env.params; }
   MockKv& flash() { return kv_; }
   MockKv& systemFlash() { return system_; }
+  MockOtaFlash& otaFlash() { return otaFlash_; }
+  const OtaReceiver& ota() const { return rig_->ota; }
+  bool selfChecking() const { return selfChecking_; }
+  bool fastLink() const { return fastLink_; }
   uint32_t now() const { return now_; }
   bool connected() const { return connected_; }
   uint16_t mtu() const { return mtu_; }
@@ -102,20 +114,39 @@ class SimDevice {
     SimDevice& dev_;
   };
 
-  // Everything that a reboot recreates (flash lives outside, in kv_ and
-  // system_); App::start() picks the profile first.
+  // App.cpp OtaEnv.
+  class OtaEnv final : public IOtaEnv {
+   public:
+    explicit OtaEnv(SimDevice& dev) : dev_(dev) {}
+    void otaReply(const uint8_t* data, size_t len) override { dev_.otaReplies_.push(data, len); }
+    void otaActive(bool active) override;
+    void otaRestart() override;
+
+   private:
+    SimDevice& dev_;
+  };
+
+  // Everything that a reboot recreates (flash lives outside, in kv_,
+  // system_ and otaFlash_); App::start() picks the profile first.
   struct Rig {
     Rig(SimDevice& dev, MockKv& kv, MockKv& system, FixtureType buildDefault)
         : fixture(fxselect::select(system, buildDefault)),
           env(dev),
           store(kv, stats, fixture),
-          core(env, store, system, stats, fixture) {}
+          core(env, store, system, stats, fixture),
+          otaEnv(dev),
+          ota(dev.otaFlash_, otaEnv, runningVersion()) {}
+    static FirmwareVersion runningVersion();
     const FixtureProfile& fixture;
     Env env;
     Stats stats;
     StateStore store;
     ControllerCore core;
+    OtaEnv otaEnv;
+    OtaReceiver ota;
   };
+
+  void selfCheck();  // App.cpp selfCheck()
 
   bool notify(const uint8_t* data, size_t len);  // ble::notify
   size_t maxPayload() const { return mtu_ > 3 ? static_cast<size_t>(mtu_ - 3) : 20; }
@@ -125,7 +156,17 @@ class SimDevice {
   const FixtureType buildDefault_;
   MockKv kv_;
   MockKv system_;
+  MockOtaFlash otaFlash_;
   int restarts_ = 0;
+  std::deque<std::vector<uint8_t>> otaControl_;  // queue of 4 OtaControlMsg
+  std::deque<std::vector<uint8_t>> otaData_;     // message buffer, cfg::kOtaDataBufferBytes
+  size_t otaDataBytes_ = 0;
+  OtaReplies otaReplies_;
+  std::vector<std::vector<uint8_t>> otaDelivered_;
+  bool otaSubscribed_ = false;
+  bool fastLink_ = false;
+  bool selfChecking_ = false;
+  uint32_t bootMs_ = 0;
   std::unique_ptr<Rig> rig_;
   Egress egress_;
   LineAssembler assembler_;

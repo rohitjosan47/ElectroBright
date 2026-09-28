@@ -14,4 +14,7 @@ struct RenderParams {
   // PROBE: 0 = off, else physical output + 1 (board::kOutputPins). While on,
   // that one output runs at cfg::kProbeDuty and every other LED output is off.
   uint8_t probe;
+  // 1 during a wireless update: effects, identify and probes stop and the
+  // light shows its update glow (render/OtaGlow.h).
+  uint8_t ota;
 };

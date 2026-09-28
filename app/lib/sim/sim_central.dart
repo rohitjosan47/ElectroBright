@@ -6,6 +6,7 @@ import '../core/ble/ble_link.dart';
 import '../core/model/channel_layout.dart';
 import '../core/protocol/eb/eb_constants.dart';
 import '../core/protocol/eb/eb_fixture_catalog.dart';
+import '../core/protocol/eb/eb_ota.dart';
 import '../core/util/scheduler.dart';
 import 'eb_device_model.dart';
 
@@ -288,6 +289,8 @@ final class _SimLink implements BleLink {
   final int _restarts;
   final StreamController<Uint8List> _notes =
       StreamController<Uint8List>.broadcast();
+  final StreamController<Uint8List> _otaNotes =
+      StreamController<Uint8List>.broadcast();
   final Completer<LinkLossReason> _closed = Completer<LinkLossReason>();
 
   @override
@@ -301,6 +304,10 @@ final class _SimLink implements BleLink {
 
   @override
   Stream<Uint8List> subscribe(GattRef ref) {
+    if (ref.characteristic == EbOta.controlUuid) {
+      _fixture.model.setOtaSubscribed(subscribed: true);
+      return _otaNotes.stream;
+    }
     _fixture.model.setMtu(mtu);
     _fixture.model.setSubscribed(subscribed: true);
     return _notes.stream;
@@ -315,9 +322,15 @@ final class _SimLink implements BleLink {
     if (_closed.isCompleted) {
       throw LinkClosedException(await _closed.future);
     }
-    _fixture.model
-      ..write(value)
-      ..pass();
+    // Each characteristic to its callback (BleNus.cpp), then a control pass.
+    if (ref.characteristic == EbOta.controlUuid) {
+      _fixture.model.otaControl(value);
+    } else if (ref.characteristic == EbOta.dataUuid) {
+      _fixture.model.otaData(value);
+    } else {
+      _fixture.model.write(value);
+    }
+    _fixture.model.pass();
     await Future<void>.value();
     _deliver();
   }
@@ -325,6 +338,9 @@ final class _SimLink implements BleLink {
   void _deliver() {
     for (final Uint8List n in _fixture.model.takeNotifications()) {
       if (!_notes.isClosed) _notes.add(n);
+    }
+    for (final Uint8List n in _fixture.model.takeOtaNotifications()) {
+      if (!_otaNotes.isClosed) _otaNotes.add(n);
     }
     if (_fixture.model.restarts != _restarts) _drop(LinkLossReason.lost);
   }
@@ -337,6 +353,7 @@ final class _SimLink implements BleLink {
     _fixture._link = null;
     _closed.complete(reason);
     unawaited(_notes.close());
+    unawaited(_otaNotes.close());
   }
 
   @override

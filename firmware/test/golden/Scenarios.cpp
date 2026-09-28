@@ -15,6 +15,7 @@
 //          rendered duties are unchanged)
 //   3.7.0  VERSION; CAPS gained TYPES=RGBW,RGB,RGBCCT,CCT,W and PROBE=1 before
 //          LAYOUT (universal firmware; RGBW is the default type of a new light)
+//   3.8.0  VERSION; DIAG gained slot=<running OTA slot>,rb=<last update rolled back>
 // Any other difference means RGBW behaviour changed.
 //
 //   make golden-record     rewrite the golden file (only when a change is intended)

@@ -2,16 +2,27 @@
 
 #include <NimBLEDevice.h>
 
+#include <string.h>
+
 #include <atomic>
 
 #include "../config/Config.h"
+#include "../ota/OtaProtocol.h"
 #include "../protocol/BinaryFrame.h"
 
 namespace {
 
+// Connection intervals (1.25 ms units).
+constexpr uint16_t kNormalMin = 12;  // 15 ms
+constexpr uint16_t kNormalMax = 24;  // 30 ms
+constexpr uint16_t kFastMin = 6;     // 7.5 ms (iOS grants 15 ms)
+constexpr uint16_t kFastMax = 12;
+
 BleSinks g_sinks{};
 const FixtureProfile* g_fixture = nullptr;
 NimBLECharacteristic* g_tx = nullptr;
+NimBLECharacteristic* g_otaControl = nullptr;
+NimBLEServer* g_server = nullptr;
 std::atomic<bool> g_connected{false};
 std::atomic<uint16_t> g_connHandle{BLE_HS_CONN_HANDLE_NONE};
 std::atomic<uint16_t> g_mtu{23};
@@ -29,7 +40,7 @@ class ServerCallbacks final : public NimBLEServerCallbacks {
     g_connected = true;
     // 15–30 ms interval, no latency, 4 s supervision timeout: responsive
     // streaming without starving the phone's radio.
-    server->updateConnParams(info.getConnHandle(), 12, 24, 0, 400);
+    server->updateConnParams(info.getConnHandle(), kNormalMin, kNormalMax, 0, 400);
     postEvent(BleEvent::Connected);
   }
 
@@ -69,8 +80,36 @@ class RxCallbacks final : public NimBLECharacteristicCallbacks {
   }
 };
 
+// Update control: small requests, handed over whole.
+class OtaControlCallbacks final : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* chr, NimBLEConnInfo&) override {
+    const NimBLEAttValue value = chr->getValue();
+    OtaControlMsg msg{};
+    msg.len = static_cast<uint8_t>(value.size() < sizeof(msg.data) ? value.size() : sizeof(msg.data));
+    memcpy(msg.data, value.data(), msg.len);
+    if (value.size() > sizeof(msg.data)) msg.len = 0;  // malformed: the receiver says so
+    xQueueSend(g_sinks.otaControl, &msg, 0);
+    xTaskNotifyGive(g_sinks.controlTask);
+  }
+};
+
+// Update data: copied into a message buffer (one write per message); the
+// control task writes it to flash. A write that does not fit is dropped and
+// the receiver's ACK brings the app back to it.
+class OtaDataCallbacks final : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* chr, NimBLEConnInfo&) override {
+    const NimBLEAttValue value = chr->getValue();
+    if (value.size() > 0 && value.size() <= cfg::kOtaMaxWrite) {
+      xMessageBufferSend(g_sinks.otaData, value.data(), value.size(), 0);
+    }
+    xTaskNotifyGive(g_sinks.controlTask);
+  }
+};
+
 ServerCallbacks g_serverCallbacks;
 RxCallbacks g_rxCallbacks;
+OtaControlCallbacks g_otaControlCallbacks;
+OtaDataCallbacks g_otaDataCallbacks;
 
 }  // namespace
 
@@ -85,6 +124,7 @@ bool begin(const BleSinks& sinks, const FixtureProfile& fixture) {
   NimBLEDevice::setMTU(cfg::kPreferredMtu);
 
   NimBLEServer* server = NimBLEDevice::createServer();
+  g_server = server;
   server->setCallbacks(&g_serverCallbacks, false);
   server->advertiseOnDisconnect(true);
 
@@ -93,6 +133,12 @@ bool begin(const BleSinks& sinks, const FixtureProfile& fixture) {
   NimBLECharacteristic* rx =
       service->createCharacteristic(cfg::kRxCharUuid, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
   rx->setCallbacks(&g_rxCallbacks);
+
+  NimBLEService* update = server->createService(ota::kServiceUuid);
+  g_otaControl = update->createCharacteristic(ota::kControlUuid, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY);
+  g_otaControl->setCallbacks(&g_otaControlCallbacks);
+  NimBLECharacteristic* data = update->createCharacteristic(ota::kDataUuid, NIMBLE_PROPERTY::WRITE_NR);
+  data->setCallbacks(&g_otaDataCallbacks);
   // NimBLE 2.x starts services together with the server (on advertising start).
 
   // The 128-bit service UUID and the name (up to 29 chars) do not both fit in
@@ -114,6 +160,8 @@ bool begin(const BleSinks& sinks, const FixtureProfile& fixture) {
 
 bool connected() { return g_connected.load(); }
 
+bool advertising() { return NimBLEDevice::getAdvertising()->isAdvertising(); }
+
 size_t maxPayload() {
   const uint16_t mtu = g_mtu.load();
   return mtu > 3 ? static_cast<size_t>(mtu - 3) : 20;
@@ -122,6 +170,23 @@ size_t maxPayload() {
 bool notify(const uint8_t* data, size_t len) {
   if (!g_connected.load() || g_tx == nullptr) return false;
   return g_tx->notify(data, len, g_connHandle.load());
+}
+
+bool otaNotify(const uint8_t* data, size_t len) {
+  if (!g_connected.load() || g_otaControl == nullptr) return false;
+  return g_otaControl->notify(data, len, g_connHandle.load());
+}
+
+void setUpdateLink(bool fast) {
+  const uint16_t h = g_connHandle.load();
+  if (!g_connected.load() || g_server == nullptr) return;
+  if (fast) {
+    g_server->updateConnParams(h, kFastMin, kFastMax, 0, 400);
+    g_server->updatePhy(h, BLE_GAP_LE_PHY_2M_MASK, BLE_GAP_LE_PHY_2M_MASK, 0);
+  } else {
+    g_server->updateConnParams(h, kNormalMin, kNormalMax, 0, 400);
+    g_server->updatePhy(h, BLE_GAP_LE_PHY_1M_MASK, BLE_GAP_LE_PHY_1M_MASK, 0);
+  }
 }
 
 }  // namespace ble

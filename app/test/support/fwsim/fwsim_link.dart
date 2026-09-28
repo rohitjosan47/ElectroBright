@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:electrobright/core/ble/ble_link.dart';
+import 'package:electrobright/core/protocol/eb/eb_ota.dart';
 import 'package:electrobright/core/util/scheduler.dart';
 
 import 'fwsim_process.dart';
@@ -49,6 +50,8 @@ final class FwSimLink implements BleLink {
   int _mtu = 23;
   final StreamController<Uint8List> _notes =
       StreamController<Uint8List>.broadcast();
+  final StreamController<Uint8List> _otaNotes =
+      StreamController<Uint8List>.broadcast();
   final Completer<LinkLossReason> _closed = Completer<LinkLossReason>();
   Future<void> _lock = Future<void>.value();
   int _inFlight = 0;
@@ -79,6 +82,10 @@ final class FwSimLink implements BleLink {
 
   @override
   Stream<Uint8List> subscribe(GattRef ref) {
+    if (ref.characteristic == EbOta.controlUuid) {
+      unawaited(_request('OSUB 1'));
+      return _otaNotes.stream;
+    }
     if (_subscribeDelay == Duration.zero) {
       unawaited(_request('SUB 1'));
     } else {
@@ -105,6 +112,17 @@ final class FwSimLink implements BleLink {
     final String hex = value
         .map((int b) => b.toRadixString(16).padLeft(2, '0'))
         .join();
+    // The update service: its own characteristics, a pass per write.
+    if (ref.characteristic == EbOta.controlUuid) {
+      await _request('OC $hex');
+      await _request('PASS');
+      return;
+    }
+    if (ref.characteristic == EbOta.dataUuid) {
+      await _request('OD $hex');
+      if (timing == PassTiming.immediate) await _request('PASS');
+      return;
+    }
     switch (_decide()) {
       case _Pass.now:
         await _request('W $hex');
@@ -170,6 +188,7 @@ final class FwSimLink implements BleLink {
   void _finish(LinkLossReason reason) {
     if (!_closed.isCompleted) _closed.complete(reason);
     unawaited(_notes.close());
+    unawaited(_otaNotes.close());
   }
 
   /// fwsim is one request/response pipe: serialise every request.
@@ -183,6 +202,9 @@ final class FwSimLink implements BleLink {
         .then((FwSimReply r) {
           for (final Uint8List n in r.notifications) {
             if (!_notes.isClosed) _notes.add(n);
+          }
+          for (final Uint8List n in r.otaNotifications) {
+            if (!_otaNotes.isClosed) _otaNotes.add(n);
           }
           return r;
         })

@@ -21,6 +21,14 @@ bool write(IKeyValueStore& system, FixtureType type);
 // The boot decision above; profiles::kNone means setup-needed mode.
 const FixtureProfile& select(IKeyValueStore& system, FixtureType buildDefault);
 
+// Wireless updates: the type the light had when it switched to a new
+// firmware ("ofx"). The new firmware's self-check requires it to have loaded
+// that type, then forgets it.
+constexpr const char* kUpdateTypeKey = "ofx";
+bool rememberForUpdate(IKeyValueStore& system, FixtureType type);
+bool typeLoaded(IKeyValueStore& system, FixtureType active);
+bool forgetUpdate(IKeyValueStore& system);
+
 }  // namespace fxselect
 
 // PROBE: which pin a physical output (board::kOutputPins order) is, and which

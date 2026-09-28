@@ -10,10 +10,19 @@ const String fwsimBinary = '$firmwareTestDir/build/fwsim/fwsim';
 
 /// One reply to an fwsim request (see firmware/test/fwsim/main.cpp).
 final class FwSimReply {
-  FwSimReply(this.notifications, this.state, this.sounds, this.info);
+  FwSimReply(
+    this.notifications,
+    this.state,
+    this.sounds,
+    this.info, [
+    this.otaNotifications = const <Uint8List>[],
+  ]);
 
   /// Notifications the phone received, in order (each <= MTU-3 bytes).
   final List<Uint8List> notifications;
+
+  /// Update-control notifications (`O <hex>` lines), in order.
+  final List<Uint8List> otaNotifications;
   final Map<String, Object?>? state;
   final List<String>? sounds;
   final String? info;
@@ -103,6 +112,7 @@ final class FwSim {
     _process.stdin.writeln(line);
     await _process.stdin.flush();
     final List<Uint8List> notes = <Uint8List>[];
+    final List<Uint8List> otaNotes = <Uint8List>[];
     Map<String, Object?>? state;
     List<String>? sounds;
     String? info;
@@ -120,6 +130,8 @@ final class FwSim {
       if (l == '.') break;
       if (l.startsWith('N ')) {
         notes.add(_hex(l.substring(2)));
+      } else if (l.startsWith('O ')) {
+        otaNotes.add(_hex(l.substring(2)));
       } else if (l.startsWith('S ')) {
         state = jsonDecode(l.substring(2)) as Map<String, Object?>;
       } else if (l.startsWith('B')) {
@@ -133,7 +145,7 @@ final class FwSim {
         throw StateError('unexpected fwsim output: $l');
       }
     }
-    return FwSimReply(notes, state, sounds, info);
+    return FwSimReply(notes, state, sounds, info, otaNotes);
   }
 
   Future<FwSimReply> write(List<int> bytes) => request('W ${_toHex(bytes)}');

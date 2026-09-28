@@ -38,7 +38,7 @@ void main() {
 
   test('CAPS lists the types and PROBE before LAYOUT', () {
     final EbDeviceModel m = connected();
-    expect(send(m, 'VERSION'), 'VERSION:3.7.0\n');
+    expect(send(m, 'VERSION'), 'VERSION:${EbDeviceModel.firmwareVersion}\n');
     expect(
       send(m, 'CAPS'),
       'CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,'
@@ -114,7 +114,7 @@ void main() {
       'CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,'
       'IDENTIFY=1,$types,LAYOUT=NONE\n',
     );
-    expect(send(m, 'VERSION'), 'VERSION:3.7.0\n');
+    expect(send(m, 'VERSION'), 'VERSION:${EbDeviceModel.firmwareVersion}\n');
     expect(send(m, 'DIAG'), startsWith('DIAG:'));
     expect(send(m, 'PROBE:3:1'), 'OK\n');
     expect(send(m, 'IDENTIFY'), 'OK\n');

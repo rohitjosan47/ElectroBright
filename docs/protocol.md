@@ -1,4 +1,4 @@
-# ElectroBright BLE protocol (firmware 3.7)
+# ElectroBright BLE protocol (firmware 3.8)
 
 This is the contract between the ElectroBright fixtures (`firmware/`) and the app (`app/`). Every fixture speaks the same protocol. Only the **channel layout** changes one thing: how many values a colour has on the wire.
 
@@ -26,6 +26,8 @@ Source of truth for each type:
 - **Advertising:** the service UUID is in the advertisement. The name is in the scan response.
 - **Names:** every fixture's name starts with `ElectroBright_C3_`. A 3.7.0+ light without a type (setup-needed mode, §9) is named `ElectroBright_C3_SETUP`. Firmware before 3.x is named `ElectroBright_BLE`.
 - **One phone at a time:** a light stops advertising while a phone is connected.
+- **Wireless updates (3.8.0+):** a second GATT service, `E1B70001-7A3C-4F4B-9E2D-5C8A1B0E0F01`, carries firmware updates (§10). It is found by service discovery; only the NUS UUID is advertised.
+- **MTU:** the light offers 517 (3.8.0+; 247 before) and uses whatever the phone settles on.
 - **Text:** lines end with `\n`, `\r` or `\r\n`, at most 96 characters. Longer lines are dropped whole. Command names are case-insensitive. Whitespace around fields is ignored.
 - **Replies:** each reply ends with `\n`. Replies are packed into notifications of up to MTU − 3 bytes, so one notification can carry several replies, and one reply can span several notifications.
 - **No request ids:** replies come back in command order.
@@ -110,7 +112,7 @@ Colour arguments are `v1,…,vn`, each 0–255. The wrong number of values gives
 | `TIMER:0-86400` (seconds; 0 cancels) | `OK` |
 | `FACTORY_RESET` | `OK` (no reboot; the link stays up) |
 | `INFO` · `VERSION` · `CAPS` | §2 |
-| `DIAG` | `DIAG:key=value,…` (see `firmware/README.md`) |
+| `DIAG` | `DIAG:key=value,…` (see `firmware/README.md`); 3.8.0 adds `slot=<n>` (the OTA app slot it runs from) and `rb=<0\|1>` (the last update was rolled back) at the end |
 | `SET_TYPE:<RGBW\|RGB\|RGBCCT\|CCT\|W>` (only when CAPS has `TYPES=`) | `OK`, then the light restarts (§9); `ERROR:TYPE_INVALID`; `ERROR:STORAGE` |
 | `PROBE:<output 0-4>:<0\|1>` (only when CAPS has `PROBE=1`) | `OK` (§9); `ERROR:PROBE_INVALID` |
 
@@ -123,6 +125,7 @@ Colour arguments are `v1,…,vn`, each 0–255. The wrong number of values gives
 - `STORAGE`: flash failure, reported once per boot
 - `TYPE_INVALID`, `PROBE_INVALID` (3.7.0+)
 - `SETUP_NEEDED` (3.7.0+): the light has no type yet and does not accept this command (§9)
+- `BUSY` (3.8.0+): a wireless update is running (§10); queries still answer
 
 ## 5. STATUS
 
@@ -192,6 +195,7 @@ The invariant tests (`test_layouts.cpp`) and `make conformance` then cover it. T
 
 ## 8. Firmware changes
 
+- **3.8.0:** wireless updates over BLE with verification and rollback (§10): the update service, the image identity block, `ERROR:BUSY` for commands during a transfer, DIAG `slot=` and `rb=`, MTU 517. The type-neutral update image is `firmware/update/ElectroBright_Update` (no default type). Everything else is unchanged.
 - **3.7.0:** one universal firmware for every fixture type; the light stores its type (NVS namespace `ebsys`, key `fx`, kept by `FACTORY_RESET`). New: `SET_TYPE`, `PROBE`, CAPS `TYPES=` and `PROBE=1` (before `LAYOUT=`), and setup-needed mode (§9). Every type keeps its settings and presets in namespace `eb3`; RGB, RGBCCT, CCT and W lights updated from 3.6.x start from their defaults. The rendering, frames and the other replies are unchanged.
 - **3.6.2:** full brightness is a genuine 100 %. A channel at full output now holds its pin high (no PWM switching); every level below full stays PWM with an on-time shorter than a whole period. In 3.6.1 a channel at full asked the LEDC for a whole-period on-time, which it outputs as off, so 100 % came out at about 1/16 while 99 % looked right. The wire protocol, CAPS and every rendered level are unchanged.
 - **3.6.1:** 25 kHz PWM (`PWM=15`), smooth colour-to-white on CCT, `IDENTIFY` (CAPS `IDENTIFY=1`).
@@ -215,3 +219,74 @@ Every ElectroBright board has the same outputs: red GPIO 1, green 3, blue 4, whi
   - `IDENTIFY` plays the chirp only, even when muted (no LED is known yet).
   - `PROBE` and `SET_TYPE` work as above. Every other command gives `ERROR:SETUP_NEEDED` (an unknown one `ERROR:UNKNOWN_CMD`), and binary colour frames are ignored.
 - **Boot:** a stored type wins. Without one, a build with a default type (every sketch in `firmware/fixtures/`) stores and uses it; a build without one starts in setup-needed mode. `FACTORY_RESET` keeps the type.
+
+## 10. Wireless firmware updates (3.8.0+)
+
+A phone sends a new firmware image over BLE. The light writes it to its spare app slot and switches to it only when every check has passed. The running firmware and its boot selection are untouched until then, so a light can never be left without working firmware. Only ElectroBright universal images are accepted; the app sends the type-neutral update image (`firmware/tools/build_update_image.sh`: `ElectroBright_Update-<version>.bin` plus a JSON with its version, size and SHA-256). The light keeps its stored fixture type.
+
+### Service
+
+| | UUID | Properties |
+|---|---|---|
+| Update service | `E1B70001-7A3C-4F4B-9E2D-5C8A1B0E0F01` | |
+| Control | `E1B70002-7A3C-4F4B-9E2D-5C8A1B0E0F01` | write with response, notify |
+| Data | `E1B70003-7A3C-4F4B-9E2D-5C8A1B0E0F01` | write without response |
+
+The phone subscribes to Control notifications before BEGIN. During a transfer the light asks for a 7.5–15 ms connection interval (iOS grants 15 ms) and the 2M PHY where supported, and restores 15–30 ms and 1M afterwards. A DATA write carries up to MTU − 3 bytes.
+
+### Messages
+
+Every number is little-endian.
+
+| Request (Control) | Bytes | Reply |
+|---|---|---|
+| `BEGIN` | `01` size:u32 sha256:32 major:u16 minor:u16 patch:u16 flags:u8 (44 bytes; flags bit 0 = reinstall) | `BEGIN_OK` or `ERROR` |
+| `END` | `02` | `END_OK` or `ERROR` |
+| `ABORT` | `03` | `ABORTED` |
+| `STATUS` | `04` | `STATE` |
+| `DATA` (on Data) | offset:u32, payload | none, or `ACK` |
+
+| Reply (Control notify) | Bytes | Meaning |
+|---|---|---|
+| `BEGIN_OK` | `81` start:u32 window:u16 | send from `start` (0, or where a transfer of the same image stopped); an ACK comes at least every `window` bytes (8192) |
+| `ACK` | `82` next:u32 | the next offset the light expects |
+| `END_OK` | `83` | verified and selected; the light restarts now |
+| `ABORTED` | `84` | nothing of the transfer is kept |
+| `STATE` | `85` state:u8 next:u32 size:u32 | 0 idle, 1 receiving, 2 restarting |
+| `ERROR` | `E0` code:u8 next:u32 | see below; `next` is the expected offset while receiving |
+
+Error codes (never silent):
+
+| Code | Name | When |
+|---|---|---|
+| 1 | `BAD_SIZE` | BEGIN size 0 or larger than the spare slot (1,310,720 bytes with the default partition table); a DATA chunk past the end |
+| 2 | `HASH_MISMATCH` | END: the received bytes do not have the announced SHA-256 |
+| 3 | `NOT_ELECTROBRIGHT` | END: not a valid ESP32 app image, or no ElectroBright universal identity block of the announced version |
+| 4 | `DOWNGRADE` | BEGIN: older than the running firmware |
+| 5 | `SAME_VERSION` | BEGIN: the running version without the reinstall flag |
+| 6 | `FLASH_ERROR` | the slot could not be written or selected |
+| 7 | `BUSY` | another image is being received, a restart is pending, or the running firmware has not confirmed itself yet (right after an update) |
+| 8 | `BAD_REQUEST` | a malformed request; END with no transfer |
+| 9 | `INCOMPLETE` | END before every byte arrived (`next` says where to continue; the transfer goes on) |
+| 10 | `TIMEOUT` | no DATA for 15 s: the transfer stopped (sent when it happens) |
+
+### Transfer
+
+1. `BEGIN`. The light checks the size against the spare slot and the version against its own: older is refused, the same version needs the reinstall flag. It replies `BEGIN_OK` with the offset to start from.
+2. `DATA` chunks in order, each with its offset. The app never has more than one unacknowledged window (8192 bytes) in flight: it sends up to the next window boundary and waits for the `ACK`.
+   - The light acknowledges every window boundary and the last byte with the next expected offset.
+   - A duplicate or out-of-order chunk is ignored. The first one of a stretch triggers an `ACK` with the offset to continue from.
+   - If no `ACK` arrives (the last chunk of a window was lost), the app asks `STATUS` and continues from `next`.
+   - The light writes the image sequentially: each 4 KB flash sector is erased when the data reaches it, never the whole slot at once, so BLE stays responsive.
+3. `END`. The light checks the byte count and the SHA-256, validates the image (`esp_ota_end`), reads the identity block back from the slot (magic `EBIMGID1`, product `ElectroBright`, kind `universal`, the announced version; at image offset 0x120, looked for in the first 1 KB), selects the slot for the next boot, replies `END_OK` and restarts. A failed check discards the transfer and leaves the running firmware selected.
+4. `ABORT` discards the transfer at any time.
+
+**Dropouts and resume.** A transfer survives a dropped link: the light keeps receiving state, and a `BEGIN` of the same image (same size, SHA-256 and version) replies with the offset reached. After 15 s without data the transfer stops (`ERROR:TIMEOUT`, the light returns to normal), but what arrived is kept until the light restarts: a later `BEGIN` of the same image in the same boot still resumes. `ABORT`, a failed check or another image forget it.
+
+**During a transfer** (from `BEGIN_OK` until the transfer stops, or the restart after `END_OK`):
+- every text command except the queries (`STATUS`, `MODE_SETTINGS`, `MODE_CAPABILITIES`, `PRESET_LIST`, `INFO`, `VERSION`, `CAPS`, `PING`, `DIAG`) gets `ERROR:BUSY`, and binary colour frames are ignored;
+- effects, identify and probes stop. The light breathes slowly at a low level on its white LEDs (the RGB LEDs on an RGB light; nothing in setup-needed mode), driven by the LEDC's hardware fade so flash writes cannot make it stutter.
+
+### First boot and rollback
+
+The new firmware starts in the bootloader's pending-verify state. It confirms itself only after a self-check passes within 15 s: NVS readable, the fixture type loaded (the type the light had when it switched), the render loop running (2 s of frames) and BLE advertising or connected. If the check fails, the firmware marks itself invalid and restarts. If it crashes or hangs (task watchdog) before confirming, the bootloader does the same on the next start. Either way the previous firmware boots again, and DIAG reports `rb=1`. Until the new firmware has confirmed itself, `BEGIN` gets `BUSY`.

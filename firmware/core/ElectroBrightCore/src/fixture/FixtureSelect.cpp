@@ -25,6 +25,19 @@ const FixtureProfile& select(IKeyValueStore& system, FixtureType buildDefault) {
   return fallback;
 }
 
+bool rememberForUpdate(IKeyValueStore& system, FixtureType type) {
+  const uint8_t v = static_cast<uint8_t>(type);
+  return system.write(kUpdateTypeKey, &v, sizeof(v));
+}
+
+bool typeLoaded(IKeyValueStore& system, FixtureType active) {
+  uint8_t v = 0;
+  if (!system.read(kUpdateTypeKey, &v, sizeof(v))) return true;  // no update to check against
+  return v == static_cast<uint8_t>(active);
+}
+
+bool forgetUpdate(IKeyValueStore& system) { return system.erase(kUpdateTypeKey); }
+
 }  // namespace fxselect
 
 namespace probe {

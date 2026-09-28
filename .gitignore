@@ -4,3 +4,6 @@
 
 # Firmware host-test build output
 firmware/test/build/
+
+# Wireless-update images (tools/build_update_image.sh)
+firmware/update/dist/

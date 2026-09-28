@@ -8,6 +8,7 @@
 
 #include "../config/Config.h"
 #include "../fixture/FixtureSelect.h"
+#include "../render/OtaGlow.h"
 #include "PwmPlan.h"
 
 namespace {
@@ -127,4 +128,52 @@ void PwmOutput::probe(uint8_t pin) {
   c.duty = cfg::kProbeDuty >> cfg::kPwmDitherBits;
   c.hpoint = 0;
   ledc_channel_config(&c);
+}
+
+void PwmOutput::fadeTo(uint16_t counts) {
+  for (uint8_t i = 0; i < count_; ++i) {
+    if (!(glowMask_ & (1u << i))) continue;
+    ledc_set_fade_with_time(kMode, kChannels[i], counts, static_cast<int>(otaglow::kRampMs));
+    ledc_fade_start(kMode, kChannels[i], LEDC_FADE_NO_WAIT);
+  }
+}
+
+void PwmOutput::glow(uint32_t nowMs, uint8_t mask) {
+  if (glowing_ && mask == glowMask_) {
+    // A little after the ramp's end, so a new fade never waits on the old one.
+    if (static_cast<uint32_t>(nowMs - turnMs_) < otaglow::kRampMs + 100u) return;
+    // The hardware ramp has ended (or is about to): turn it around. A flash
+    // write that delays this only holds the end point a little longer.
+    rising_ = !rising_;
+    turnMs_ = nowMs;
+    fadeTo(rising_ ? otaglow::kHighCounts : otaglow::kLowCounts);
+    return;
+  }
+  glowOff();
+  probe(probe::kNoPin);
+  if (!fadeInstalled_) {
+    const esp_err_t err = ledc_fade_func_install(0);
+    fadeInstalled_ = err == ESP_OK || err == ESP_ERR_INVALID_STATE;
+  }
+  glowMask_ = mask;
+  for (uint8_t i = 0; i < count_; ++i) {
+    // Plain whole-count PWM from the low point (no dither: the fade steps whole counts).
+    ledc_set_duty_with_hpoint(kMode, kChannels[i], (mask & (1u << i)) ? otaglow::kLowCounts : 0, 0);
+    ledc_update_duty(kMode, kChannels[i]);
+    last_[i] = 0xFFFF;
+  }
+  glowing_ = true;
+  rising_ = true;
+  turnMs_ = nowMs;
+  if (fadeInstalled_) fadeTo(otaglow::kHighCounts);  // else a steady low level
+}
+
+void PwmOutput::glowOff() {
+  if (!glowing_) return;
+  glowing_ = false;
+  for (uint8_t i = 0; i < count_; ++i) {
+    if (fadeInstalled_ && (glowMask_ & (1u << i))) ledc_fade_stop(kMode, kChannels[i]);
+    last_[i] = 0xFFFF;  // the next write() sets it again
+  }
+  glowMask_ = 0;
 }

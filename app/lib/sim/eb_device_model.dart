@@ -5,10 +5,11 @@ import '../core/model/channel_layout.dart';
 import '../core/protocol/eb/eb_constants.dart';
 import '../core/protocol/eb/eb_fixture_catalog.dart';
 import '../core/protocol/eb/eb_scene.dart';
+import 'ota_twin.dart';
 
-/// Dart twin of the ElectroBright firmware (v3.7.0, the universal image: the
-/// fixture type is stored in the light, every type via [EbFixtureSpec]): the
-/// command parser,
+/// Dart twin of the ElectroBright firmware (v3.8.0, the universal image: the
+/// fixture type is stored in the light, every type via [EbFixtureSpec]; with
+/// the wireless-update service, see ota_twin.dart): the command parser,
 /// controller, persistence policy, reply buffer and the BLE/control-task glue,
 /// ported line for line from firmware/core/ElectroBrightCore/src and
 /// firmware/test/fwsim/SimDevice.cpp.
@@ -64,7 +65,29 @@ final class EbDeviceModel {
   /// Makes flash writes fail (like fwsim `KVFAIL`), for fault tests.
   set flashWritesFail(bool fail) => _flash.failWrites = fail;
 
-  static const String firmwareVersion = '3.7.0';
+  static const String firmwareVersion = '3.8.0';
+
+  /// The fake OTA app slots and the bootloader's rollback rules (survive
+  /// restarts, like flash).
+  final SimOtaFlash otaFlash = SimOtaFlash();
+  final List<List<int>> _otaControl = <List<int>>[];
+  final List<List<int>> _otaData = <List<int>>[];
+  int _otaDataBytes = 0;
+  final OtaRepliesTwin _otaReplies = OtaRepliesTwin();
+  final List<Uint8List> _otaDelivered = <Uint8List>[];
+  bool _otaSubscribed = false;
+  bool _fastLink = false;
+  bool _selfChecking = false;
+  int _bootMs = 0;
+  static const int _otaDataBufferBytes = 12288;
+  static const int _otaMaxWrite = 516;
+
+  /// This firmware is new and has not confirmed itself yet.
+  bool get selfChecking => _selfChecking;
+
+  /// The update link parameters are on (ble::setUpdateLink).
+  bool get fastLink => _fastLink;
+  OtaReceiverTwin get ota => _rig.ota;
   String get modelId => fixture.modelId;
   String get capsReply => fixture.capsReply;
 
@@ -104,19 +127,31 @@ final class EbDeviceModel {
   final List<Uint8List> _delivered = <Uint8List>[];
 
   // ---- Lifecycle ---------------------------------------------------------------
-  void boot() => _rig.core.begin(_now);
+  void boot() {
+    _rig.core.begin(_now);
+    _selfChecking = otaFlash.pendingVerify;
+    _bootMs = _now;
+  }
 
   /// Power cycle: RAM state is lost, flash survives, the link drops, and the
   /// stored fixture type is read again.
   void reboot() {
     _delivered.clear();
+    _otaDelivered.clear();
     _restartNow();
   }
 
   /// esp_restart(): like [reboot], except that notifications already
   /// delivered to the phone stay delivered.
   void _restartNow() {
+    otaFlash.bootloader();
     _rig = _Rig(this);
+    _otaControl.clear();
+    _otaData.clear();
+    _otaDataBytes = 0;
+    _otaReplies.clear();
+    _otaSubscribed = false;
+    _fastLink = false;
     _egress.clear();
     _assembler = _LineAssembler(_maxLineLength);
     _seen = const _AssemblerCounters(0, 0, 0);
@@ -136,16 +171,42 @@ final class EbDeviceModel {
     _mtu = 23;
     _connected = true;
     _subscribed = false;
+    _otaSubscribed = false;
     _events.add(1);
   }
 
   void disconnect() {
     _connected = false;
     _subscribed = false;
+    _otaSubscribed = false;
+    _fastLink = false;
     _events.add(2);
   }
 
   void setMtu(int mtu) => _mtu = mtu;
+  void setOtaSubscribed({required bool subscribed}) =>
+      _otaSubscribed = subscribed;
+
+  /// One write to the update control characteristic (OtaControlCallbacks).
+  void otaControl(List<int> data) {
+    if (_otaControl.length >= 4) return;
+    _otaControl.add(data.length > 48 ? const <int>[] : List<int>.of(data));
+  }
+
+  /// One write to the update data characteristic (OtaDataCallbacks).
+  void otaData(List<int> data) {
+    if (data.isEmpty || data.length > _otaMaxWrite) return;
+    if (_otaDataBytes + data.length + 4 > _otaDataBufferBytes) return;
+    _otaData.add(List<int>.of(data));
+    _otaDataBytes += data.length + 4;
+  }
+
+  /// Update-control notifications the phone received since the last call.
+  List<Uint8List> takeOtaNotifications() {
+    final List<Uint8List> out = List<Uint8List>.of(_otaDelivered);
+    _otaDelivered.clear();
+    return out;
+  }
   void setSubscribed({required bool subscribed}) => _subscribed = subscribed;
   void failNextNotifies(int count) => _notifyFailures = count;
 
@@ -220,6 +281,18 @@ final class EbDeviceModel {
     }
     flushBatch();
 
+    // 3b. Wireless update: requests, then data.
+    _rig.ota.blocked = _rig.core.restartPending;
+    while (_otaControl.isNotEmpty) {
+      _rig.ota.onControl(_otaControl.removeAt(0), _now);
+    }
+    while (_otaData.isNotEmpty) {
+      final List<int> m = _otaData.removeAt(0);
+      _otaDataBytes -= m.length + 4;
+      _rig.ota.onData(m, _now);
+    }
+    _rig.ota.tick(_now);
+
     final _AssemblerCounters c = _assembler.counters;
     _rig.stats.rxLineOverflows += c.overflows - _seen.overflows;
     _rig.stats.rxRejectedBytes += c.rejected - _seen.rejected;
@@ -231,15 +304,48 @@ final class EbDeviceModel {
       final int before = _egress.retries;
       _egress.flush(_maxPayload, _notify);
       _rig.stats.notifyRetries += _egress.retries - before;
+      _otaReplies.flush((List<int> d) {
+        if (_otaSubscribed) _otaDelivered.add(Uint8List.fromList(d));
+        return true;
+      });
     } else {
       _egress.clear();
+      _otaReplies.clear();
     }
 
-    // SET_TYPE: restart once the OK has gone out.
-    if (_rig.restartRequested && (_egress.pending == 0 || !_connected)) {
+    // SET_TYPE / update: restart once the reply has gone out.
+    if (_rig.restartRequested &&
+        ((_egress.pending == 0 && _otaReplies.isEmpty) || !_connected)) {
+      _restarts++;
+      _restartNow();
+      return;
+    }
+    _selfCheck();
+  }
+
+  /// App.cpp selfCheck(): a new firmware confirms itself, or rolls back.
+  void _selfCheck() {
+    if (!_selfChecking) return;
+    final int since = _now - _bootMs;
+    final int? marker = _flash.updateType;
+    final bool typeLoaded = marker == null || marker == _typeValue(fixture);
+    final bool pass =
+        typeLoaded && since ~/ 5 >= SelfCheckTwin.minRenderFrames;
+    if (pass) {
+      _selfChecking = false;
+      otaFlash.confirm();
+      _flash.updateType = null;
+    } else if (since >= SelfCheckTwin.deadlineMs) {
+      otaFlash.markInvalid();
       _restarts++;
       _restartNow();
     }
+  }
+
+  /// FixtureType value of a spec (None 0, RGBW 1 … W 5, in catalogue order).
+  static int _typeValue(EbFixtureSpec spec) {
+    final int i = EbFixtureCatalog.all.indexOf(spec);
+    return i < 0 ? 0 : i + 1;
   }
 
   void pass() {
@@ -317,6 +423,19 @@ final class EbDeviceModel {
       },
       'sound': _rig.core.soundEnabled ? 1 : 0,
       'presets': (_rig.store.presetSlots.toList()..sort()),
+      'ota': <String, Object>{
+        'active': _rig.ota.active ? 1 : 0,
+        'next': _rig.ota.next,
+        'size': _rig.ota.size,
+        'restarting': _rig.ota.restarting ? 1 : 0,
+        'resume': _rig.ota.canResume ? 1 : 0,
+        'running': otaFlash.running,
+        'boot': otaFlash.boot,
+        'pending': otaFlash.pendingVerify ? 1 : 0,
+        'rolledBack': otaFlash.rolledBack ? 1 : 0,
+        'fast': _fastLink ? 1 : 0,
+        'written': otaFlash.slot[otaFlash.spare].length,
+      },
       'now': _now,
       'connected': _connected ? 1 : 0,
       'mtu': _mtu,
@@ -328,6 +447,7 @@ final class EbDeviceModel {
         'sleeping': _rig.params.sleeping ? 1 : 0,
         'fadeMs': _rig.params.fadeMs,
         'identify': _rig.params.identifyId,
+        'ota': _rig.params.ota ? 1 : 0,
         'probe': _rig.params.probe,
       },
       'stats': <String, Object>{
@@ -378,6 +498,7 @@ final class _Params {
     this.identifyId = 0,
     this.identifyAt = 0,
     this.probe = 0,
+    this.ota = false,
   });
   final EbScene scene;
   final bool sleeping;
@@ -388,6 +509,9 @@ final class _Params {
 
   /// PROBE: 0 = off, else physical output + 1.
   final int probe;
+
+  /// A wireless update is on: effects, identify and probes stop.
+  final bool ota;
 
   /// Virtual time the current [identifyId] was published.
   final int identifyAt;
@@ -414,6 +538,20 @@ final class _Rig {
   final EbDeviceModel device;
   final EbFixtureSpec fixture;
   bool restartRequested = false;
+  late final OtaReceiverTwin ota = OtaReceiverTwin(
+    flash: device.otaFlash,
+    running: ImageIdentityTwin.parseVersion(EbDeviceModel.firmwareVersion)!,
+    reply: device._otaReplies.push,
+    onActive: (bool active) {
+      core.setOtaBusy(active);
+      device._fastLink = active && device._connected;
+    },
+    onRestart: () {
+      // The new firmware's self-check expects this type back ("ofx").
+      device._flash.updateType = EbDeviceModel._typeValue(fixture);
+      restartRequested = true;
+    },
+  );
   final _Stats stats = _Stats();
   final List<String> sounds = <String>[];
   late _Params params = _Params(
@@ -583,6 +721,10 @@ final class _Egress {
 final class _Flash {
   /// The fixture type ("fx", its own namespace: FACTORY_RESET keeps it).
   EbFixtureSpec? type;
+
+  /// The type when the light switched to an update ("ofx", same namespace;
+  /// FixtureType value).
+  int? updateType;
   EbScene? scene;
   bool? soundEnabled;
   final Map<int, EbScene> presets = <int, EbScene>{};
@@ -1082,6 +1224,20 @@ final class _Controller {
   late EbScene scene = EbScene.defaults(_rig.fixture.layout);
   late final bool _setup = identical(_rig.fixture, EbDeviceModel.setupSpec);
   bool _restartPending = false;
+  bool _otaBusy = false;
+  bool get restartPending => _restartPending;
+  bool get otaBusy => _otaBusy;
+
+  /// ControllerCore::setOtaBusy.
+  void setOtaBusy(bool busy) {
+    if (busy == _otaBusy) return;
+    _otaBusy = busy;
+    if (busy) {
+      _identifying = false;
+      _probe = 0;
+    }
+    _publish();
+  }
   int _probe = 0;
   int _probeDeadline = 0;
   bool soundEnabled = true;
@@ -1138,7 +1294,7 @@ final class _Controller {
   }
 
   void onColorFrame(_ColorFrame f, int now) {
-    if (_setup || _restartPending) return;
+    if (_setup || _restartPending || _otaBusy) return;
     _probe = 0;
     final int? seq = f.seq;
     if (seq != null) {
@@ -1177,6 +1333,11 @@ final class _Controller {
         if (_setup && !_allowedInSetup(r.id!)) {
           _rig.stats.commandErrors++;
           _reportError('SETUP_NEEDED');
+          continue;
+        }
+        if (_otaBusy && !_isQuery(r.id!)) {
+          _rig.stats.commandErrors++;
+          _reportError('BUSY');
           continue;
         }
         if (r.status != _ParseStatus.ok) {
@@ -1453,6 +1614,7 @@ final class _Controller {
     identifyId: _identifying ? _identifySeq : 0,
     identifyAt: _identifyAt,
     probe: _probe,
+    ota: _otaBusy,
   );
 
   void _sceneChanged(int now) => _rig.store.noteSceneChanged(now);
@@ -1518,6 +1680,8 @@ final class _Controller {
       ('stkr', 2000),
       ('rst', 1),
       ('up', now ~/ 1000),
+      ('slot', _rig.device.otaFlash.running),
+      ('rb', _rig.device.otaFlash.rolledBack ? 1 : 0),
     ];
     _rig.sendLine(
       'DIAG:${kv.map(((String, int) e) => '${e.$1}=${e.$2}').join(',')}',
