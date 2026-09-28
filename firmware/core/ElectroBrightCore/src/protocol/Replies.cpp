@@ -71,7 +71,7 @@ size_t capabilities(char* out, size_t cap, uint8_t mode) {
                   cap);
 }
 
-size_t caps(char* out, size_t cap, const FixtureProfile& fixture) {
+size_t caps(char* out, size_t cap, const FixtureProfile& fixture, uint32_t updateSlotBytes) {
   size_t len = clampLen(snprintf(out, cap, "CAPS:PROTOCOL=1,PWM=%u,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=%u,IDENTIFY=1,TYPES=",
                                  static_cast<unsigned>(cfg::kPwmBits + cfg::kPwmDitherBits),
                                  static_cast<unsigned>(cfg::kNumPresets)),
@@ -86,6 +86,7 @@ size_t caps(char* out, size_t cap, const FixtureProfile& fixture) {
   if (fixture.type != FixtureType::None && l.modes != kAllModes) {
     len += clampLen(snprintf(out + len, cap - len, ",MODES=%X", static_cast<unsigned>(l.modes)), cap - len);
   }
+  len += clampLen(snprintf(out + len, cap - len, ",OTA=%lu", static_cast<unsigned long>(updateSlotBytes)), cap - len);
   return len;
 }
 

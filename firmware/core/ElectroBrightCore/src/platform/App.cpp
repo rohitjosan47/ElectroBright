@@ -27,6 +27,7 @@
 #include "../ota/OtaReceiver.h"
 #include "../ota/OtaReplies.h"
 #include "../ota/SelfCheck.h"
+#include "../ota/UpdateRecord.h"
 #include "../render/OtaGlow.h"
 #include "../protocol/Egress.h"
 #include "../protocol/LineAssembler.h"
@@ -55,6 +56,10 @@ EspOtaFlash g_otaFlash;
 OtaReplies g_otaReplies;          // control task only
 OtaReceiver* g_ota = nullptr;
 bool g_selfChecking = false;      // this firmware is new and has to confirm itself
+bool g_nvsRoundTrip = false;      // the self-check's NVS write read back
+uint32_t g_nvsTriedMs = 0;        // last attempt (0: none yet)
+uint32_t g_updateSlotBytes = 0;   // selfcheck::updateSlotBytes of this partition table
+uint32_t g_lastFinishMs = 0;      // DIAG endms: the last update's END-to-END_OK time
 QueueHandle_t g_otaControl = nullptr;
 MessageBufferHandle_t g_otaData = nullptr;
 SoundSequencer g_sound;
@@ -89,6 +94,8 @@ class DeviceEnv final : public IControllerEnv {
     d.uptimeSec = static_cast<uint32_t>(esp_timer_get_time() / 1000000);
     d.runningSlot = EspOtaFlash::runningSlot();
     d.rolledBack = EspOtaFlash::lastUpdateRolledBack() ? 1 : 0;
+    d.pendingVerify = EspOtaFlash::pendingVerify() ? 1 : 0;
+    d.finishMs = g_lastFinishMs;
   }
   void restart() override {
     const uint32_t at = nowMs() + cfg::kRestartDelayMs;
@@ -106,9 +113,11 @@ class OtaEnv final : public IOtaEnv {
     g_core->setOtaBusy(active);
     ble::setUpdateLink(active);
   }
-  void otaRestart() override {
+  void otaRestart(uint32_t finishMs) override {
     // The new firmware's self-check expects this type back.
     fxselect::rememberForUpdate(g_system, g_fixture->type);
+    updaterecord::writeFinishMs(g_system, finishMs);
+    ESP_LOGI(kTag, "update verified in %lu ms", static_cast<unsigned long>(finishMs));
     g_env.restart();
   }
 };
@@ -146,13 +155,23 @@ void selfCheck(uint32_t now) {
     ESP_LOGW(kTag, "rollback test: control task frozen, waiting for the task watchdog");
     for (;;) __asm__ __volatile__("nop");
   }
-  const selfcheck::Inputs in{g_nvsOk, fxselect::typeLoaded(g_system, g_fixture->type),
-                             Stats::get(g_stats.renderFrames), ble::advertising() || ble::connected()};
+  if (!g_nvsRoundTrip && (g_nvsTriedMs == 0 || now - g_nvsTriedMs >= selfcheck::kNvsRetryMs)) {
+    g_nvsTriedMs = now ? now : 1;
+    g_nvsRoundTrip = g_nvsOk && selfcheck::nvsRoundTrip(g_system, esp_random());
+  }
+  const selfcheck::Inputs in{g_nvsOk,
+                             fxselect::typeLoaded(g_system, g_fixture->type),
+                             Stats::get(g_stats.renderFrames),
+                             ble::advertising() || ble::connected(),
+                             g_nvsRoundTrip,
+                             ble::commandServiceUp(),
+                             ble::updateServiceUp() && g_updateSlotBytes > 0};
   switch (selfcheck::evaluate(in, now, kTest)) {
     case selfcheck::Verdict::Pending:
       return;
     case selfcheck::Verdict::Pass:
       g_selfChecking = false;
+      g_core->setPendingVerify(false);
       esp_ota_mark_app_valid_cancel_rollback();
       fxselect::forgetUpdate(g_system);
       ESP_LOGI(kTag, "update confirmed");
@@ -217,7 +236,7 @@ void controlTask(void*) {
     flushBatch();
 
     // 3b. Wireless update: requests, then data (at most one window is queued).
-    g_ota->setBlocked(g_core->restartPending());
+    g_ota->setBlocked(g_core->restartPending() || g_selfChecking);
     OtaControlMsg msg;
     while (xQueueReceive(g_otaControl, &msg, 0) == pdTRUE) g_ota->onControl(msg.data, msg.len, nowMs());
     static uint8_t otaChunk[cfg::kOtaMaxWrite];
@@ -248,7 +267,8 @@ void controlTask(void*) {
     const uint32_t restartAt = g_restartAtMs.load();
     if (restartAt && ((g_egress.pending() == 0 && g_otaReplies.empty()) || !ble::connected()) &&
         static_cast<int32_t>(nowMs() - restartAt) >= 0) {
-      ESP_LOGI(kTag, "fixture type changed: restarting");
+      ESP_LOGI(kTag, "restarting");
+      g_core->flushStorage();  // held settings / presets / scene first
       esp_restart();
     }
 
@@ -338,6 +358,8 @@ void start(FixtureType buildDefault) {
     ESP_LOGE(kTag, "NVS unavailable; running with defaults");
   }
   g_selfChecking = EspOtaFlash::pendingVerify();
+  g_updateSlotBytes = selfcheck::updateSlotBytes(g_otaFlash.spareSize(), g_otaFlash.runningSize());
+  g_lastFinishMs = updaterecord::readFinishMs(g_system);
 
   // 3. The active type's outputs at 0 %, its unused ones held low.
   if (!g_pwm.begin(*g_fixture)) ESP_LOGE(kTag, "LEDC init failed");
@@ -352,6 +374,8 @@ void start(FixtureType buildDefault) {
   static ControllerCore core(g_env, store, g_system, g_stats, *g_fixture);
   g_engine = &engine;
   g_core = &core;
+  g_core->setPendingVerify(g_selfChecking);
+  g_core->setUpdateSlotBytes(g_updateSlotBytes);
   g_engine->reseed(esp_random());
   g_core->begin(nowMs());
   FirmwareVersion running{};

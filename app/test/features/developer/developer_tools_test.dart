@@ -408,7 +408,8 @@ void main() {
     expect(key('diag-uptime'), findsOneWidget);
     expect(find.text('Powered on'), findsOneWidget);
     expect(find.text('Firmware slot'), findsOneWidget);
-    expect(find.text('Kept'), findsOneWidget);
+    expect(find.text('None'), findsOneWidget); // no rollback
+    expect(find.text('Confirmed'), findsOneWidget); // pv=0
     expect(find.text('RENDERING'), findsOneWidget);
     expect(find.text('CONNECTION'), findsOneWidget);
     expect(find.text('Lines received'), findsOneWidget);

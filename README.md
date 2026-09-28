@@ -2,7 +2,7 @@
 
 ElectroBright is a Bluetooth lighting system with three parts:
 - **Hardware:** an ESP32-C3 on a small MOSFET board drives a 12 V / 24 V LED strip ([wiring guide](docs/wiring_guide.md)).
-- **Firmware:** one universal image (3.8.1) for all five fixture types (RGBW, RGB, RGBCCT, CCT and W). The light stores its type, and lights update wirelessly from the app ([firmware](firmware/README.md)).
+- **Firmware:** one universal image (3.8.2) for all five fixture types (RGBW, RGB, RGBCCT, CCT and W). The light stores its type, and lights update wirelessly from the app ([firmware](firmware/README.md)).
 - **App:** a Flutter app for iOS and Android that talks to the lights directly over Bluetooth, with no server or cloud ([app guide](docs/app.md)).
 
 <p>

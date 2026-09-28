@@ -39,7 +39,7 @@ After connecting, send `INFO`, `VERSION` and `CAPS`:
 ```
 INFO:EB-C3-<LAYOUT>-V<rev>                         e.g. INFO:EB-C3-RGB-V1
 VERSION:<major>.<minor>.<patch>                    e.g. VERSION:3.7.0
-CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=<LAYOUT>
+CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=<LAYOUT>,OTA=<bytes>
 ```
 
 A light in setup-needed mode (§9) answers `INFO` with `ERROR:SETUP_NEEDED` and CAPS with `LAYOUT=NONE`. A client that sees the `ElectroBright_C3_SETUP` name, or knows the light was in that mode, asks `CAPS` first.
@@ -49,6 +49,7 @@ A light in setup-needed mode (§9) answers `INFO` with `ERROR:SETUP_NEEDED` and 
 - **CAPS is `KEY=VALUE` pairs:** parse it as a map and ignore unknown keys. Keys may be added in later versions. A list value runs over commas: a part without `=` continues the previous key's value (`TYPES=RGBW,RGB,…`). `LAYOUT` is not always the last key.
 - **Fixture types:** `TYPES=<list>` (3.7.0+) lists every type `SET_TYPE` accepts, in this order: `RGBW,RGB,RGBCCT,CCT,W`. If it is absent, the type cannot be changed.
 - **Probe:** `PROBE=1` (3.7.0+) means the light answers `PROBE` (§9).
+- **Update slot:** `OTA=<bytes>` (3.8.2+, the last key) is the size of the spare app slot a wireless update installs to (§10): 1310720 with the default partition table. `OTA=0` means the light has no suitable second slot (none, or one smaller than the slot it runs from) and cannot take a wireless update. Before 3.8.2 the key is absent; clients then rely on the update service being present.
 - **Preset slots:** `PRESETS=<n>` is the number of preset slots (15 on 3.6.0); absent on firmware before 3.6.0, where clients assume 15.
 - **Identify:** `IDENTIFY=1` (3.6.1+) means the light supports the `IDENTIFY` command (§4, §6). If it is absent, the light does not; clients must not send it.
 - **PWM:** `PWM=<bits>` is informational: the effective duty resolution. 3.6.1+ sends `PWM=15`: 25 kHz PWM (inaudible) with an 11-bit counter plus 4 bits of hardware dithering. Earlier firmware sends `PWM=14` (14-bit at 4.9 kHz, which can make the fixture's buck converter whine). Clients do not need it.
@@ -108,12 +109,12 @@ Colour arguments are `v1,…,vn`, each 0–255. The wrong number of values gives
 | `MODE_CAPABILITIES:m` | `CAPABILITIES:NONE` / `FREQUENCY` / `SPEED,FREQUENCY[,COLOR_MODE]` |
 | `SLEEP` · `WAKE` · `PING` | `OK` |
 | `IDENTIFY` (only when CAPS has `IDENTIFY=1`) | `OK` (§6) |
-| `SOUND_ON` · `SOUND_OFF` | `OK` (preceded by `ERROR:STORAGE` if it could not be saved) |
+| `SOUND_ON` · `SOUND_OFF` | `OK` (preceded by `ERROR:STORAGE` if it could not be saved; 3.8.2+: the write may be held, see *Storage* below) |
 | `TIMER:0-86400` (seconds; 0 cancels) | `OK` |
-| `FACTORY_RESET` | `OK` (no reboot; the link stays up) |
+| `FACTORY_RESET` | `OK` (no reboot; the link stays up); `ERROR:BUSY` while the firmware is unconfirmed (3.8.2+, §10) |
 | `INFO` · `VERSION` · `CAPS` | §2 |
-| `DIAG` | `DIAG:key=value,…` (see `firmware/README.md`); 3.8.0 adds `slot=<n>` (the OTA app slot it runs from) and `rb=<0\|1>` (the last update was rolled back) at the end |
-| `SET_TYPE:<RGBW\|RGB\|RGBCCT\|CCT\|W>` (only when CAPS has `TYPES=`) | `OK`, then the light restarts (§9); `ERROR:TYPE_INVALID`; `ERROR:STORAGE` |
+| `DIAG` | `DIAG:key=value,…` (see `firmware/README.md`); 3.8.0 adds `slot=<n>` (the OTA app slot it runs from) and `rb=<0\|1>`: 1 means a rollback has happened since the rolled-back slot was last written (the next install clears it), not necessarily "the last update". 3.8.2 adds `pv=<0\|1>` (1 while the running firmware is new and has not confirmed itself, §10) and `endms=<ms>` (the last update's END-to-`END_OK` time; 0 when none recorded) at the end |
+| `SET_TYPE:<RGBW\|RGB\|RGBCCT\|CCT\|W>` (only when CAPS has `TYPES=`) | `OK`, then the light restarts (§9); `ERROR:TYPE_INVALID`; `ERROR:STORAGE`; `ERROR:BUSY` while the firmware is unconfirmed (3.8.2+) |
 | `PROBE:<output 0-4>:<0\|1>` (only when CAPS has `PROBE=1`) | `OK` (§9); `ERROR:PROBE_INVALID` |
 
 **Error codes:**
@@ -125,7 +126,9 @@ Colour arguments are `v1,…,vn`, each 0–255. The wrong number of values gives
 - `STORAGE`: flash failure, reported once per boot
 - `TYPE_INVALID`, `PROBE_INVALID` (3.7.0+)
 - `SETUP_NEEDED` (3.7.0+): the light has no type yet and does not accept this command (§9)
-- `BUSY` (3.8.0+): a wireless update is running (§10); queries still answer
+- `BUSY` (3.8.0+): a wireless update is running (§10); queries still answer. 3.8.2+: also `SET_TYPE` and `FACTORY_RESET` while the running firmware is unconfirmed (the first seconds after an update, DIAG `pv=1`); every other command works then
+
+**Storage (3.8.2+).** Commits of the sound setting, presets and the scene share a write budget: at least 2 s apart and at most 10 a minute. A `SOUND_*`, `PRESET_SAVE` or `PRESET_DELETE` within the budget is written at once, as before. Beyond it the light replies `OK` and holds the write in RAM; `PRESET_LIST` and `PRESET_LOAD` already see it, a newer value for the same record replaces it, and it is committed as the budget frees up (always within about a minute, and before a planned restart such as `SET_TYPE` or an update). While the flash is failing, requests are tried at once and report `ERROR:STORAGE`. A power cut can lose a held write.
 
 ## 5. STATUS
 
@@ -195,6 +198,7 @@ The invariant tests (`test_layouts.cpp`) and `make conformance` then cover it. T
 
 ## 8. Firmware changes
 
+- **3.8.2:** update safety. The first-boot self-check also needs an NVS write read back, the command service registered and advertised, and the update receiver ready (update service registered, a spare slot at least as large as the running one); otherwise the firmware rolls back as before. While unconfirmed, `SET_TYPE`, `FACTORY_RESET` and update `BEGIN` get `BUSY`. END's image verification runs off the watched control task (whatever it takes, the light keeps running; `BEGIN`/`END`/`ABORT` get `BUSY` meanwhile). CAPS gains `OTA=<bytes>`; DIAG gains `pv=` and `endms=`. Storage commits are rate-limited (§4, *Storage*). Everything else is unchanged.
 - **3.8.1:** the task watchdog is reconfigured instead of initialised a second time (no `TWDT already initialized` error at boot; its 3 s timeout, idle-task watch and restart on timeout now apply for sure), so a frozen, unconfirmed update is reset and rolls back. Rollback test images can be built (`build_update_image.sh --rollback-test`; test version 3.8.9999, identity block byte 52 = 1 or 2); a normal image has 0 there. The wire protocol, CAPS and every reply other than VERSION are unchanged.
 - **3.8.0:** wireless updates over BLE with verification and rollback (§10): the update service, the image identity block, `ERROR:BUSY` for commands during a transfer, DIAG `slot=` and `rb=`, MTU 517. The type-neutral update image is `firmware/update/ElectroBright_Update` (no default type). Everything else is unchanged.
 - **3.7.0:** one universal firmware for every fixture type; the light stores its type (NVS namespace `ebsys`, key `fx`, kept by `FACTORY_RESET`). New: `SET_TYPE`, `PROBE`, CAPS `TYPES=` and `PROBE=1` (before `LAYOUT=`), and setup-needed mode (§9). Every type keeps its settings and presets in namespace `eb3`; RGB, RGBCCT, CCT and W lights updated from 3.6.x start from their defaults. The rendering, frames and the other replies are unchanged.
@@ -266,7 +270,7 @@ Error codes (never silent):
 | 4 | `DOWNGRADE` | BEGIN: older than the running firmware |
 | 5 | `SAME_VERSION` | BEGIN: the running version without the reinstall flag |
 | 6 | `FLASH_ERROR` | the slot could not be written or selected |
-| 7 | `BUSY` | another image is being received, a restart is pending, or the running firmware has not confirmed itself yet (right after an update) |
+| 7 | `BUSY` | another image is being received, a restart is pending, the running firmware has not confirmed itself yet (right after an update; DIAG `pv=1`), or (3.8.2+) the received image is still being verified after `END` (`BEGIN`, `END`, `ABORT`) |
 | 8 | `BAD_REQUEST` | a malformed request; END with no transfer |
 | 9 | `INCOMPLETE` | END before every byte arrived (`next` says where to continue; the transfer goes on) |
 | 10 | `TIMEOUT` | no DATA for 15 s: the transfer stopped (sent when it happens) |
@@ -279,7 +283,7 @@ Error codes (never silent):
    - A duplicate or out-of-order chunk is ignored. The first one of a stretch triggers an `ACK` with the offset to continue from.
    - If no `ACK` arrives (the last chunk of a window was lost), the app asks `STATUS` and continues from `next`.
    - The light writes the image sequentially: each 4 KB flash sector is erased when the data reaches it, never the whole slot at once, so BLE stays responsive.
-3. `END`. The light checks the byte count and the SHA-256, validates the image (`esp_ota_end`), reads the identity block back from the slot (magic `EBIMGID1`, product `ElectroBright`, kind `universal`, the announced version; at image offset 0x120, looked for in the first 1 KB), selects the slot for the next boot, replies `END_OK` and restarts. A failed check discards the transfer and leaves the running firmware selected.
+3. `END`. The light checks the byte count and the SHA-256, validates the image (`esp_ota_end`; 3.8.2+ runs it on a short-lived task outside the task watchdog, so the light keeps running however long it takes: `STATUS` reports receiving with every byte in, DATA is ignored, `BEGIN`, `END` and `ABORT` get `BUSY`, and there is no timeout), reads the identity block back from the slot (magic `EBIMGID1`, product `ElectroBright`, kind `universal`, the announced version; at image offset 0x120, looked for in the first 1 KB), selects the slot for the next boot, replies `END_OK` and restarts. A failed check discards the transfer and leaves the running firmware selected.
 4. `ABORT` discards the transfer at any time.
 
 **Dropouts and resume.** A transfer survives a dropped link: the light keeps receiving state, and a `BEGIN` of the same image (same size, SHA-256 and version) replies with the offset reached. After 15 s without data the transfer stops (`ERROR:TIMEOUT`, the light returns to normal), but what arrived is kept until the light restarts: a later `BEGIN` of the same image in the same boot still resumes. `ABORT`, a failed check or another image forget it.
@@ -290,4 +294,4 @@ Error codes (never silent):
 
 ### First boot and rollback
 
-The new firmware starts in the bootloader's pending-verify state. It confirms itself only after a self-check passes within 15 s: NVS readable, the fixture type loaded (the type the light had when it switched), the render loop running (2 s of frames) and BLE advertising or connected. If the check fails, the firmware marks itself invalid and restarts. If it crashes or hangs (task watchdog) before confirming, the bootloader does the same on the next start. Either way the previous firmware boots again, and DIAG reports `rb=1`. Until the new firmware has confirmed itself, `BEGIN` gets `BUSY`.
+The new firmware starts in the bootloader's pending-verify state. It confirms itself only after a self-check passes within 15 s: NVS readable, the fixture type loaded (the type the light had when it switched), the render loop running (2 s of frames) and BLE advertising or connected. 3.8.2 adds: an NVS write read back (key `chk` in `ebsys`, retried every second), the command service registered and in the advertisement, and the update receiver ready (the update service registered and a spare slot at least as large as the running one, the same test as CAPS `OTA=`). If the check fails, the firmware marks itself invalid and restarts. If it crashes or hangs (task watchdog) before confirming, the bootloader does the same on the next start. Either way the previous firmware boots again, and DIAG reports `rb=1`. Until the new firmware has confirmed itself (DIAG `pv=1`), `BEGIN`, `SET_TYPE` and `FACTORY_RESET` get `BUSY` (the latter two from 3.8.2), so nothing restarts or rewrites the light before it knows the firmware works.

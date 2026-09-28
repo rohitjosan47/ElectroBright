@@ -17,6 +17,10 @@
 //          LAYOUT (universal firmware; RGBW is the default type of a new light)
 //   3.8.0  VERSION; DIAG gained slot=<running OTA slot>,rb=<last update rolled back>
 //   3.8.1  VERSION (task watchdog reconfigured; rollback test images build-only)
+//   3.8.2  VERSION; CAPS gained OTA=<spare slot bytes>; DIAG gained pv=,endms=;
+//          storage commits are rate-limited (storage_failures: failed retries
+//          at most every 2 s, so fewer nvsf, and the PRESET_SAVE right after
+//          SOUND_ON is held and committed later, so nvsw is lower at the DIAG)
 // Any other difference means RGBW behaviour changed.
 //
 //   make golden-record     rewrite the golden file (only when a change is intended)

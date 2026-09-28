@@ -43,6 +43,10 @@ namespace ble {
 bool begin(const BleSinks& sinks, const FixtureProfile& fixture);
 bool connected();
 bool advertising();
+// First-boot check (ota/SelfCheck.h): the command service is registered with
+// the stack and in the advertisement; the update service is registered.
+bool commandServiceUp();
+bool updateServiceUp();
 // Max bytes per notification for the current link (ATT MTU - 3).
 size_t maxPayload();
 // Sends one notification; false if the stack is out of buffers (retry later).

@@ -24,12 +24,16 @@ bool OtaReceiver::Image::same(const Image& o) const {
 // ------------------------------------------------------------------ ingress
 void OtaReceiver::onControl(const uint8_t* d, size_t len, uint32_t nowMs) {
   if (len == 0) return replyError(ota::Error::BadRequest);
+  // Nothing changes until the verification is done.
+  if (finishing_ && (d[0] == ota::kBegin || d[0] == ota::kEnd || d[0] == ota::kAbort)) {
+    return replyError(ota::Error::Busy);
+  }
   switch (d[0]) {
     case ota::kBegin:
       return begin(d, len, nowMs);
     case ota::kEnd:
       if (len != 1) return replyError(ota::Error::BadRequest);
-      return end();
+      return end(nowMs);
     case ota::kAbort:
       if (len != 1) return replyError(ota::Error::BadRequest);
       return abortTransfer();
@@ -42,7 +46,7 @@ void OtaReceiver::onControl(const uint8_t* d, size_t len, uint32_t nowMs) {
 }
 
 void OtaReceiver::onData(const uint8_t* d, size_t len, uint32_t nowMs) {
-  if (!active_ || len <= ota::kDataHeader) {
+  if (!active_ || finishing_ || len <= ota::kDataHeader) {
     ++ignored_;
     return;
   }
@@ -75,6 +79,7 @@ void OtaReceiver::onData(const uint8_t* d, size_t len, uint32_t nowMs) {
 }
 
 void OtaReceiver::tick(uint32_t nowMs) {
+  if (finishing_) return pollFinish(nowMs);
   if (!active_ || static_cast<uint32_t>(nowMs - lastDataMs_) < ota::kTimeoutMs) return;
   // Stopped, but what arrived stays usable for a BEGIN of the same image.
   stop(true);
@@ -138,7 +143,7 @@ void OtaReceiver::begin(const uint8_t* d, size_t len, uint32_t nowMs) {
   env_.otaReply(r, sizeof(r));
 }
 
-void OtaReceiver::end() {
+void OtaReceiver::end(uint32_t nowMs) {
   if (!active_) return replyError(restarting_ ? ota::Error::Busy : ota::Error::BadRequest);
   if (next_ != image_.size) return replyError(ota::Error::Incomplete);  // still receiving
   uint8_t digest[Sha256::kDigestSize];
@@ -147,7 +152,19 @@ void OtaReceiver::end() {
     replyError(ota::Error::HashMismatch);
     return stop(false);
   }
-  const IOtaFlash::Status st = flash_.finish();
+  if (flash_.startFinish() != IOtaFlash::Status::Ok) {
+    replyError(ota::Error::FlashError);
+    return stop(false);
+  }
+  finishing_ = true;
+  endMs_ = nowMs;
+  pollFinish(nowMs);  // a quick verification completes right here
+}
+
+void OtaReceiver::pollFinish(uint32_t nowMs) {
+  const IOtaFlash::Status st = flash_.pollFinish();
+  if (st == IOtaFlash::Status::Pending) return;
+  finishing_ = false;
   if (st != IOtaFlash::Status::Ok) {
     replyError(st == IOtaFlash::Status::Invalid ? ota::Error::NotElectroBright : ota::Error::FlashError);
     return stop(false);
@@ -174,7 +191,7 @@ void OtaReceiver::end() {
   restarting_ = true;
   const uint8_t r[1] = {ota::kEndOk};
   env_.otaReply(r, sizeof(r));
-  env_.otaRestart();  // stays busy until the restart
+  env_.otaRestart(nowMs - endMs_);  // stays busy until the restart
 }
 
 void OtaReceiver::abortTransfer() {

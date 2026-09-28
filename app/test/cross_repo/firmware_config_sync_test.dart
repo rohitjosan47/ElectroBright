@@ -40,7 +40,10 @@ void main() {
     final List<String> rgbw = profileStrings(profileSource('Rgbw'));
     expect(EbDeviceModel.firmwareVersion, c['kFirmwareVersion']);
     expect(EbDeviceModel().modelId, rgbw[0]);
-    expect(EbDeviceModel().capsReply, firmwareCaps('RGBW', 0x1FFF));
+    expect(
+      EbDeviceModel().capsReply,
+      firmwareCaps('RGBW', 0x1FFF, otaBytes: 0x140000),
+    );
   });
 
   test('typed commands accept exactly the firmware parser ranges', () {

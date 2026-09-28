@@ -59,6 +59,10 @@ class SimDevice {
   void otaControl(const uint8_t* data, size_t len);
   void otaData(const uint8_t* data, size_t len);
   void setOtaSubscribed(bool on) { otaSubscribed_ = on; }
+  // ble::commandServiceUp() / updateServiceUp() (the first-boot check); both
+  // true unless a test takes one down. They survive restarts.
+  void setCommandService(bool up) { commandService_ = up; }
+  void setUpdateService(bool up) { updateService_ = up; }
 
   // --- Control task (App.cpp) ----------------------------------------------------
   void passBegin();  // steps 1-2: connection events, one mailbox frame
@@ -120,7 +124,7 @@ class SimDevice {
     explicit OtaEnv(SimDevice& dev) : dev_(dev) {}
     void otaReply(const uint8_t* data, size_t len) override { dev_.otaReplies_.push(data, len); }
     void otaActive(bool active) override;
-    void otaRestart() override;
+    void otaRestart(uint32_t finishMs) override;
 
    private:
     SimDevice& dev_;
@@ -167,6 +171,13 @@ class SimDevice {
   bool fastLink_ = false;
   bool selfChecking_ = false;
   uint32_t bootMs_ = 0;
+  bool nvsRoundTrip_ = false;
+  uint32_t nvsTriedMs_ = 0;
+  bool nvsTried_ = false;
+  uint32_t updateSlotBytes_ = 0;
+  uint32_t lastFinishMs_ = 0;
+  bool commandService_ = true;
+  bool updateService_ = true;
   std::unique_ptr<Rig> rig_;
   Egress egress_;
   LineAssembler assembler_;

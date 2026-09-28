@@ -21,6 +21,10 @@ bool allowedInSetup(CmdId id) {
       return false;
   }
 }
+
+// Refused while the running firmware is unconfirmed: a type change or a reset
+// would restart or rewrite the light before it knows the firmware works.
+bool refusedWhileUnconfirmed(CmdId id) { return id == CmdId::SetType || id == CmdId::FactoryReset; }
 }  // namespace
 
 ControllerCore::ControllerCore(IControllerEnv& env, StateStore& store, IKeyValueStore& system, Stats& stats,
@@ -89,6 +93,10 @@ void ControllerCore::setOtaBusy(bool busy) {
   publish();
 }
 
+void ControllerCore::flushStorage() {
+  if (!setup_) store_.flushAll(scene_);  // restarting anyway: no STORAGE reply
+}
+
 void ControllerCore::onColorFrame(const ColorFrame& f, uint32_t nowMs) {
   if (setup_ || restartPending_ || otaBusy_) return;
   endProbe();
@@ -128,7 +136,7 @@ void ControllerCore::processLines(const char* const* lines, size_t count, uint32
         reportError("SETUP_NEEDED");
         continue;
       }
-      if (otaBusy_ && !isQuery(r.cmd.id)) {
+      if ((otaBusy_ && !isQuery(r.cmd.id)) || (pendingVerify_ && refusedWhileUnconfirmed(r.cmd.id))) {
         Stats::inc(stats_.commandErrors);
         reportError("BUSY");
         continue;
@@ -235,7 +243,7 @@ void ControllerCore::execute(const Command& c, uint32_t nowMs) {
     }
 
     case CmdId::PresetSave: {
-      if (store_.savePreset(static_cast<uint8_t>(a[0]), scene_)) {
+      if (store_.savePreset(static_cast<uint8_t>(a[0]), scene_, nowMs)) {
         sound(SoundId::Save);
         env_.sendLine("OK");
       } else {
@@ -263,7 +271,7 @@ void ControllerCore::execute(const Command& c, uint32_t nowMs) {
     }
 
     case CmdId::PresetDelete: {
-      if (store_.deletePreset(static_cast<uint8_t>(a[0]))) {
+      if (store_.deletePreset(static_cast<uint8_t>(a[0]), nowMs)) {
         sound(SoundId::Delete);
         env_.sendLine("OK");
       } else {
@@ -307,14 +315,14 @@ void ControllerCore::execute(const Command& c, uint32_t nowMs) {
 
     case CmdId::SoundOn:
       settings_.soundEnabled = 1;
-      checkStorage(store_.saveSettings(settings_));
+      checkStorage(store_.saveSettings(settings_, nowMs));
       env_.playSound(SoundId::SoundOn);  // always audible: confirms un-muting
       env_.sendLine("OK");
       return;
 
     case CmdId::SoundOff:
       settings_.soundEnabled = 0;
-      checkStorage(store_.saveSettings(settings_));
+      checkStorage(store_.saveSettings(settings_, nowMs));
       env_.sendLine("OK");
       return;
 
@@ -352,7 +360,7 @@ void ControllerCore::execute(const Command& c, uint32_t nowMs) {
       return;
 
     case CmdId::Caps:
-      replies::caps(buf_, sizeof(buf_), fixture_);
+      replies::caps(buf_, sizeof(buf_), fixture_, updateSlotBytes_);
       env_.sendLine(buf_);
       return;
 
@@ -478,7 +486,7 @@ void ControllerCore::sendDiag() {
   snprintf(buf_, sizeof(buf_),
            "DIAG:rx=%lu,ovf=%lu,rej=%lu,sdrop=%lu,unk=%lu,err=%lu,coal=%lu,bin=%lu,binbad=%lu,gaps=%lu,"
            "nretry=%lu,edrop=%lu,nvsw=%lu,nvsf=%lu,frames=%lu,overrun=%lu,rmaxus=%lu,heapmin=%lu,"
-           "stkc=%lu,stkr=%lu,rst=%lu,up=%lu,slot=%lu,rb=%lu",
+           "stkc=%lu,stkr=%lu,rst=%lu,up=%lu,slot=%lu,rb=%lu,pv=%lu,endms=%lu",
            (unsigned long)Stats::get(stats_.rxLines), (unsigned long)Stats::get(stats_.rxLineOverflows),
            (unsigned long)Stats::get(stats_.rxRejectedBytes), (unsigned long)Stats::get(stats_.rxStreamDrops),
            (unsigned long)Stats::get(stats_.unknownCommands), (unsigned long)Stats::get(stats_.commandErrors),
@@ -489,7 +497,8 @@ void ControllerCore::sendDiag() {
            (unsigned long)Stats::get(stats_.renderFrames), (unsigned long)Stats::get(stats_.renderOverruns),
            (unsigned long)Stats::get(stats_.renderMaxUs), (unsigned long)d.minFreeHeap,
            (unsigned long)d.controlStackFree, (unsigned long)d.renderStackFree, (unsigned long)d.resetReason,
-           (unsigned long)d.uptimeSec, (unsigned long)d.runningSlot, (unsigned long)d.rolledBack);
+           (unsigned long)d.uptimeSec, (unsigned long)d.runningSlot, (unsigned long)d.rolledBack,
+           (unsigned long)d.pendingVerify, (unsigned long)d.finishMs);
   env_.sendLine(buf_);
 }
 

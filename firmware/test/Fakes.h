@@ -57,6 +57,8 @@ class FakeEnv : public IControllerEnv {
   void systemDiag(SystemDiag& d) override {
     d.minFreeHeap = 123456;
     d.uptimeSec = 42;
+    d.pendingVerify = pendingVerify;
+    d.finishMs = finishMs;
   }
   void restart() override { ++restarts; }
 
@@ -71,6 +73,8 @@ class FakeEnv : public IControllerEnv {
   RenderParams params{};
   int publishes = 0;
   int restarts = 0;
+  uint32_t pendingVerify = 0;
+  uint32_t finishMs = 0;
 };
 
 // Two OTA app slots in RAM plus the bootloader's rollback rules
@@ -85,6 +89,7 @@ class MockOtaFlash : public IOtaFlash {
   enum class SlotState : uint8_t { Valid, New, PendingVerify, Aborted, Invalid };
 
   size_t spareSize() override { return capacity; }
+  size_t runningSize() override { return runningCapacity ? runningCapacity : capacity; }
   Status begin() override {
     if (state[running] == SlotState::PendingVerify) return Status::Busy;
     if (failBegin) return Status::Error;
@@ -106,9 +111,21 @@ class MockOtaFlash : public IOtaFlash {
     slot[spare()].insert(slot[spare()].end(), data, data + len);
     return true;
   }
-  Status finish() override {
-    if (!open) return Status::Error;
+  Status startFinish() override {
+    if (!open || finishing) return Status::Error;
     open = false;
+    if (failStartFinish) return Status::Error;
+    finishing = true;
+    pollsLeft = finishPolls;
+    return Status::Ok;
+  }
+  Status pollFinish() override {
+    if (!finishing) return Status::Error;
+    if (pollsLeft > 0) {
+      --pollsLeft;
+      return Status::Pending;
+    }
+    finishing = false;
     const std::vector<uint8_t>& img = slot[spare()];
     return (!img.empty() && img[0] == 0xE9 && !forceInvalid) ? Status::Ok : Status::Invalid;
   }
@@ -152,7 +169,8 @@ class MockOtaFlash : public IOtaFlash {
     return false;
   }
 
-  size_t capacity = 0x140000;
+  size_t capacity = 0x140000;   // both slots (a partition table has equal app slots)
+  size_t runningCapacity = 0;   // non-zero: the running slot's size differs
   std::vector<uint8_t> slot[2];
   SlotState state[2] = {SlotState::Valid, SlotState::Valid};
   int running = 0;
@@ -162,6 +180,10 @@ class MockOtaFlash : public IOtaFlash {
   bool failBegin = false;
   bool failSetBoot = false;
   bool forceInvalid = false;
+  bool failStartFinish = false;
+  int finishPolls = 0;  // pollFinish() answers Pending this many times first (a slow verification)
+  bool finishing = false;
+  int pollsLeft = 0;
   int begins = 0;
   int resumes = 0;
 };

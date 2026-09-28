@@ -63,7 +63,7 @@ TEST(rgb_reports_its_identity_and_layout) {
   r.send("CAPS");
   CHECK_STR(r.env.lines[0], "INFO:EB-C3-RGB-V1");
   CHECK_STR(r.env.lines[1], std::string("VERSION:") + cfg::kFirmwareVersion);
-  CHECK_STR(r.env.lines[2], "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=RGB");
+  CHECK_STR(r.env.lines[2], "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=RGB,OTA=0");
 }
 
 // ---- Text protocol ------------------------------------------------------------------
@@ -217,7 +217,7 @@ TEST(rgb_store_rejects_records_with_a_white_value) {
   store.load(s, set);
   CHECK(s.color == kRgb.defaults.color);
   CHECK_EQ(store.presetMask(), 0u);
-  CHECK(!store.savePreset(0, bad));  // never writes one either
+  CHECK(!store.savePreset(0, bad, 0));  // never writes one either
 }
 
 TEST(rgb_presets_and_scene_survive_a_power_cycle) {

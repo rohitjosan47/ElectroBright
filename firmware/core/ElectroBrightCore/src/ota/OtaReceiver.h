@@ -10,6 +10,12 @@
 // ota::kTimeoutMs without data. A timeout keeps what was received: a BEGIN of
 // the same image (same size, hash and version) in the same boot continues
 // from there. ABORT and a failed check forget it.
+//
+// END finishes in the background (IOtaFlash::startFinish): esp_ota_end reads
+// the whole image back, which may take longer than the task watchdog allows,
+// so the control task keeps running meanwhile. While it finishes, DATA is
+// ignored, BEGIN, END and ABORT are refused as busy, STATUS reports receiving
+// with every byte in, and there is no timeout.
 
 #include <stddef.h>
 #include <stdint.h>
@@ -27,7 +33,8 @@ class IOtaEnv {
   // commands as busy and shows its update glow meanwhile.
   virtual void otaActive(bool active) = 0;
   // The new firmware is selected: restart once the reply has gone out.
-  virtual void otaRestart() = 0;
+  // `finishMs`: END received to END_OK sent.
+  virtual void otaRestart(uint32_t finishMs) = 0;
 
  protected:
   ~IOtaEnv() = default;
@@ -43,11 +50,13 @@ class OtaReceiver {
   // Timeout; call at least every ~100 ms.
   void tick(uint32_t nowMs);
 
-  // While blocked (a SET_TYPE restart is pending) BEGIN is refused as busy.
+  // While blocked (a SET_TYPE restart is pending, or the running firmware is
+  // not confirmed yet) BEGIN is refused as busy.
   void setBlocked(bool blocked) { blocked_ = blocked; }
 
   bool active() const { return active_; }
   bool restarting() const { return restarting_; }
+  bool finishing() const { return finishing_; }
   uint32_t next() const { return active_ ? next_ : 0; }
   uint32_t size() const { return active_ ? image_.size : 0; }
   bool canResume() const { return resume_.valid; }
@@ -68,7 +77,8 @@ class OtaReceiver {
   };
 
   void begin(const uint8_t* d, size_t len, uint32_t nowMs);
-  void end();
+  void end(uint32_t nowMs);
+  void pollFinish(uint32_t nowMs);
   void abortTransfer();
   void stop(bool keepResume);
   void replyError(ota::Error code);
@@ -81,6 +91,8 @@ class OtaReceiver {
 
   bool active_ = false;
   bool restarting_ = false;
+  bool finishing_ = false;   // END accepted; the image is being verified
+  uint32_t endMs_ = 0;       // when END arrived
   bool blocked_ = false;
   Image image_;
   uint32_t next_ = 0;

@@ -1,6 +1,6 @@
 # Limitations and Roadmap
 
-As of app 2.0.0+200 and firmware 3.8.1. How things work today is in [architecture.md](architecture.md); why, in [design_decisions.md](design_decisions.md).
+As of app 2.0.0+200 and firmware 3.8.2. How things work today is in [architecture.md](architecture.md); why, in [design_decisions.md](design_decisions.md).
 
 ## Known limitations
 

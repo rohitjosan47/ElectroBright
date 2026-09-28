@@ -1,11 +1,20 @@
 #include "EspOtaFlash.h"
 
 #include <esp_partition.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+#include "../config/Config.h"
 
 const esp_partition_t* EspOtaFlash::spare() { return esp_ota_get_next_update_partition(nullptr); }
 
 size_t EspOtaFlash::spareSize() {
   const esp_partition_t* p = spare();
+  return p ? p->size : 0;
+}
+
+size_t EspOtaFlash::runningSize() {
+  const esp_partition_t* p = esp_ota_get_running_partition();
   return p ? p->size : 0;
 }
 
@@ -35,12 +44,29 @@ bool EspOtaFlash::write(const uint8_t* data, size_t len) {
   return open_ && esp_ota_write(handle_, data, len) == ESP_OK;
 }
 
-IOtaFlash::Status EspOtaFlash::finish() {
-  if (!open_) return Status::Error;
+IOtaFlash::Status EspOtaFlash::startFinish() {
+  if (!open_ || finish_.load() == Status::Pending) return Status::Error;
   open_ = false;  // esp_ota_end frees the handle whatever the result
-  const esp_err_t err = esp_ota_end(handle_);
-  if (err == ESP_OK) return Status::Ok;
-  return err == ESP_ERR_OTA_VALIDATE_FAILED ? Status::Invalid : Status::Error;
+  finish_ = Status::Pending;
+  if (xTaskCreate(verifyTask, "eb-verify", cfg::kVerifyStackBytes, this, tskIDLE_PRIORITY, nullptr) != pdPASS) {
+    esp_ota_abort(handle_);
+    finish_ = Status::Error;
+    return Status::Error;
+  }
+  return Status::Ok;
+}
+
+void EspOtaFlash::verifyTask(void* arg) {
+  EspOtaFlash* self = static_cast<EspOtaFlash*>(arg);
+  const esp_err_t err = esp_ota_end(self->handle_);
+  self->finish_ = err == ESP_OK ? Status::Ok : err == ESP_ERR_OTA_VALIDATE_FAILED ? Status::Invalid : Status::Error;
+  vTaskDelete(nullptr);
+}
+
+IOtaFlash::Status EspOtaFlash::pollFinish() {
+  const Status st = finish_.load();
+  if (st != Status::Pending) finish_ = Status::Error;  // reported once
+  return st;
 }
 
 void EspOtaFlash::abort() {

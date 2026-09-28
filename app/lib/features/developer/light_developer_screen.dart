@@ -583,6 +583,11 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
           l.diagRollback,
           d.rolledBack! ? l.diagRolledBack : l.diagNotRolledBack,
         ),
+      if (d.pendingVerify != null)
+        value(
+          l.diagConfirmation,
+          d.pendingVerify! ? l.diagPendingVerify : l.diagConfirmed,
+        ),
     ];
     for (final DiagGroup g in DiagGroup.values) {
       final List<(String, int)> counters = d.counters(g);
@@ -658,6 +663,7 @@ String diagKeyName(AppLocalizations l, String key) => switch (key) {
   'stkr' => l.diagKeyStkr,
   'nvsw' => l.diagKeyNvsw,
   'nvsf' => l.diagKeyNvsf,
+  'endms' => l.diagKeyEndms,
   _ => key,
 };
 
@@ -682,6 +688,12 @@ String diagText(
     b.writeln(
       '${l.diagRollback}: '
       '${d.rolledBack! ? l.diagRolledBack : l.diagNotRolledBack}',
+    );
+  }
+  if (d.pendingVerify != null) {
+    b.writeln(
+      '${l.diagConfirmation}: '
+      '${d.pendingVerify! ? l.diagPendingVerify : l.diagConfirmed}',
     );
   }
   for (final DiagGroup g in DiagGroup.values) {

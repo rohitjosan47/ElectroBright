@@ -24,8 +24,10 @@ struct SystemDiag {
   uint32_t renderStackFree = 0;
   uint32_t resetReason = 0;
   uint32_t uptimeSec = 0;
-  uint32_t runningSlot = 0;  // OTA app slot the firmware runs from
-  uint32_t rolledBack = 0;   // 1: the last update was rolled back
+  uint32_t runningSlot = 0;    // OTA app slot the firmware runs from
+  uint32_t rolledBack = 0;     // 1: a rollback has happened since the rolled-back slot was last written
+  uint32_t pendingVerify = 0;  // 1: this firmware is new and has not confirmed itself yet
+  uint32_t finishMs = 0;       // the last update's END-to-END_OK time (0: none recorded)
 };
 
 class IControllerEnv {
@@ -35,6 +37,7 @@ class IControllerEnv {
   virtual void playSound(SoundId id) = 0;
   virtual void systemDiag(SystemDiag& out) = 0;
   // Restarts the light once the replies queued so far have been sent (SET_TYPE).
+  // The platform calls flushStorage() right before it restarts.
   virtual void restart() = 0;
 
  protected:
@@ -62,6 +65,13 @@ class ControllerCore {
   // commands are refused as busy, queries still answer, colour frames are
   // ignored, and effects, identify and probes stop.
   void setOtaBusy(bool busy);
+  // The running firmware is new and not confirmed yet (ota/SelfCheck.h):
+  // SET_TYPE and FACTORY_RESET are refused as busy until it is.
+  void setPendingVerify(bool pending) { pendingVerify_ = pending; }
+  // CAPS OTA=: the spare slot an update installs to (selfcheck::updateSlotBytes; 0: none).
+  void setUpdateSlotBytes(uint32_t bytes) { updateSlotBytes_ = bytes; }
+  // Commits every held storage write now (before a planned restart).
+  void flushStorage();
 
   const Scene& scene() const { return scene_; }
   const Settings& settings() const { return settings_; }
@@ -69,6 +79,7 @@ class ControllerCore {
   bool sleeping() const { return sleeping_; }
   bool setupNeeded() const { return setup_; }
   bool otaBusy() const { return otaBusy_; }
+  bool pendingVerify() const { return pendingVerify_; }
   bool restartPending() const { return restartPending_; }
   int probeOutput() const { return probe_ ? probe_ - 1 : -1; }
   bool timerActive() const { return timerActive_; }
@@ -109,7 +120,9 @@ class ControllerCore {
   const bool setup_;             // setup-needed mode: no fixture type
   bool restartPending_ = false;  // SET_TYPE done: ignore everything until the restart
   bool otaBusy_ = false;
+  bool pendingVerify_ = false;
+  uint32_t updateSlotBytes_ = 0;
   uint8_t probe_ = 0;            // RenderParams::probe
   uint32_t probeDeadlineMs_ = 0;
-  char buf_[384] = {};  // large enough for the DIAG line
+  char buf_[448] = {};  // large enough for the DIAG line (26 fields of up to 10 digits: 423)
 };

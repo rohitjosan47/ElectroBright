@@ -53,7 +53,7 @@ std::map<std::string, std::string> capsFields(const std::string& caps) {
 
 std::string capsOf(const FixtureProfile& f) {
   char buf[256];
-  replies::caps(buf, sizeof(buf), f);
+  replies::caps(buf, sizeof(buf), f, 0);  // Rig: no update slot
   return buf;
 }
 

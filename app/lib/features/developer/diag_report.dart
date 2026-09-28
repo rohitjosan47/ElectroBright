@@ -50,13 +50,14 @@ const Map<String, DiagGroup> diagCounters = <String, DiagGroup>{
   'stkr': DiagGroup.system,
   'nvsw': DiagGroup.system,
   'nvsf': DiagGroup.system,
+  'endms': DiagGroup.system,
 };
 
 /// The keys shown in the summary rather than as counters.
-const Set<String> diagSummaryKeys = <String>{'up', 'rst', 'slot', 'rb'};
+const Set<String> diagSummaryKeys = <String>{'up', 'rst', 'slot', 'rb', 'pv'};
 
 /// A DIAG reply, readable: the summary (uptime, last restart, running slot,
-/// rollback) and the counters by group, in the light's key order.
+/// rollback, firmware check) and the counters by group, in the light's key order.
 @immutable
 final class DiagReport {
   const DiagReport(this.values);
@@ -72,8 +73,13 @@ final class DiagReport {
   /// The OTA app slot it runs from (3.8.0+).
   int? get slot => values['slot'];
 
-  /// The last wireless update was rolled back (3.8.0+).
+  /// A rollback has happened since the rolled-back slot was last written
+  /// (3.8.0+): an install since then clears it. Not "the last update".
   bool? get rolledBack => values['rb'] == null ? null : values['rb'] == 1;
+
+  /// The running firmware is new and has not confirmed itself yet (3.8.2+):
+  /// it refuses SET_TYPE, FACTORY_RESET and an update BEGIN as busy.
+  bool? get pendingVerify => values['pv'] == null ? null : values['pv'] == 1;
 
   /// The counters of [group] (key, value) in the light's order; [DiagGroup
   /// .other] holds the keys the app doesn't know.

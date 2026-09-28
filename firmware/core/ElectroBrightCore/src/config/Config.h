@@ -12,7 +12,7 @@ namespace cfg {
 // --- Identity -------------------------------------------------------------------
 // One universal image for every fixture type; a type's identity (model id,
 // BLE name, layout, pins) lives in the profile table (fixture/Profiles.h).
-constexpr const char* kFirmwareVersion = "3.8.1";
+constexpr const char* kFirmwareVersion = "3.8.2";
 
 // Rollback test images (tools/build_update_image.sh --rollback-test fail|freeze
 // builds them with EB_ROLLBACK_TEST=1|2; the app offers them in debug builds
@@ -85,6 +85,11 @@ constexpr uint32_t kPersistMaxLatencyMs = 15000;  // ...but never later than thi
 constexpr const char* kNvsNamespace = "eb3";           // settings, scene, presets (FACTORY_RESET erases it)
 constexpr const char* kSystemNvsNamespace = "ebsys";  // the fixture type ("fx"); survives FACTORY_RESET
 constexpr const char* kLegacyNvsNamespace = "eeprom";  // old firmware's EEPROM emulation (wiped once, no migration)
+// Commits of settings (sound), presets and the scene share one budget
+// (state/WriteLimiter.h): at least this long apart, at most this many a
+// minute. Requests beyond it are held and coalesced, never dropped.
+constexpr uint32_t kStorageMinIntervalMs = 2000;
+constexpr uint8_t  kStorageMaxPerMinute  = 10;
 
 // --- Protocol / buffers -----------------------------------------------------------
 constexpr size_t kMaxLineLength   = 96;    // longer text lines are discarded, never truncated-and-executed
@@ -96,7 +101,8 @@ constexpr size_t kOtaDataBufferBytes = 12288;  // > one update window (ota::kWin
 constexpr size_t kOtaMaxWrite = 516;           // longest DATA write taken (MTU 517 - 3 + margin)
 
 // --- Tasks ----------------------------------------------------------------------
-constexpr uint32_t kControlStackBytes = 8192;  // esp_ota_end verifies the image on this task
+constexpr uint32_t kControlStackBytes = 8192;
+constexpr uint32_t kVerifyStackBytes  = 8192;  // eb-verify: esp_ota_end's image verification (EspOtaFlash)
 constexpr uint32_t kRenderStackBytes  = 4096;
 constexpr uint32_t kControlPriority   = 6;
 constexpr uint32_t kRenderPriority    = 10;

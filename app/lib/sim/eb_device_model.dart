@@ -75,7 +75,7 @@ final class EbDeviceModel {
   /// Makes flash writes fail (like fwsim `KVFAIL`), for fault tests.
   set flashWritesFail(bool fail) => _flash.failWrites = fail;
 
-  static const String firmwareVersion = '3.8.1';
+  static const String firmwareVersion = '3.8.2';
 
   /// The firmware flashed over USB (the factory slot's).
   final String flashedVersion;
@@ -129,11 +129,15 @@ final class EbDeviceModel {
   /// This firmware is new and has not confirmed itself yet.
   bool get selfChecking => _selfChecking;
 
+  /// CAPS `OTA=` (selfcheck::updateSlotBytes at boot): the spare slot, when
+  /// it holds at least the running one; 0 without.
+  int _updateSlotBytes = 0;
+
   /// The update link parameters are on (ble::setUpdateLink).
   bool get fastLink => _fastLink;
   OtaReceiverTwin get ota => _rig.ota;
   String get modelId => fixture.modelId;
-  String get capsReply => fixture.capsReply;
+  String get capsReply => '${fixture.capsReply},OTA=$_updateSlotBytes';
 
   // cfg (Config.h)
   static const int _numModes = 13;
@@ -172,8 +176,13 @@ final class EbDeviceModel {
 
   // ---- Lifecycle ---------------------------------------------------------------
   void boot() {
-    _rig.core.begin(_now);
     _selfChecking = otaFlash.pendingVerify;
+    _updateSlotBytes = SelfCheckTwin.updateSlotBytes(
+      otaFlash.spareSize(),
+      otaFlash.runningSize(),
+    );
+    _rig.core.pendingVerify = _selfChecking;
+    _rig.core.begin(_now);
     _bootMs = _now;
     _testImage = _runningTestImage;
   }
@@ -328,7 +337,7 @@ final class EbDeviceModel {
     flushBatch();
 
     // 3b. Wireless update: requests, then data.
-    _rig.ota.blocked = _rig.core.restartPending;
+    _rig.ota.blocked = _rig.core.restartPending || _selfChecking;
     while (_otaControl.isNotEmpty) {
       _rig.ota.onControl(_otaControl.removeAt(0), _now);
     }
@@ -362,6 +371,7 @@ final class EbDeviceModel {
     // SET_TYPE / update: restart once the reply has gone out.
     if (_rig.restartRequested &&
         ((_egress.pending == 0 && _otaReplies.isEmpty) || !_connected)) {
+      _rig.core.flushStorage();
       _restarts++;
       _restartNow();
       return;
@@ -383,13 +393,17 @@ final class EbDeviceModel {
     }
     final int? marker = _flash.updateType;
     final bool typeLoaded = marker == null || marker == _typeValue(fixture);
+    // The NVS write-and-read-back goes to the system namespace, which fwsim
+    // never fails; the services are always up in the simulation.
     final bool pass =
         test == 0 &&
         !failSelfCheck &&
         typeLoaded &&
-        since ~/ 5 >= SelfCheckTwin.minRenderFrames;
+        since ~/ 5 >= SelfCheckTwin.minRenderFrames &&
+        _updateSlotBytes > 0;
     if (pass) {
       _selfChecking = false;
+      _rig.core.pendingVerify = false;
       otaFlash.confirm();
       _flash.updateType = null;
     } else if (since >= SelfCheckTwin.deadlineMs) {
@@ -608,9 +622,10 @@ final class _Rig {
       core.setOtaBusy(active);
       device._fastLink = active && device._connected;
     },
-    onRestart: () {
+    onRestart: (int finishMs) {
       // The new firmware's self-check expects this type back ("ofx").
       device._flash.updateType = EbDeviceModel._typeValue(fixture);
+      device._flash.finishMs = finishMs; // "oend": DIAG endms
       restartRequested = true;
     },
   );
@@ -787,6 +802,9 @@ final class _Flash {
   /// The type when the light switched to an update ("ofx", same namespace;
   /// FixtureType value).
   int? updateType;
+
+  /// The last update's END-to-END_OK time ("oend", same namespace).
+  int? finishMs;
   EbScene? scene;
   bool? soundEnabled;
   final Map<int, EbScene> presets = <int, EbScene>{};
@@ -794,6 +812,30 @@ final class _Flash {
   /// The preset format marker ("pv"); null on flash of older firmware.
   int? presetFormat;
   bool failWrites = false;
+}
+
+/// state/WriteLimiter.h: attempts cfg::kStorageMinIntervalMs apart, at most
+/// cfg::kStorageMaxPerMinute commits in any minute (a failed attempt counts
+/// for the interval only).
+final class _WriteLimiter {
+  static const int minIntervalMs = 2000;
+  static const int maxPerMinute = 10;
+  static const int windowMs = 60000;
+
+  final List<int> _commits = <int>[]; // the last maxPerMinute, oldest first
+  int? _last;
+
+  bool allowed(int now) {
+    if (_last != null && now - _last! < minIntervalMs) return false;
+    return _commits.length < maxPerMinute || now - _commits.first >= windowMs;
+  }
+
+  void note(int now, {required bool committed}) {
+    _last = now;
+    if (!committed) return;
+    _commits.add(now);
+    if (_commits.length > maxPerMinute) _commits.removeAt(0);
+  }
 }
 
 final class _StateStore {
@@ -807,14 +849,27 @@ final class _StateStore {
   int _lastDirty = 0;
   final Set<int> presetSlots = <int>{};
 
+  // Held writes (StateStore: over the write budget).
+  final _WriteLimiter _limiter = _WriteLimiter();
+  bool _failing = false;
+  bool? _heldSound;
+  final Map<int, EbScene> _heldSaves = <int, EbScene>{};
+  final Set<int> _heldDeletes = <int>{};
+
+  bool get hasHeldWrites =>
+      _heldSound != null || _heldSaves.isNotEmpty || _heldDeletes.isNotEmpty;
+
   bool _noteWrite(bool ok) {
     if (ok) {
       stats.nvsWrites++;
     } else {
       stats.nvsFailures++;
     }
+    _failing = !ok;
     return ok;
   }
+
+  bool _mayWriteNow(int now) => _failing || _limiter.allowed(now);
 
   (EbScene, bool) load() {
     final EbScene scene;
@@ -858,12 +913,24 @@ final class _StateStore {
   }
 
   bool tick(int now, EbScene scene) {
+    if (!_limiter.allowed(now)) return true;
+    if (hasHeldWrites) {
+      final bool ok = _commitNextHeld();
+      _limiter.note(now, committed: ok);
+      return ok;
+    }
     if (!_dirty) return true;
     final bool quiet = now - _lastDirty >= EbDeviceModel._persistDebounceMs;
     final bool overdue =
         now - _firstDirty >= EbDeviceModel._persistMaxLatencyMs;
     if (!quiet && !overdue) return true;
-    return _flush(scene);
+    if (_shadow != null && _shadow == scene) {
+      _dirty = false; // nothing to write: no commit spent
+      return true;
+    }
+    final bool ok = _flush(scene);
+    _limiter.note(now, committed: ok);
+    return ok;
   }
 
   bool _flush(EbScene scene) {
@@ -878,22 +945,79 @@ final class _StateStore {
     return true;
   }
 
-  bool saveSettings({required bool soundEnabled}) {
-    final bool ok = !kv.failWrites;
-    if (ok) kv.soundEnabled = soundEnabled;
-    return _noteWrite(ok);
+  /// StateStore::flushAll: everything held and a changed scene, now.
+  bool flushAll(EbScene scene) {
+    bool ok = true;
+    if (_heldSound != null) ok = _commitSettings() && ok;
+    for (int i = 0; i < EbDeviceModel._numPresets; i++) {
+      if (_heldSaves.containsKey(i) || _heldDeletes.contains(i)) {
+        ok = _commitHeldPreset(i) && ok;
+      }
+    }
+    if (_dirty) ok = _flush(scene) && ok;
+    return ok;
   }
 
-  bool savePreset(int id, EbScene scene) {
-    if (id >= EbDeviceModel._numPresets) return false;
-    if (!_noteWrite(!kv.failWrites)) return false;
-    kv.presets[id] = scene;
-    presetSlots.add(id);
+  bool _commitSettings() {
+    final bool ok = _noteWrite(!kv.failWrites);
+    if (ok) {
+      kv.soundEnabled = _heldSound;
+      _heldSound = null;
+    }
+    return ok;
+  }
+
+  bool _commitHeldPreset(int id) {
+    final bool ok = _noteWrite(!kv.failWrites);
+    if (!ok) return false;
+    if (_heldDeletes.remove(id)) {
+      kv.presets.remove(id);
+    } else {
+      kv.presets[id] = _heldSaves.remove(id)!;
+    }
     return true;
+  }
+
+  bool _commitNextHeld() {
+    if (_heldSound != null) return _commitSettings();
+    final Iterable<int> pending = _heldDeletes.isNotEmpty
+        ? _heldDeletes
+        : _heldSaves.keys;
+    final int id = pending.reduce((int a, int b) => a < b ? a : b);
+    return _commitHeldPreset(id);
+  }
+
+  bool saveSettings({required bool soundEnabled, required int now}) {
+    _heldSound = soundEnabled;
+    if (!_mayWriteNow(now)) return true;
+    final bool ok = _commitSettings();
+    _limiter.note(now, committed: ok);
+    return ok;
+  }
+
+  bool savePreset(int id, EbScene scene, int now) {
+    if (id >= EbDeviceModel._numPresets) return false;
+    _heldDeletes.remove(id);
+    if (!_mayWriteNow(now)) {
+      _heldSaves[id] = scene;
+      presetSlots.add(id);
+      return true;
+    }
+    _heldSaves.remove(id);
+    final bool ok = _noteWrite(!kv.failWrites);
+    _limiter.note(now, committed: ok);
+    if (ok) {
+      kv.presets[id] = scene;
+      presetSlots.add(id);
+    }
+    return ok;
   }
 
   EbScene? loadPreset(int id) {
     if (id >= EbDeviceModel._numPresets) return null;
+    final EbScene? held = _heldSaves[id];
+    if (held != null) return held;
+    if (_heldDeletes.contains(id)) return null;
     final EbScene? s = kv.presets[id];
     if (s != null) {
       presetSlots.add(id);
@@ -903,18 +1027,26 @@ final class _StateStore {
     return s;
   }
 
-  bool deletePreset(int id) {
+  bool deletePreset(int id, int now) {
     if (id >= EbDeviceModel._numPresets) return false;
-    final bool ok = !kv.failWrites;
+    _heldSaves.remove(id);
+    if (!_mayWriteNow(now)) {
+      _heldDeletes.add(id);
+      presetSlots.remove(id);
+      return true;
+    }
+    _heldDeletes.remove(id);
+    final bool ok = _noteWrite(!kv.failWrites);
+    _limiter.note(now, committed: ok);
     if (ok) {
       kv.presets.remove(id);
       presetSlots.remove(id);
     }
-    return _noteWrite(ok);
+    return ok;
   }
 
   /// StateStore::clearForTypeChange: scene and every preset slot go (they
-  /// belong to the old layout); settings stay.
+  /// belong to the old layout), held presets too; settings stay.
   bool clearForTypeChange() {
     final bool ok = _noteWrite(!kv.failWrites);
     if (ok) {
@@ -925,6 +1057,8 @@ final class _StateStore {
     presetSlots.clear();
     _shadow = null;
     _dirty = false;
+    _heldSaves.clear();
+    _heldDeletes.clear();
     return ok;
   }
 
@@ -940,6 +1074,9 @@ final class _StateStore {
     presetSlots.clear();
     _shadow = null;
     _dirty = false;
+    _heldSound = null;
+    _heldSaves.clear();
+    _heldDeletes.clear();
     return ok;
   }
 }
@@ -1289,8 +1426,16 @@ final class _Controller {
   late final bool _setup = identical(_rig.fixture, EbDeviceModel.setupSpec);
   bool _restartPending = false;
   bool _otaBusy = false;
+
+  /// ControllerCore::setPendingVerify: SET_TYPE and FACTORY_RESET are busy.
+  bool pendingVerify = false;
   bool get restartPending => _restartPending;
   bool get otaBusy => _otaBusy;
+
+  /// ControllerCore::flushStorage: held writes before a planned restart.
+  void flushStorage() {
+    if (!_setup) _rig.store.flushAll(scene);
+  }
 
   /// ControllerCore::setOtaBusy.
   void setOtaBusy(bool busy) {
@@ -1399,7 +1544,9 @@ final class _Controller {
           _reportError('SETUP_NEEDED');
           continue;
         }
-        if (_otaBusy && !_isQuery(r.id!)) {
+        if ((_otaBusy && !_isQuery(r.id!)) ||
+            (pendingVerify &&
+                (r.id == _Cmd.setType || r.id == _Cmd.factoryReset))) {
           _rig.stats.commandErrors++;
           _reportError('BUSY');
           continue;
@@ -1493,7 +1640,7 @@ final class _Controller {
         _publish();
         _rig.sendLine('OK');
       case _Cmd.presetSave:
-        if (_rig.store.savePreset(a[0], scene)) {
+        if (_rig.store.savePreset(a[0], scene, now)) {
           _sound('Save');
           _rig.sendLine('OK');
         } else {
@@ -1513,7 +1660,7 @@ final class _Controller {
           _sound('Error');
         }
       case _Cmd.presetDelete:
-        if (_rig.store.deletePreset(a[0])) {
+        if (_rig.store.deletePreset(a[0], now)) {
           _sound('Delete');
           _rig.sendLine('OK');
         } else {
@@ -1544,12 +1691,12 @@ final class _Controller {
         _rig.sendLine('OK');
       case _Cmd.soundOn:
         soundEnabled = true;
-        _checkStorage(_rig.store.saveSettings(soundEnabled: true));
+        _checkStorage(_rig.store.saveSettings(soundEnabled: true, now: now));
         _rig.sounds.add('SoundOn'); // always audible
         _rig.sendLine('OK');
       case _Cmd.soundOff:
         soundEnabled = false;
-        _checkStorage(_rig.store.saveSettings(soundEnabled: false));
+        _checkStorage(_rig.store.saveSettings(soundEnabled: false, now: now));
         _rig.sendLine('OK');
       case _Cmd.timer:
         if (a[0] == 0) {
@@ -1575,7 +1722,7 @@ final class _Controller {
       case _Cmd.version:
         _rig.sendLine('VERSION:${_rig.device.runningVersion}');
       case _Cmd.caps:
-        _rig.sendLine(_rig.fixture.capsReply);
+        _rig.sendLine(_rig.device.capsReply);
       case _Cmd.ping:
         _rig.sendLine('OK');
       case _Cmd.diag:
@@ -1746,6 +1893,8 @@ final class _Controller {
       ('up', now ~/ 1000),
       ('slot', _rig.device.otaFlash.running),
       ('rb', _rig.device.otaFlash.rolledBack ? 1 : 0),
+      ('pv', _rig.device.otaFlash.pendingVerify ? 1 : 0),
+      ('endms', _rig.device._flash.finishMs ?? 0),
     ];
     _rig.sendLine(
       'DIAG:${kv.map(((String, int) e) => '${e.$1}=${e.$2}').join(',')}',

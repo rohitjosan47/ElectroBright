@@ -132,6 +132,41 @@ void main() {
     });
   });
 
+  group('3.8.2 CAPS OTA= and DIAG pv', () {
+    test('OTA= is the update slot; 0 without one; absent before 3.8.2', () {
+      final EbCaps caps = parseEbReply(
+        'CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,'
+        'IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=W,MODES=1DFF,'
+        'OTA=1310720',
+      ) as EbCaps;
+      expect(caps.updateSlotBytes, 1310720);
+      expect(caps.modesMask, 0x1DFF);
+      expect(
+        (parseEbReply(
+          'CAPS:PROTOCOL=1,LAYOUT=RGB,OTA=0',
+        ) as EbCaps).updateSlotBytes,
+        0,
+      );
+      expect(
+        (parseEbReply('CAPS:PROTOCOL=1,LAYOUT=RGB') as EbCaps).updateSlotBytes,
+        isNull,
+      );
+      expect(
+        (parseEbReply(
+          'CAPS:PROTOCOL=1,LAYOUT=RGB,OTA=x',
+        ) as EbCaps).updateSlotBytes,
+        isNull,
+      );
+    });
+
+    test('DIAG carries pv and endms', () {
+      final EbDiag d =
+          parseEbReply('DIAG:rx=1,slot=1,rb=0,pv=1,endms=842') as EbDiag;
+      expect(d.values['pv'], 1);
+      expect(d.values['endms'], 842);
+    });
+  });
+
   group('3.7.0 CAPS (universal firmware)', () {
     test('TYPES= runs over commas; PROBE; LAYOUT=NONE', () {
       final EbCaps caps = parseEbReply(

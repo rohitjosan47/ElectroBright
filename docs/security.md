@@ -1,6 +1,6 @@
 # Security
 
-The honest state as of app 2.0.0 / firmware 3.8.1. **ElectroBright is not yet ready for a public release from a security point of view:** a light trusts any phone in Bluetooth range.
+The honest state as of app 2.0.0 / firmware 3.8.2. **ElectroBright is not yet ready for a public release from a security point of view:** a light trusts any phone in Bluetooth range.
 
 ## What is not protected
 

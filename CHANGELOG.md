@@ -2,6 +2,14 @@
 
 Newest first. User-visible changes in plain words, from `git log` and the firmware golden changelog (the comment at the top of `firmware/test/golden/Scenarios.cpp`). All dates are 2026. The app has been version 2.0.0 (`app/pubspec.yaml`) since the rebuild started, so app entries are grouped by the firmware they shipped with. Design reasons are in [docs/design_decisions.md](docs/design_decisions.md).
 
+## Firmware 3.8.2 (29 Sep)
+- **Safer updates.** A newly installed firmware confirms itself only once it has also written to its storage and read it back, has its control and update services up, and has a spare slot big enough for the next update; otherwise the light returns to its previous firmware.
+- Until the new firmware has confirmed itself (a few seconds after an update), changing the light type, a factory reset and another update are refused as busy.
+- Verifying the received image no longer runs where the watchdog watches, so however long it takes, the light keeps running.
+- The light tells the app how big its update slot is (`OTA=` in CAPS; `OTA=0`: it cannot update wirelessly, and the app then offers no update). Diagnostics show whether new firmware is still checking itself (`pv`) and how long the last update's final check took (`endms`). The rollback flag (`rb`) is documented as "a rollback has happened since the last install".
+- Saving sound, presets and the scene is rate-limited (at most every 2 s and 10 times a minute) to spare the flash. Bursts are held and merged, and the last value is always saved; the light still replies at once.
+- App: the demo lights run 3.8.2, and the developer diagnostics show the new values.
+
 ## App 2.0.0 with firmware 3.8.1 (28 Sep)
 
 **App**

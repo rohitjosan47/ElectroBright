@@ -98,6 +98,15 @@ final class EbCaps extends EbReply {
   /// `IDENTIFY=1` (3.6.1+): the light answers the IDENTIFY command.
   bool get identify => fields['IDENTIFY'] == '1';
 
+  /// `OTA=<bytes>` (3.8.2+): the spare slot a wireless update installs to;
+  /// 0 when the light has no suitable second slot. Null when absent (older
+  /// firmware) or not a plain number.
+  int? get updateSlotBytes {
+    final String? v = fields['OTA'];
+    if (v == null || !RegExp(r'^\d{1,10}$').hasMatch(v)) return null;
+    return int.parse(v);
+  }
+
   /// `PRESETS=<n>` (3.6.0+); null when absent or not a plain number.
   int? get presetSlots {
     final String? v = fields['PRESETS'];

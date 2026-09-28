@@ -106,6 +106,7 @@ struct OtaRig : IOtaEnv {
   MockOtaFlash flash;
   std::vector<Bytes> replies;
   int activeOn = 0, activeOff = 0, restarts = 0;
+  uint32_t finishMs = 0;
   bool isActive = false;
   OtaReceiver rx{flash, *this, FirmwareVersion{3, 8, 0}};
   uint32_t now = 1000;
@@ -115,7 +116,10 @@ struct OtaRig : IOtaEnv {
     isActive = a;
     ++(a ? activeOn : activeOff);
   }
-  void otaRestart() override { ++restarts; }
+  void otaRestart(uint32_t ms) override {
+    ++restarts;
+    finishMs = ms;
+  }
 
   Bytes control(const Bytes& m) {
     replies.clear();
@@ -580,18 +584,34 @@ TEST(ota_fwsim_failed_self_check_rolls_back) {
 }
 
 TEST(ota_self_check_verdicts) {
-  const selfcheck::Inputs ok{true, true, selfcheck::kMinRenderFrames, true};
+  const selfcheck::Inputs ok{true, true, selfcheck::kMinRenderFrames, true, true, true, true};
   CHECK(selfcheck::evaluate(ok, 2000) == selfcheck::Verdict::Pass);
   selfcheck::Inputs slow = ok;
   slow.renderFrames = 10;
   CHECK(selfcheck::evaluate(slow, 2000) == selfcheck::Verdict::Pending);
   CHECK(selfcheck::evaluate(slow, selfcheck::kDeadlineMs) == selfcheck::Verdict::Fail);
-  for (int i = 0; i < 3; ++i) {
+  // Every other input on its own keeps it from confirming (3.8.2 added the
+  // NVS write, the command service and the update receiver).
+  bool selfcheck::Inputs::*const flags[] = {&selfcheck::Inputs::nvsReadable,  &selfcheck::Inputs::typeLoaded,
+                                            &selfcheck::Inputs::bleUp,        &selfcheck::Inputs::nvsRoundTrip,
+                                            &selfcheck::Inputs::commandService, &selfcheck::Inputs::otaReady};
+  for (bool selfcheck::Inputs::*flag : flags) {
     selfcheck::Inputs bad = ok;
-    (i == 0 ? bad.nvsReadable : i == 1 ? bad.typeLoaded : bad.bleUp) = false;
+    bad.*flag = false;
     CHECK(selfcheck::evaluate(bad, 14999) == selfcheck::Verdict::Pending);
     CHECK(selfcheck::evaluate(bad, 15000) == selfcheck::Verdict::Fail);
   }
+  // The NVS write and read-back, on its own key.
+  MockKv nvs;
+  CHECK(selfcheck::nvsRoundTrip(nvs, 0xC0FFEEu));
+  CHECK(nvs.data.count(selfcheck::kProbeKey) == 1);
+  nvs.failWrites = true;
+  CHECK(!selfcheck::nvsRoundTrip(nvs, 0x12345678u));
+  // The update slot: announced only when it holds what the running slot holds.
+  CHECK_EQ(selfcheck::updateSlotBytes(0x140000, 0x140000), 0x140000u);
+  CHECK_EQ(selfcheck::updateSlotBytes(0x180000, 0x140000), 0x180000u);
+  CHECK_EQ(selfcheck::updateSlotBytes(0x100000, 0x140000), 0u);
+  CHECK_EQ(selfcheck::updateSlotBytes(0, 0x140000), 0u);
   // The type check: nothing to compare without an update marker.
   MockKv sys;
   CHECK(fxselect::typeLoaded(sys, FixtureType::None));
@@ -669,7 +689,7 @@ TEST(ota_task_watchdog_is_reconfigured_and_restarts_the_chip) {
 TEST(ota_rollback_test_images_never_confirm) {
   using selfcheck::TestImage;
   using selfcheck::Verdict;
-  const selfcheck::Inputs ok{true, true, 100000, true};
+  const selfcheck::Inputs ok{true, true, 100000, true, true, true, true};
   CHECK(selfcheck::evaluate(ok, 2000, TestImage::None) == Verdict::Pass);
   // Fails its check: everything is up, and still it fails at the deadline.
   CHECK(selfcheck::evaluate(ok, 2000, TestImage::FailCheck) == Verdict::Pending);
@@ -699,4 +719,191 @@ TEST(ota_rollback_test_version_is_accepted_but_is_not_a_release) {
   r.send(img, 0, static_cast<uint32_t>(img.size()));
   CHECK_EQ(r.control(kEnd).at(0), ota::kEndOk);
   CHECK_EQ(r.flash.boot, 1);
+}
+
+// ---- 3.8.2: stronger self-check, busy while unconfirmed, finishing off the watched task -------
+
+namespace {
+
+std::string askText(SimDevice& d, const char* line) {
+  const std::string l = std::string(line) + "\n";
+  d.write(reinterpret_cast<const uint8_t*>(l.data()), l.size());
+  d.pass();
+  std::string text;
+  for (const auto& n : d.takeNotifications()) text.append(n.begin(), n.end());
+  return text;
+}
+
+// Transfers an image and sends END; the light restarts into it (pending verify).
+void installUpdate(SimDevice& d, const Bytes& img) {
+  link(d);
+  control(d, beginMsg(img, 3, 9, 0));
+  CHECK(transfer(d, img, 0));
+  control(d, kEnd);
+}
+
+}  // namespace
+
+TEST(ota_fwsim_self_check_needs_nvs_write_services_and_update_slot) {
+  // Each of these keeps the new firmware from confirming; after the deadline
+  // it returns to the previous one.
+  for (int failure = 0; failure < 5; ++failure) {
+    SimDevice d(FixtureType::Rgb);
+    d.boot();
+    switch (failure) {
+      case 0: d.systemFlash().failWrites = true; break;  // NVS write and read-back fails
+      case 1: d.setCommandService(false); break;          // command service not registered / advertised
+      case 2: d.setUpdateService(false); break;           // update service not registered
+      case 3: break;                                      // no spare slot (set below)
+      case 4: d.otaFlash().runningCapacity = 0x140000; break;  // spare smaller than this slot (below)
+    }
+    const Bytes img = makeImage(20000);
+    link(d);
+    control(d, beginMsg(img, 3, 9, 0));
+    CHECK(transfer(d, img, 0));
+    if (failure == 3) d.otaFlash().capacity = 0;  // (the transfer itself needed the slot)
+    if (failure == 4) d.otaFlash().capacity = 0x100000;
+    control(d, kEnd);
+    CHECK_EQ(d.otaFlash().running, 1);
+    CHECK(d.selfChecking());
+    d.advance(selfcheck::kDeadlineMs - 100);
+    CHECK_EQ(d.otaFlash().running, 1);
+    CHECK(d.otaFlash().pendingVerify());
+    d.advance(200);
+    CHECK_EQ(d.otaFlash().running, 0);
+    CHECK(d.otaFlash().rolledBack());
+    CHECK(!d.selfChecking());
+  }
+}
+
+TEST(ota_fwsim_self_check_retries_the_nvs_write) {
+  SimDevice d;
+  d.boot();
+  d.systemFlash().failWrites = true;
+  installUpdate(d, makeImage(20000));
+  d.advance(1500);
+  CHECK(d.selfChecking());  // the write failed; retried a second later
+  d.systemFlash().failWrites = false;
+  d.advance(1500);
+  CHECK(!d.selfChecking());
+  CHECK(!d.otaFlash().pendingVerify());
+  CHECK_EQ(d.otaFlash().running, 1);
+  CHECK(d.systemFlash().data.count(selfcheck::kProbeKey) == 1);
+}
+
+TEST(ota_fwsim_unconfirmed_firmware_refuses_type_reset_and_update_as_busy) {
+  SimDevice d(FixtureType::Rgbw);
+  d.boot();
+  installUpdate(d, makeImage(20000));
+  CHECK(d.selfChecking());
+  link(d);
+  CHECK_STR(askText(d, "SET_TYPE:CCT"), "ERROR:BUSY\n");
+  CHECK_STR(askText(d, "FACTORY_RESET"), "ERROR:BUSY\n");
+  const Bytes next = makeImage(20000, "3.9.1");
+  std::vector<Bytes> r = control(d, beginMsg(next, 3, 9, 1));
+  CHECK(r.size() == 1 && isError(r[0], ota::Error::Busy));
+  // Everything else works, and DIAG says it is unconfirmed.
+  CHECK_STR(askText(d, "MODE:3"), "OK\n");
+  CHECK(askText(d, "DIAG").find(",slot=1,rb=0,pv=1,endms=0\n") != std::string::npos);
+  CHECK(&d.fixture() == &profiles::kRgbw);
+  // Confirmed: the same requests go through.
+  d.advance(3000);
+  CHECK(!d.selfChecking());
+  CHECK(askText(d, "DIAG").find(",pv=0,") != std::string::npos);
+  CHECK_STR(askText(d, "FACTORY_RESET"), "OK\n");
+  r = control(d, beginMsg(next, 3, 9, 1));
+  CHECK_EQ(beginStart(r.at(0)), 0u);
+}
+
+TEST(ota_slow_verification_finishes_later_without_blocking) {
+  OtaRig r;
+  r.flash.finishPolls = 3;  // esp_ota_end still verifying for three polls
+  const Bytes img = makeImage(30000);
+  r.control(beginMsg(img, 3, 9, 0));
+  r.send(img, 0, static_cast<uint32_t>(img.size()));
+  CHECK(r.control(kEnd).empty());  // no reply yet: verifying
+  CHECK(r.rx.finishing());
+  // Meanwhile: DATA ignored, BEGIN / END / ABORT busy, STATUS answers, no timeout.
+  const uint32_t ignoredBefore = r.rx.ignoredChunks();
+  r.data(dataMsg(img, 0, 100));
+  CHECK_EQ(r.rx.ignoredChunks(), ignoredBefore + 1);
+  CHECK(isError(r.control(beginMsg(img, 3, 9, 0)), ota::Error::Busy));
+  CHECK(isError(r.control(kEnd), ota::Error::Busy));
+  CHECK(isError(r.control(kAbort), ota::Error::Busy));
+  const Bytes st = r.control(kStatus);
+  CHECK(st.size() == 10 && st[1] == ota::kStateReceiving && getU32(&st[2]) == img.size());
+  r.replies.clear();
+  r.now += ota::kTimeoutMs + 1000;
+  r.rx.tick(r.now);
+  r.rx.tick(r.now);
+  CHECK(r.replies.empty());
+  CHECK_EQ(r.restarts, 0);
+  r.now += 250;
+  r.rx.tick(r.now);  // done
+  CHECK(r.replies.size() == 1 && r.replies[0][0] == ota::kEndOk);
+  CHECK_EQ(r.restarts, 1);
+  CHECK_EQ(r.finishMs, ota::kTimeoutMs + 1250);
+  CHECK(!r.rx.finishing() && r.rx.restarting());
+}
+
+TEST(ota_verification_that_cannot_start_or_fails_later_is_reported) {
+  {
+    OtaRig r;
+    r.flash.failStartFinish = true;
+    const Bytes img = makeImage(30000);
+    r.control(beginMsg(img, 3, 9, 0));
+    r.send(img, 0, static_cast<uint32_t>(img.size()));
+    CHECK(isError(r.control(kEnd), ota::Error::FlashError));
+    CHECK(!r.rx.active() && !r.rx.finishing());
+  }
+  {
+    OtaRig r;
+    r.flash.finishPolls = 2;
+    r.flash.forceInvalid = true;
+    const Bytes img = makeImage(30000);
+    r.control(beginMsg(img, 3, 9, 0));
+    r.send(img, 0, static_cast<uint32_t>(img.size()));
+    CHECK(r.control(kEnd).empty());
+    r.rx.tick(r.now);
+    r.rx.tick(r.now);
+    CHECK(isError(r.replies.back(), ota::Error::NotElectroBright));
+    CHECK(!r.rx.active() && !r.rx.finishing() && !r.rx.restarting());
+    CHECK_EQ(r.flash.boot, 0);  // still the running firmware
+  }
+}
+
+TEST(ota_fwsim_light_keeps_running_while_verifying_and_reports_the_time) {
+  SimDevice d(FixtureType::Cct);
+  d.boot();
+  link(d);
+  d.otaFlash().finishPolls = 4;
+  const Bytes img = makeImage(40000);
+  control(d, beginMsg(img, 3, 9, 0));
+  CHECK(transfer(d, img, 0));
+  CHECK(control(d, kEnd).empty());
+  CHECK(d.ota().finishing());
+  // The control task keeps serving the phone.
+  CHECK(askText(d, "STATUS").rfind("STATUS:", 0) == 0);
+  d.advance(200);  // three more polls: done
+  CHECK_EQ(d.restarts(), 1);
+  CHECK_EQ(d.otaFlash().running, 1);
+  link(d);
+  // Polls: END itself, the END pass's tick, the STATUS pass, then one per
+  // 50 ms wake-up: the fifth, 100 ms after END, completes.
+  CHECK(askText(d, "DIAG").find(",slot=1,rb=0,pv=1,endms=100\n") != std::string::npos);
+  d.advance(3000);
+  CHECK(askText(d, "DIAG").find(",pv=0,endms=100\n") != std::string::npos);
+}
+
+TEST(ota_caps_announce_the_update_slot) {
+  SimDevice d;
+  d.boot();
+  link(d);
+  CHECK(askText(d, "CAPS").find(",OTA=1310720\n") != std::string::npos);
+  // A partition table without a suitable second slot announces 0.
+  SimDevice none;
+  none.otaFlash().capacity = 0;
+  none.boot();
+  link(none);
+  CHECK(askText(none, "CAPS").find(",OTA=0\n") != std::string::npos);
 }

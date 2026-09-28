@@ -23,6 +23,10 @@ const FixtureProfile* g_fixture = nullptr;
 NimBLECharacteristic* g_tx = nullptr;
 NimBLECharacteristic* g_otaControl = nullptr;
 NimBLEServer* g_server = nullptr;
+// Set in begin() (setup task), read by the control task's first-boot check.
+std::atomic<NimBLEService*> g_commandService{nullptr};
+std::atomic<NimBLEService*> g_updateService{nullptr};
+std::atomic<bool> g_commandAdvertised{false};  // the advertisement carries the command service UUID and started
 std::atomic<bool> g_connected{false};
 std::atomic<uint16_t> g_connHandle{BLE_HS_CONN_HANDLE_NONE};
 std::atomic<uint16_t> g_mtu{23};
@@ -129,12 +133,14 @@ bool begin(const BleSinks& sinks, const FixtureProfile& fixture) {
   server->advertiseOnDisconnect(true);
 
   NimBLEService* service = server->createService(cfg::kServiceUuid);
+  g_commandService = service;
   g_tx = service->createCharacteristic(cfg::kTxCharUuid, NIMBLE_PROPERTY::NOTIFY);
   NimBLECharacteristic* rx =
       service->createCharacteristic(cfg::kRxCharUuid, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
   rx->setCallbacks(&g_rxCallbacks);
 
   NimBLEService* update = server->createService(ota::kServiceUuid);
+  g_updateService = update;
   g_otaControl = update->createCharacteristic(ota::kControlUuid, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY);
   g_otaControl->setCallbacks(&g_otaControlCallbacks);
   NimBLECharacteristic* data = update->createCharacteristic(ota::kDataUuid, NIMBLE_PROPERTY::WRITE_NR);
@@ -155,12 +161,24 @@ bool begin(const BleSinks& sinks, const FixtureProfile& fixture) {
   adv->setScanResponseData(scanData);
   adv->setMinInterval(160);  // 100 ms (units of 0.625 ms)
   adv->setMaxInterval(240);  // 150 ms
-  return adv->start();
+  const bool started = adv->start();
+  g_commandAdvertised = started;
+  return started;
 }
 
 bool connected() { return g_connected.load(); }
 
 bool advertising() { return NimBLEDevice::getAdvertising()->isAdvertising(); }
+
+bool commandServiceUp() {
+  const NimBLEService* s = g_commandService.load();
+  return s && s->isStarted() && g_commandAdvertised.load();
+}
+
+bool updateServiceUp() {
+  const NimBLEService* s = g_updateService.load();
+  return s && s->isStarted();
+}
 
 size_t maxPayload() {
   const uint16_t mtu = g_mtu.load();

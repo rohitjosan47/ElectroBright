@@ -305,7 +305,7 @@ TEST(egress_drops_oldest_whole_lines_when_full) {
 TEST(caps_announce_the_preset_count_of_every_fixture) {
   for (const NamedFixture& f : kAllFixtures) {
     char buf[256];
-    replies::caps(buf, sizeof(buf), *f.profile);
+    replies::caps(buf, sizeof(buf), *f.profile, 0x140000);
     const std::string caps = buf;
     CHECK_EQ(caps.rfind("CAPS:", 0), size_t{0});
     // Exactly one PRESETS= field, equal to the slot count the firmware has.

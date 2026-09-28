@@ -122,7 +122,7 @@ TEST(set_type_persists_clears_presets_resets_scene_and_restarts) {
 
   connectAndSubscribe(d);
   CHECK_STR(ask(d, "CAPS"), "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1," + kTypes +
-                                "LAYOUT=CCT\n");
+                                "LAYOUT=CCT,OTA=1310720\n");
   CHECK_STR(ask(d, "PRESET_LIST"), "PRESETS:\n");
   // A later power cycle keeps the new type.
   d.reboot();
@@ -204,7 +204,7 @@ TEST(setup_needed_outputs_off_and_recognisable) {
   CHECK(d.flash().data.empty());  // nothing stored until SET_TYPE
   connectAndSubscribe(d);
   CHECK_STR(ask(d, "CAPS"), "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1," + kTypes +
-                                "LAYOUT=NONE\n");
+                                "LAYOUT=NONE,OTA=1310720\n");
   CHECK_STR(ask(d, "VERSION"), std::string("VERSION:") + cfg::kFirmwareVersion + "\n");
   CHECK(ask(d, "DIAG").rfind("DIAG:rx=", 0) == 0);
 }

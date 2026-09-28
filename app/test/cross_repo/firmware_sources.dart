@@ -88,8 +88,10 @@ Map<String, String> configConstants() {
 
 /// The CAPS reply of profile [layout] (protocol/Replies.cpp replies::caps):
 /// the fixed fields, TYPES= in profile-table order, PROBE=1, LAYOUT= and
-/// MODES= when the layout lacks a mode.
-String firmwareCaps(String layout, int modeMask) {
+/// MODES= when the layout lacks a mode. The light itself ends it with
+/// `,OTA=<bytes>` (its update slot): pass [otaBytes] for the whole reply;
+/// without it, the per-profile part the fixture catalogue holds.
+String firmwareCaps(String layout, int modeMask, {int? otaBytes}) {
   final String replies = readFirmware('protocol/Replies.cpp');
   const String head =
       'CAPS:PROTOCOL=1,PWM=%u,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=%u,IDENTIFY=1,TYPES=';
@@ -97,6 +99,7 @@ String firmwareCaps(String layout, int modeMask) {
     head,
     ',PROBE=1,LAYOUT=%s',
     ',MODES=%X',
+    ',OTA=%lu',
   ]) {
     if (!replies.contains(piece)) {
       throw StateError('Replies.cpp CAPS format changed: $piece');
@@ -109,7 +112,8 @@ String firmwareCaps(String layout, int modeMask) {
       : ',MODES=${modeMask.toRadixString(16).toUpperCase()}';
   return 'CAPS:PROTOCOL=1,PWM=$pwm,GAMMA=2.2,MASTER=PERCEPTUAL,'
       'PRESETS=${configInt(c, 'kNumPresets')},IDENTIFY=1,'
-      'TYPES=${firmwareTypes().join(',')},PROBE=1,LAYOUT=$layout$modes';
+      'TYPES=${firmwareTypes().join(',')},PROBE=1,LAYOUT=$layout$modes'
+      '${otaBytes == null ? '' : ',OTA=$otaBytes'}';
 }
 
 /// Layout names of profiles::kAll, in order (CAPS TYPES=).

@@ -124,6 +124,7 @@ final class SimOtaFlash {
 
   int get spare => 1 - running;
   int spareSize() => capacity;
+  int runningSize() => capacity; // both slots of a partition table are equal
 
   OtaFlashStatus begin() {
     if (state[running] == OtaSlotState.pendingVerify) {
@@ -225,6 +226,10 @@ final class OtaRepliesTwin {
 abstract final class SelfCheckTwin {
   static const int deadlineMs = 15000;
   static const int minRenderFrames = 400;
+
+  /// selfcheck::updateSlotBytes: CAPS `OTA=`.
+  static int updateSlotBytes(int spare, int running) =>
+      spare > 0 && running > 0 && spare >= running ? spare : 0;
 }
 
 /// ota/OtaReceiver.cpp.
@@ -241,7 +246,10 @@ final class OtaReceiverTwin {
   final List<int> running;
   final void Function(List<int> data) reply;
   final void Function(bool active) onActive;
-  final void Function() onRestart;
+
+  /// The new firmware is selected; the END-to-END_OK time (always 0 here:
+  /// [SimOtaFlash.finish] verifies at once, like fwsim's default).
+  final void Function(int finishMs) onRestart;
 
   bool active = false;
   bool restarting = false;
@@ -460,7 +468,7 @@ final class OtaReceiverTwin {
     active = false;
     restarting = true;
     reply(const <int>[EbOta.endOk]);
-    onRestart();
+    onRestart(0);
   }
 
   void _abort() {

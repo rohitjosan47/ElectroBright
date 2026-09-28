@@ -92,7 +92,8 @@ final class EbFirmware {
   /// What the light can do; every screen adapts to this.
   final LightCapabilities capabilities;
 
-  /// It has the wireless-update service (firmware 3.8.0+).
+  /// It has the wireless-update service (firmware 3.8.0+) and a spare slot
+  /// to install to (3.8.2+ announces it as CAPS `OTA=`; `OTA=0`: none).
   final bool wirelessUpdates;
 
   ChannelLayout get layout => capabilities.layout;

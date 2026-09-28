@@ -1,6 +1,6 @@
 # Privacy
 
-This page describes what the ElectroBright app and lights store and send, as of app 2.0.0+200 and firmware 3.8.1. It can serve as the basis for the App Store and Google Play privacy answers and for a public privacy page. The security side (who can connect to a light) is in [security.md](security.md).
+This page describes what the ElectroBright app and lights store and send, as of app 2.0.0+200 and firmware 3.8.2. It can serve as the basis for the App Store and Google Play privacy answers and for a public privacy page. The security side (who can connect to a light) is in [security.md](security.md).
 
 ## In short
 

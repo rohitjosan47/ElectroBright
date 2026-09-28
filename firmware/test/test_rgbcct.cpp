@@ -75,7 +75,7 @@ TEST(rgbcct_reports_its_identity_and_layout) {
   r.send("CAPS");
   CHECK_STR(r.env.lines[0], "INFO:EB-C3-RGBCCT-V1");
   CHECK_STR(r.env.lines[1], std::string("VERSION:") + cfg::kFirmwareVersion);
-  CHECK_STR(r.env.lines[2], "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=RGBCCT");
+  CHECK_STR(r.env.lines[2], "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=RGBCCT,OTA=0");
 }
 
 TEST(rgbcct_status_has_26_fields_and_white_defaults) {

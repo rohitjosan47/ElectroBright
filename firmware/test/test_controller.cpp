@@ -23,7 +23,7 @@ TEST(ctrl_app_handshake_replies) {
   CHECK_STR(r.env.lines[1].substr(0, 18), "MODE_SETTINGS:5,5;");
   CHECK_STR(r.env.lines[2], "PRESETS:");
   CHECK_STR(r.env.lines[3], std::string("VERSION:") + cfg::kFirmwareVersion);
-  CHECK_STR(r.env.lines[4], "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=RGBW");
+  CHECK_STR(r.env.lines[4], "CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,IDENTIFY=1,TYPES=RGBW,RGB,RGBCCT,CCT,W,PROBE=1,LAYOUT=RGBW,OTA=0");
   CHECK_STR(r.env.lines[5], "INFO:EB-C3-RGBW-V1");
 }
 
@@ -327,4 +327,52 @@ TEST(ctrl_identify_restarts_and_is_cancelled_only_by_state_changes) {
   r.advance(1500);
   CHECK(r.core.sleeping());
   CHECK_EQ(r.env.params.identifyId, 0);
+}
+
+// ---- 3.8.2: unconfirmed firmware, CAPS OTA=, DIAG pv / endms -------------------------
+
+TEST(ctrl_unconfirmed_firmware_refuses_type_change_and_reset) {
+  Rig r;
+  r.core.setPendingVerify(true);
+  r.send("SET_TYPE:RGB");
+  CHECK_STR(r.env.last(), "ERROR:BUSY");
+  r.send("FACTORY_RESET");
+  CHECK_STR(r.env.last(), "ERROR:BUSY");
+  CHECK_EQ(r.env.restarts, 0);
+  // Everything else works.
+  r.send("MODE:5");
+  CHECK_STR(r.env.last(), "OK");
+  r.send("PRESET_SAVE:2");
+  CHECK_STR(r.env.last(), "OK");
+  r.core.setPendingVerify(false);
+  r.send("FACTORY_RESET");
+  CHECK_STR(r.env.last(), "OK");
+  r.send("SET_TYPE:RGB");
+  CHECK_STR(r.env.last(), "OK");
+  CHECK_EQ(r.env.restarts, 1);
+}
+
+TEST(ctrl_caps_announce_the_update_slot_and_diag_the_pending_flag) {
+  Rig r;
+  r.core.setUpdateSlotBytes(1310720);
+  r.send("CAPS");
+  CHECK(r.env.last().size() > 12 && r.env.last().substr(r.env.last().size() - 12) == ",OTA=1310720");
+  r.env.pendingVerify = 1;
+  r.env.finishMs = 842;
+  r.send("DIAG");
+  CHECK(r.env.last().find(",rb=0,pv=1,endms=842") != std::string::npos);
+  CHECK(r.env.last().size() < 448);  // fits buf_
+}
+
+TEST(ctrl_flush_storage_commits_held_writes_before_a_restart) {
+  Rig r;
+  r.kv.markPresetFormat();
+  r.send("SOUND_OFF");  // written at once
+  r.send("PRESET_SAVE:4");  // same instant: held
+  CHECK_STR(r.env.last(), "OK");
+  CHECK(r.kv.data.count("p04") == 0);
+  r.send("PRESET_LIST");
+  CHECK_STR(r.env.last(), "PRESETS:4,");
+  r.core.flushStorage();
+  CHECK(r.kv.data.count("p04") == 1);
 }

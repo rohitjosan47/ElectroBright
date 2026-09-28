@@ -42,7 +42,7 @@ void main() {
     expect(
       send(m, 'CAPS'),
       'CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,'
-      'IDENTIFY=1,$types,LAYOUT=RGBW\n',
+      'IDENTIFY=1,$types,LAYOUT=RGBW,OTA=1310720\n',
     );
   });
 
@@ -60,7 +60,7 @@ void main() {
 
     link(m);
     expect(send(m, 'INFO'), 'INFO:EB-C3-CCT-V1\n');
-    expect(send(m, 'CAPS'), endsWith('LAYOUT=CCT\n'));
+    expect(send(m, 'CAPS'), endsWith('LAYOUT=CCT,OTA=1310720\n'));
     // The type survives power cycles and FACTORY_RESET.
     expect(send(m, 'FACTORY_RESET'), 'OK\n');
     m.reboot();
@@ -113,7 +113,7 @@ void main() {
     expect(
       send(m, 'CAPS'),
       'CAPS:PROTOCOL=1,PWM=15,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=15,'
-      'IDENTIFY=1,$types,LAYOUT=NONE\n',
+      'IDENTIFY=1,$types,LAYOUT=NONE,OTA=1310720\n',
     );
     expect(send(m, 'VERSION'), 'VERSION:${EbDeviceModel.firmwareVersion}\n');
     expect(send(m, 'DIAG'), startsWith('DIAG:'));

@@ -140,6 +140,8 @@ void main() {
       final EbDeviceModel m = EbDeviceModel(fixture: null);
       expect(m.setupNeeded, isTrue);
       expect(m.fixture.capsReply, setup.capsReply);
+      // The light appends its update slot (fwsim: MockOtaFlash, 1310720).
+      expect(m.capsReply, firmwareCaps('NONE', 0, otaBytes: 0x140000));
     },
   );
 
@@ -147,7 +149,7 @@ void main() {
     for (final EbFixtureSpec spec in EbFixtureCatalog.all) {
       final EbDeviceModel m = EbDeviceModel(fixture: spec);
       expect(m.modelId, spec.modelId);
-      expect(m.capsReply, spec.capsReply);
+      expect(m.capsReply, '${spec.capsReply},OTA=${0x140000}');
     }
   });
 }

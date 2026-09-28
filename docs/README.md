@@ -1,6 +1,6 @@
 # ElectroBright documentation
 
-ElectroBright is a Bluetooth lighting system with three parts. ESP32-C3 controllers drive 12 V / 24 V LED strips of five fixture types (RGBW, RGB, RGBCCT, CCT, W). All of them run one universal firmware (3.8.1). A Flutter app for iOS and Android (2.0.0) controls them directly from the phone, with no server or cloud. This page lists every document, who it is for and what it covers.
+ElectroBright is a Bluetooth lighting system with three parts. ESP32-C3 controllers drive 12 V / 24 V LED strips of five fixture types (RGBW, RGB, RGBCCT, CCT, W). All of them run one universal firmware (3.8.2). A Flutter app for iOS and Android (2.0.0) controls them directly from the phone, with no server or cloud. This page lists every document, who it is for and what it covers.
 
 ## Documents
 

@@ -5,6 +5,7 @@
 #include "config/Config.h"
 #include "ota/ImageIdentity.h"
 #include "ota/SelfCheck.h"
+#include "ota/UpdateRecord.h"
 #include "protocol/BinaryFrame.h"
 
 namespace {
@@ -25,6 +26,8 @@ void SimDevice::Env::systemDiag(SystemDiag& d) {
   d.uptimeSec = dev_.now_ / 1000;
   d.runningSlot = static_cast<uint32_t>(dev_.otaFlash_.running);
   d.rolledBack = dev_.otaFlash_.rolledBack() ? 1 : 0;
+  d.pendingVerify = dev_.otaFlash_.pendingVerify() ? 1 : 0;
+  d.finishMs = dev_.lastFinishMs_;
 }
 
 // ---- OtaEnv (App.cpp) ------------------------------------------------------------------
@@ -33,8 +36,9 @@ void SimDevice::OtaEnv::otaActive(bool active) {
   dev_.fastLink_ = active && dev_.connected_;  // ble::setUpdateLink
 }
 
-void SimDevice::OtaEnv::otaRestart() {
+void SimDevice::OtaEnv::otaRestart(uint32_t finishMs) {
   fxselect::rememberForUpdate(dev_.system_, dev_.fixture().type);
+  updaterecord::writeFinishMs(dev_.system_, finishMs);
   dev_.rig_->env.restart();
 }
 
@@ -49,8 +53,14 @@ SimDevice::SimDevice(FixtureType buildDefault)
     : buildDefault_(buildDefault), rig_(std::make_unique<Rig>(*this, kv_, system_, buildDefault)) {}
 
 void SimDevice::boot() {
-  rig_->core.begin(now_);
   selfChecking_ = otaFlash_.pendingVerify();
+  updateSlotBytes_ = selfcheck::updateSlotBytes(otaFlash_.spareSize(), otaFlash_.runningSize());
+  lastFinishMs_ = updaterecord::readFinishMs(system_);
+  nvsRoundTrip_ = false;
+  nvsTried_ = false;
+  rig_->core.setPendingVerify(selfChecking_);
+  rig_->core.setUpdateSlotBytes(updateSlotBytes_);
+  rig_->core.begin(now_);
   bootMs_ = now_;
 }
 
@@ -195,7 +205,7 @@ void SimDevice::passEnd() {
   flushBatch();
 
   // 3b. Wireless update: requests, then data.
-  rig_->ota.setBlocked(rig_->core.restartPending());
+  rig_->ota.setBlocked(rig_->core.restartPending() || selfChecking_);
   while (!otaControl_.empty()) {
     const std::vector<uint8_t> m = otaControl_.front();
     otaControl_.pop_front();
@@ -234,6 +244,7 @@ void SimDevice::passEnd() {
   // 6. SET_TYPE / update: restart once the reply has gone out (the device
   // also waits cfg::kRestartDelayMs; virtual time needs no wait).
   if (rig_->env.restartRequested && ((egress_.pending() == 0 && otaReplies_.empty()) || !connected_)) {
+    rig_->core.flushStorage();
     ++restarts_;
     restartNow();
     return;
@@ -245,12 +256,21 @@ void SimDevice::selfCheck() {
   if (!selfChecking_) return;
   // The render task runs 200 frames a second from boot.
   const uint32_t since = now_ - bootMs_;
-  const selfcheck::Inputs in{true, fxselect::typeLoaded(system_, fixture().type), since / 5u, true};
+  if (!nvsRoundTrip_ && (!nvsTried_ || now_ - nvsTriedMs_ >= selfcheck::kNvsRetryMs)) {
+    nvsTried_ = true;
+    nvsTriedMs_ = now_;
+    nvsRoundTrip_ = selfcheck::nvsRoundTrip(system_, now_);
+  }
+  const selfcheck::Inputs in{true,           fxselect::typeLoaded(system_, fixture().type),
+                             since / 5u,     true,
+                             nvsRoundTrip_,  commandService_,
+                             updateService_ && updateSlotBytes_ > 0};
   switch (selfcheck::evaluate(in, since)) {
     case selfcheck::Verdict::Pending:
       return;
     case selfcheck::Verdict::Pass:
       selfChecking_ = false;
+      rig_->core.setPendingVerify(false);
       otaFlash_.confirm();
       fxselect::forgetUpdate(system_);
       return;

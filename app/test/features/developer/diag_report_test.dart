@@ -11,7 +11,7 @@ void main() {
       'DIAG:rx=42,ovf=0,rej=0,sdrop=0,unk=1,err=2,coal=3,bin=900,binbad=0,'
       'gaps=4,nretry=0,edrop=0,nvsw=7,nvsf=0,frames=12000,overrun=5,'
       'rmaxus=812,heapmin=180000,stkc=3000,stkr=2000,rst=4,up=93784,slot=1,'
-      'rb=1,newkey=9';
+      'rb=1,pv=1,endms=842,newkey=9';
 
   DiagReport parse(String l) {
     final EbReply r = parseEbReply(l);
@@ -19,13 +19,16 @@ void main() {
     return DiagReport((r as EbDiag).values);
   }
 
-  test('the summary: uptime, last restart, slot and rollback', () {
+  test('the summary: uptime, last restart, slot, rollback, check', () {
     final DiagReport d = parse(line);
     expect(d.uptime, const Duration(days: 1, hours: 2, minutes: 3, seconds: 4));
     expect(d.restart, RestartReason.crash);
     expect(d.slot, 1);
     expect(d.rolledBack, isTrue);
+    expect(d.pendingVerify, isTrue);
     expect(d.raw, line);
+    // Firmware before 3.8.2 sends no pv.
+    expect(parse('DIAG:slot=0,rb=0').pendingVerify, isNull);
   });
 
   test('counters by group, in the light\'s order; unknown keys kept', () {
@@ -54,7 +57,7 @@ void main() {
     );
     expect(
       d.counters(DiagGroup.system).map(((String, int) e) => e.$1),
-      <String>['nvsw', 'nvsf', 'heapmin', 'stkc', 'stkr'],
+      <String>['nvsw', 'nvsf', 'heapmin', 'stkc', 'stkr', 'endms'],
     );
     expect(d.counters(DiagGroup.other), <(String, int)>[('newkey', 9)]);
   });
@@ -105,7 +108,14 @@ void main() {
     expect(text.split('\n').first, 'Desk · Firmware 3.8.0');
     expect(text, contains('Running for: 1 d 2 h'));
     expect(text, contains('Last restart: Crashed'));
-    expect(text, contains('Last update: Rolled back to the previous firmware'));
+    expect(
+      text,
+      contains('Rollback: An update was rolled back since the last install'),
+    );
+    expect(
+      text,
+      contains('Firmware check: Still checking itself (not confirmed yet)'),
+    );
     expect(text, contains('  Lost colour frames: 4'));
     expect(text, contains('  newkey: 9'));
     expect(text.split('\n').last, line);

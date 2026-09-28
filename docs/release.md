@@ -2,7 +2,7 @@
 
 How to cut an app release. The firmware ships **inside** the app, so an app release is also how new firmware reaches lights (there is no update server). Building and flashing firmware by hand is in [firmware.md](firmware.md); the test suites are in [testing.md](testing.md).
 
-Current versions: app `2.0.0+200` (`app/pubspec.yaml`), firmware `3.8.1` (`kFirmwareVersion` in `firmware/core/ElectroBrightCore/src/config/Config.h`).
+Current versions: app `2.0.0+200` (`app/pubspec.yaml`), firmware `3.8.2` (`kFirmwareVersion` in `firmware/core/ElectroBrightCore/src/config/Config.h`).
 
 ## 1. Bump the versions
 
@@ -52,7 +52,7 @@ flutter build ipa --release            # then upload with Xcode Organizer or Tra
 ## 5. Tag
 
 ```bash
-git tag -a app-2.0.0 -m "App 2.0.0 (firmware 3.8.1)"
+git tag -a app-2.0.0 -m "App 2.0.0 (firmware 3.8.2)"
 ```
 
 The repository has no remote yet and existing tags are `fw-3.4.0-golden`, `fw-3.6.0` and `old-app-final`; the `app-<version>` / `fw-<version>` naming is a suggestion, not an established convention.

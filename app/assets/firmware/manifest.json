@@ -1,8 +1,8 @@
 {
   "product": "ElectroBright",
   "kind": "universal",
-  "version": "3.8.1",
-  "size": 680000,
-  "sha256": "e4200dbae4bb7da6b0bce7c5fdb21080e312c14fb4b3df73714138d6dc064f0f",
-  "file": "ElectroBright_Update-3.8.1.bin"
+  "version": "3.8.2",
+  "size": 682768,
+  "sha256": "8cac6c8ab580428628f9d1f9db155e7c012076d35b6131b50c8cc533a901f734",
+  "file": "ElectroBright_Update-3.8.2.bin"
 }
