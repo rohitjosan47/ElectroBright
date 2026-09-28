@@ -1,12 +1,13 @@
 // End-to-end on a simulator or device with the demo lights: onboarding,
 // adding one light of every type through the real add flow, and each
 // type's controls checked against its firmware twin, then the colour and
-// white groups.
+// white groups, and the developer tools (probe test and a type change).
 //
 //   flutter test integration_test -d <simulator id>
 import 'package:electrobright/app.dart';
 import 'package:electrobright/app/app_session.dart';
 import 'package:electrobright/bootstrap/service_registry.dart';
+import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/protocol/eb/eb_scene.dart';
 import 'package:electrobright/core/store/json_store.dart';
 import 'package:electrobright/design/components/glass_controls.dart';
@@ -14,6 +15,8 @@ import 'package:electrobright/design/controls/glass_slider.dart';
 import 'package:electrobright/design/controls/hue_wheel.dart';
 import 'package:electrobright/features/add_fixture/add_light_screen.dart';
 import 'package:electrobright/features/control/control_screen.dart';
+import 'package:electrobright/features/developer/developer_screen.dart';
+import 'package:electrobright/features/developer/light_developer_screen.dart';
 import 'package:electrobright/features/firmware_update/firmware_update_screen.dart';
 import 'package:electrobright/features/groups/group_screen.dart';
 import 'package:electrobright/sim/eb_device_model.dart';
@@ -354,5 +357,76 @@ void main() {
     await reveal(t, find.text('Unsupported lights'));
     await tapOn(t, find.text('Update needed'));
     await waitFor(t, find.byType(FirmwareUpdateScreen));
+    Navigator.of(t.element(find.byType(FirmwareUpdateScreen)))
+        .popUntil((Route<dynamic> r) => r.isFirst);
+    await wait(t, 800);
+    await t.scrollUntilVisible(
+      find.text('Lights'),
+      -300,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    // Developer tools: switched on in Settings, then the probe test and a
+    // type change on a demo light.
+    await t.tap(find.bySemanticsLabel('Settings'));
+    await wait(t, 800);
+    expect(
+      find.byKey(const ValueKey<String>('settings-developer')),
+      findsNothing,
+    );
+    await t.tap(find.byKey(const ValueKey<String>('settings-developer-tools')));
+    await wait(t, 500);
+    await t.tap(find.byKey(const ValueKey<String>('settings-developer')));
+    await arrive(t, find.byType(DeveloperScreen));
+    await tapOn(
+      t,
+      find.descendant(
+        of: find.byType(DeveloperScreen),
+        matching: find.text('Hallway'),
+      ),
+    );
+    await arrive(t, find.byType(LightDeveloperScreen));
+    await waitFor(t, find.text('Single white · Connected'), seconds: 20);
+    await tapOn(t, find.byKey(const ValueKey<String>('dev-find-type')));
+    // Red, green and blue stay dark; the white and warm outputs light.
+    for (final (int output, bool lit) in <(int, bool)>[
+      (0, false),
+      (1, false),
+      (2, false),
+      (3, true),
+      (4, true),
+    ]) {
+      final Finder answer = find.byKey(
+        ValueKey<String>(lit ? 'probe-yes' : 'probe-no'),
+      );
+      await waitFor(t, answer);
+      for (
+        int i = 0;
+        i < 50 && t.widget<FilledButton>(answer).onPressed == null;
+        i++
+      ) {
+        await wait(t, 100);
+      }
+      final Map<String, Object> render =
+          twin('demo-w').state()['render']! as Map<String, Object>;
+      expect(render['probe'], output + 1, reason: 'output $output lit');
+      await t.tap(answer);
+    }
+    await waitFor(t, find.text('Looks like Tunable white'));
+    await t.tap(find.byKey(const ValueKey<String>('probe-use')));
+    await wait(t, 800);
+    await tapOn(t, find.byKey(const ValueKey<String>('dev-change-type')));
+    await wait(t, 800);
+    await t.tap(find.byKey(const ValueKey<String>('change-type-confirm')));
+    await waitFor(
+      t,
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('dev-change-result')),
+        matching: find.text('Hallway is now a Tunable white light'),
+      ),
+      seconds: 30,
+    );
+    expect(twin('demo-w').restarts, 1);
+    expect(twin('demo-w').layout, ChannelLayout.cct);
   });
 }

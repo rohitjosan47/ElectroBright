@@ -50,13 +50,24 @@ class LightTile extends ConsumerWidget {
       fixtureStatusProvider(fixtureId)
           .select((FixtureStatus s) => (s.state, s.phase, s.incompatibility)),
     );
-    final String presence = presenceOf(l, phase, incompatibility);
-    final EbScene? scene = state?.scene;
+    // No fixture type yet: "Setup needed" instead of its state; a tap sets
+    // it up.
+    final bool setup =
+        f.setupNeeded || incompatibility == EbIncompatibility.setupNeeded;
+    final String presence = setup
+        ? l.presenceSetupNeeded
+        : presenceOf(l, phase, incompatibility);
+    final EbScene? scene = setup ? null : state?.scene;
     final bool sleeping = state?.sleeping ?? false;
     final bool dark = ToneScope.darkOf(context);
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
 
-    final ({Color color, bool glow}) orb = tileColour(ref, f, state, fg);
+    final ({Color color, bool glow}) orb = tileColour(
+      ref,
+      f,
+      setup ? null : state,
+      fg,
+    );
     final String modeName = scene == null
         ? ''
         : EbModeCatalog.byId(scene.mode).name;
@@ -64,7 +75,7 @@ class LightTile extends ConsumerWidget {
 
     return Semantics(
       button: true,
-      label: '${f.name}, ${fixtureTypeName(l, f.layout)}',
+      label: setup ? f.name : '${f.name}, ${fixtureTypeName(l, f.layout)}',
       value: presence,
       child: GestureDetector(
         onTap: onOpen,
@@ -108,7 +119,10 @@ class LightTile extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: Space.xxs),
-              FixtureTypeBadge(layout: f.layout, whitePoints: f.whitePoints),
+              if (setup)
+                const SetupNeededBadge()
+              else
+                FixtureTypeBadge(layout: f.layout, whitePoints: f.whitePoints),
               const SizedBox(height: Space.xs),
               Text(
                 scene == null

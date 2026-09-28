@@ -14,6 +14,7 @@ import '../../design/components/name_dialog.dart';
 import '../../design/gallery/gallery.dart';
 import '../../design/tokens/tokens.dart';
 import '../../design/tone/tone_scope.dart';
+import '../../drivers/electrobright/eb_types.dart';
 import '../../l10n/app_localizations.dart';
 import '../../sessions/connection_manager.dart';
 import '../../sessions/fixture_registry.dart';
@@ -26,6 +27,9 @@ import 'groups_card.dart';
 import '../../sessions/group_capabilities.dart';
 import '../../sessions/group_session.dart';
 import 'light_tile.dart';
+import '../developer/developer_screen.dart';
+import '../developer/developer_tools.dart';
+import '../developer/light_developer_screen.dart';
 import '../diagnostics/ble_lab.dart';
 import '../firmware_update/firmware_update_screen.dart';
 import '../fixture_settings/light_settings_screen.dart';
@@ -105,6 +109,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _open(Fixture f) {
     final FixtureStatus st = ref.read(fixtureStatusProvider(f.id));
+    // No fixture type yet: only setting it up (whether or not the developer
+    // tools are on).
+    if (f.setupNeeded || st.incompatibility == EbIncompatibility.setupNeeded) {
+      unawaited(
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => LightDeveloperScreen(fixtureId: f.id),
+          ),
+        ),
+      );
+      return;
+    }
     if (st.phase == LinkPhase.incompatible) {
       final AppSession app = ref.read(appSessionProvider)!;
       unawaited(
@@ -303,6 +319,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final String? action = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (BuildContext ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -326,6 +343,55 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onTap: () => Navigator.of(ctx).pop('gallery'),
               ),
             ],
+            // Last: the switch for the developer tools and, when on, their
+            // entry.
+            Consumer(
+              builder: (BuildContext ctx, WidgetRef ref, _) {
+                final bool on = ref.watch(developerToolsProvider);
+                final ThemeData theme = Theme.of(ctx);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    const Divider(),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        Space.m,
+                        Space.xs,
+                        Space.m,
+                        0,
+                      ),
+                      child: Semantics(
+                        header: true,
+                        child: Text(
+                          l.advanced.toUpperCase(),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            letterSpacing: 0.4,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                    SwitchListTile(
+                      key: const ValueKey<String>('settings-developer-tools'),
+                      secondary: const Icon(Icons.handyman_outlined),
+                      title: Text(l.developerTools),
+                      subtitle: Text(l.developerToolsHint),
+                      value: on,
+                      onChanged: (bool v) =>
+                          ref.read(developerToolsProvider.notifier).set(on: v),
+                    ),
+                    if (on)
+                      ListTile(
+                        key: const ValueKey<String>('settings-developer'),
+                        leading: const Icon(Icons.developer_mode_rounded),
+                        title: Text(l.developer),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => Navigator.of(ctx).pop('developer'),
+                      ),
+                  ],
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -341,6 +407,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       case 'gallery':
         await Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => const ComponentGallery()),
+        );
+      case 'developer':
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const DeveloperScreen()),
         );
     }
   }

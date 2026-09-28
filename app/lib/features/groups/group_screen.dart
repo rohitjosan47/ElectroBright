@@ -1023,7 +1023,7 @@ class _GroupLightsState extends ConsumerState<_GroupLights> {
       fixturesProvider.select(
         (List<Fixture> all) => <Fixture>[
           for (final Fixture f in all)
-            if (GroupKind.of(f.layout) == group.kind) f,
+            if (GroupKind.holds(group.kind, f)) f,
         ],
       ),
     );

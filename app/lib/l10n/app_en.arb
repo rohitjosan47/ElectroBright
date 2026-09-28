@@ -450,5 +450,190 @@
       }
     }
   },
-  "tools": "Tools"
+  "tools": "Tools",
+  "advanced": "Advanced",
+  "@advanced": {
+    "description": "Settings section at the bottom of Settings."
+  },
+  "developerTools": "Developer tools",
+  "developerToolsHint": "Tools for setting up and maintaining your lights.",
+  "developer": "Developer",
+  "@developer": {
+    "description": "Row that opens the developer tools, and their title."
+  },
+  "developerLightsNote": "Set up a light's type, test its outputs or read its diagnostics.",
+  "firmwareVersionShort": "Firmware {version}",
+  "@firmwareVersionShort": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "firmwareNotRead": "Firmware not read yet",
+  "presenceSetupNeeded": "Setup needed",
+  "fixtureType": "Fixture type",
+  "typeNeedsFirmware": "Changing the type needs firmware 3.7.0 or later. This light runs {version}.",
+  "@typeNeedsFirmware": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "typeNotReadYet": "Connect the light to see whether its type can be changed.",
+  "findRightType": "Find the right type",
+  "findRightTypeHint": "Lights each output in turn and asks what you see.",
+  "probeOutputWhite": "White or cool white",
+  "probeStep": "Output {n} of {total}",
+  "@probeStep": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "probeQuestion": "Is it lighting up?",
+  "probeLit": "The {output} output is on for 3 seconds.",
+  "@probeLit": {
+    "placeholders": {
+      "output": {
+        "type": "String"
+      }
+    }
+  },
+  "probeSending": "Lighting the {output} output…",
+  "@probeSending": {
+    "placeholders": {
+      "output": {
+        "type": "String"
+      }
+    }
+  },
+  "probeNoAnswer": "The light didn't answer. Check it's connected, then retry.",
+  "yes": "Yes",
+  "no": "No",
+  "retry": "Retry",
+  "probeSuggestion": "Looks like {type}",
+  "@probeSuggestion": {
+    "placeholders": {
+      "type": {
+        "type": "String"
+      }
+    }
+  },
+  "probeNoMatch": "These outputs don't match any fixture type. Check the wiring, or run the test again.",
+  "probeNothingLit": "Nothing lit up. Check the power and the wiring, then run the test again.",
+  "probeLitList": "Lit: {outputs}",
+  "@probeLitList": {
+    "placeholders": {
+      "outputs": {
+        "type": "String"
+      }
+    }
+  },
+  "probeUseType": "Use this type",
+  "probeRunAgain": "Run again",
+  "suggested": "Suggested",
+  "currentType": "Current",
+  "changeType": "Change type",
+  "changeTypeTitle": "Make it {type}?",
+  "@changeTypeTitle": {
+    "placeholders": {
+      "type": {
+        "type": "String"
+      }
+    }
+  },
+  "changeTypeBody": "{name} restarts as a {type} light. Its presets are cleared, and it moves to {group}.",
+  "@changeTypeBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "type": {
+        "type": "String"
+      },
+      "group": {
+        "type": "String"
+      }
+    }
+  },
+  "change": "Change",
+  "typeRestarting": "Restarting as {type}…",
+  "@typeRestarting": {
+    "placeholders": {
+      "type": {
+        "type": "String"
+      }
+    }
+  },
+  "typeChangeFailed": "The type wasn't changed. Check the light is connected and try again.",
+  "typeChangeNoReconnect": "The light restarted but hasn't reconnected yet. It shows its new type when it's back.",
+  "installedVersion": "Installed version",
+  "notReadYet": "Not read yet",
+  "refresh": "Refresh",
+  "copy": "Copy",
+  "diagConnect": "Connect the light to read its diagnostics.",
+  "diagNoAnswer": "The light didn't answer. Try Refresh.",
+  "diagUptime": "Running for",
+  "diagRestart": "Last restart",
+  "diagSlot": "Firmware slot",
+  "diagRollback": "Last update",
+  "diagRolledBack": "Rolled back to the previous firmware",
+  "diagNotRolledBack": "Kept",
+  "diagRender": "Rendering",
+  "diagConnection": "Connection",
+  "diagSystem": "Memory and storage",
+  "diagOther": "Other",
+  "diagKeyFrames": "Frames rendered",
+  "diagKeyOverrun": "Missed frame ticks",
+  "diagKeyRmaxus": "Slowest frame (µs)",
+  "diagKeyRx": "Lines received",
+  "diagKeyBin": "Colour frames",
+  "diagKeyGaps": "Lost colour frames",
+  "diagKeyBinbad": "Bad colour frames",
+  "diagKeyUnk": "Unknown commands",
+  "diagKeyErr": "Rejected commands",
+  "diagKeyCoal": "Merged commands",
+  "diagKeyOvf": "Over-long lines",
+  "diagKeyRej": "Garbage dropped",
+  "diagKeySdrop": "Writes dropped",
+  "diagKeyNretry": "Notify retries",
+  "diagKeyEdrop": "Replies dropped",
+  "diagKeyHeapmin": "Lowest free memory (bytes)",
+  "diagKeyStkc": "Control stack headroom (bytes)",
+  "diagKeyStkr": "Render stack headroom (bytes)",
+  "diagKeyNvsw": "Flash writes",
+  "diagKeyNvsf": "Flash write failures",
+  "restartUnknown": "Unknown",
+  "restartPowerOn": "Powered on",
+  "restartResetPin": "Reset button or pin",
+  "restartSoftware": "Restarted by its firmware",
+  "restartCrash": "Crashed",
+  "restartInterruptWatchdog": "Hung (interrupt watchdog)",
+  "restartTaskWatchdog": "Hung (task watchdog)",
+  "restartOtherWatchdog": "Hung (watchdog)",
+  "restartDeepSleep": "Woke from deep sleep",
+  "restartBrownout": "Power dipped too low (brownout)",
+  "restartSdio": "Reset over SDIO",
+  "restartUsb": "Reset over USB",
+  "restartJtag": "Reset over JTAG",
+  "restartEfuse": "eFuse error",
+  "restartPowerGlitch": "Power glitch",
+  "restartCpuLockup": "Processor locked up",
+  "setupTitle": "Set up this light",
+  "setupBody": "{name} doesn't know its fixture type yet. Find the right type, or choose it from the list.",
+  "@setupBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "addFoundSetup": "Found a light that needs setting up",
+  "newLightName": "New light"
 }

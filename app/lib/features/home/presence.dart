@@ -24,6 +24,7 @@ String presenceOf(
   LinkPhase.incompatible => switch (incompatibility) {
     EbIncompatibility.legacyFirmware => l.presenceUpdateNeeded,
     EbIncompatibility.unknownLayout => l.presenceNewerApp,
+    EbIncompatibility.setupNeeded => l.presenceSetupNeeded,
     _ => l.presenceUnexpected,
   },
   LinkPhase.idle => l.presenceIdle,

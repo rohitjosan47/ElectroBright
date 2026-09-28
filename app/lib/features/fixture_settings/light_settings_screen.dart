@@ -12,11 +12,10 @@ import '../../core/model/fixture.dart';
 import '../../core/model/light_capabilities.dart';
 import '../../core/protocol/eb/eb_scene.dart';
 import '../../core/protocol/eb/mode_catalog.dart';
-import '../../design/canvas/ambient_canvas.dart';
 import '../../design/components/fixture_type.dart';
 import '../../design/components/glass_controls.dart';
 import '../../design/components/name_dialog.dart';
-import '../../design/glass/glass_surface.dart';
+import '../../design/components/settings_list.dart';
 import '../../design/haptics/haptics.dart';
 import '../../design/haptics/haptics_scope.dart';
 import '../../design/tokens/tokens.dart';
@@ -28,6 +27,8 @@ import '../../sessions/fixture_session.dart';
 import '../../sessions/rituals.dart';
 import '../control/effects/mode_presentation.dart';
 import '../control/presets/preset_meta.dart';
+import '../developer/developer_tools.dart';
+import '../developer/light_developer_screen.dart';
 
 /// One light's settings: name, type and what it can do, identify / channel
 /// test, sound, factory reset and forget.
@@ -106,37 +107,13 @@ class _LightSettingsScreenState extends ConsumerState<LightSettingsScreen> {
             ),
             dark: dark,
           );
-    final Color fg = dark ? Colors.white : const Color(0xFF15171C);
-    final TextStyle title = TextStyle(
-      color: fg,
-      fontSize: 15,
-      fontWeight: FontWeight.w600,
-    );
-    final TextStyle sub = TextStyle(
-      color: fg.withValues(alpha: 0.65),
-      fontSize: 13,
-    );
+    final Color fg = settingsInk(context);
+    final TextStyle title = settingsTitleStyle(context);
+    final TextStyle sub = settingsDetailStyle(context);
+    final bool developer = ref.watch(developerToolsProvider);
 
-    Widget section(String? heading, List<Widget> rows) => Padding(
-      padding: const EdgeInsets.only(bottom: Space.m),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          if (heading != null)
-            Padding(
-              padding: const EdgeInsets.only(left: Space.xs, bottom: Space.xs),
-              child: Text(
-                heading.toUpperCase(),
-                style: sub.copyWith(fontSize: 12, letterSpacing: 0.4),
-              ),
-            ),
-          GlassSurface(
-            padding: const EdgeInsets.symmetric(vertical: Space.xxs),
-            child: Column(children: rows),
-          ),
-        ],
-      ),
-    );
+    Widget section(String? heading, List<Widget> rows) =>
+        SettingsSection(heading: heading, children: rows);
 
     Widget row(
       String label, {
@@ -156,161 +133,143 @@ class _LightSettingsScreenState extends ConsumerState<LightSettingsScreen> {
 
     return ToneScope(
       tone: tone,
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: AmbientCanvas(
-          child: ListView(
-            padding: EdgeInsets.fromLTRB(
-              Space.gutter,
-              MediaQuery.paddingOf(context).top + Space.s,
-              Space.gutter,
-              MediaQuery.paddingOf(context).bottom + Space.gutter,
+      child: SettingsPage(
+        title: l.lightSettings,
+        children: <Widget>[
+          section(null, <Widget>[
+            row(
+              l.name,
+              key: const ValueKey<String>('settings-name'),
+              detail: f.name,
+              trailing: Icon(Icons.edit_rounded, color: fg, size: 20),
+              onTap: () async {
+                final String? n = await showNameDialog(
+                  context,
+                  title: l.rename,
+                  current: f.name,
+                );
+                if (n != null && n.isNotEmpty) {
+                  _update(f.copyWith(name: n));
+                }
+              },
             ),
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  GlassIconButton(
-                    icon: Icons.chevron_left_rounded,
-                    label: MaterialLocalizations.of(context).backButtonTooltip,
-                    onPressed: () => Navigator.of(context).maybePop(),
-                  ),
-                  const SizedBox(width: Space.s),
-                  Expanded(
-                    child: Text(
-                      l.lightSettings,
-                      style: TextStyle(
-                        color: fg,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
+            SwitchListTile(
+              title: Text(l.favourite, style: title),
+              subtitle: Text(l.favouriteHint, style: sub),
+              value: f.favourite,
+              onChanged: (bool v) => _update(f.copyWith(favourite: v)),
+            ),
+          ]),
+          section(l.type, <Widget>[
+            ListTile(
+              title: FixtureTypeBadge(
+                layout: f.layout,
+                whitePoints: f.whitePoints,
               ),
-              const SizedBox(height: Space.l),
-              section(null, <Widget>[
-                row(
-                  l.name,
-                  key: const ValueKey<String>('settings-name'),
-                  detail: f.name,
-                  trailing: Icon(Icons.edit_rounded, color: fg, size: 20),
-                  onTap: () async {
-                    final String? n = await showNameDialog(
-                      context,
-                      title: l.rename,
-                      current: f.name,
-                    );
-                    if (n != null && n.isNotEmpty) {
-                      _update(f.copyWith(name: n));
-                    }
-                  },
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: Space.xxs),
+                child: Text(fixtureTypeDescription(l, f.layout), style: sub),
+              ),
+            ),
+            row(
+              l.whatItCanDo,
+              key: const ValueKey<String>('settings-caps'),
+              trailing: Icon(Icons.chevron_right_rounded, color: fg),
+              onTap: () => unawaited(
+                showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  showDragHandle: true,
+                  builder: (BuildContext ctx) =>
+                      CapabilitySheet(fixture: f, capabilities: caps),
                 ),
-                SwitchListTile(
-                  title: Text(l.favourite, style: title),
-                  subtitle: Text(l.favouriteHint, style: sub),
-                  value: f.favourite,
-                  onChanged: (bool v) => _update(f.copyWith(favourite: v)),
-                ),
-              ]),
-              section(l.type, <Widget>[
-                ListTile(
-                  title: FixtureTypeBadge(
-                    layout: f.layout,
-                    whitePoints: f.whitePoints,
-                  ),
-                  subtitle: Padding(
-                    padding: const EdgeInsets.only(top: Space.xxs),
-                    child: Text(
-                      fixtureTypeDescription(l, f.layout),
-                      style: sub,
+              ),
+            ),
+          ]),
+          section(l.tools, <Widget>[
+            row(
+              l.identify,
+              key: const ValueKey<String>('settings-identify'),
+              detail: l.identifyHint,
+              onTap: ready && !_busy
+                  ? () => unawaited(_run(session.identify))
+                  : null,
+            ),
+            row(
+              l.channelTest,
+              key: const ValueKey<String>('settings-channel-test'),
+              detail: _testing != null
+                  ? l.channelTestRunning(
+                      channelName(l, f.layout.roles[_testing!]),
+                    )
+                  : l.channelTestHint,
+              trailing: _testing != null
+                  ? Container(
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: ledColor(
+                          f.layout.roles[_testing!],
+                          f.whitePoints,
+                        ),
+                      ),
+                    )
+                  : null,
+              onTap: ready && !_busy
+                  ? () => unawaited(
+                      _run(
+                        () => session.channelTest(
+                          onChannel: (int? c) {
+                            if (mounted) setState(() => _testing = c);
+                          },
+                        ),
+                      ),
+                    )
+                  : null,
+            ),
+            SwitchListTile(
+              key: const ValueKey<String>('settings-sound'),
+              title: Text(l.sound, style: title),
+              value: state?.soundOn ?? false,
+              onChanged: ready
+                  ? (bool on) => unawaited(session.setSound(on: on))
+                  : null,
+            ),
+          ]),
+          if (developer)
+            section(null, <Widget>[
+              row(
+                l.developer,
+                key: const ValueKey<String>('light-settings-developer'),
+                trailing: Icon(Icons.chevron_right_rounded, color: fg),
+                onTap: () => unawaited(
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          LightDeveloperScreen(fixtureId: widget.fixtureId),
                     ),
                   ),
                 ),
-                row(
-                  l.whatItCanDo,
-                  key: const ValueKey<String>('settings-caps'),
-                  trailing: Icon(Icons.chevron_right_rounded, color: fg),
-                  onTap: () => unawaited(
-                    showModalBottomSheet<void>(
-                      context: context,
-                      isScrollControlled: true,
-                      showDragHandle: true,
-                      builder: (BuildContext ctx) =>
-                          CapabilitySheet(fixture: f, capabilities: caps),
-                    ),
-                  ),
-                ),
-              ]),
-              section(l.tools, <Widget>[
-                row(
-                  l.identify,
-                  key: const ValueKey<String>('settings-identify'),
-                  detail: l.identifyHint,
-                  onTap: ready && !_busy
-                      ? () => unawaited(_run(session.identify))
-                      : null,
-                ),
-                row(
-                  l.channelTest,
-                  key: const ValueKey<String>('settings-channel-test'),
-                  detail: _testing != null
-                      ? l.channelTestRunning(
-                          channelName(l, f.layout.roles[_testing!]),
-                        )
-                      : l.channelTestHint,
-                  trailing: _testing != null
-                      ? Container(
-                          width: 18,
-                          height: 18,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: ledColor(
-                              f.layout.roles[_testing!],
-                              f.whitePoints,
-                            ),
-                          ),
-                        )
-                      : null,
-                  onTap: ready && !_busy
-                      ? () => unawaited(
-                          _run(
-                            () => session.channelTest(
-                              onChannel: (int? c) {
-                                if (mounted) setState(() => _testing = c);
-                              },
-                            ),
-                          ),
-                        )
-                      : null,
-                ),
-                SwitchListTile(
-                  key: const ValueKey<String>('settings-sound'),
-                  title: Text(l.sound, style: title),
-                  value: state?.soundOn ?? false,
-                  onChanged: ready
-                      ? (bool on) => unawaited(session.setSound(on: on))
-                      : null,
-                ),
-              ]),
-              section(null, <Widget>[
-                row(
-                  l.factoryReset,
-                  key: const ValueKey<String>('settings-reset'),
-                  color: const Color(0xFFE5484D),
-                  onTap: ready && !_busy
-                      ? () => unawaited(_factoryReset(f, session))
-                      : null,
-                ),
-                row(
-                  l.forgetLight,
-                  key: const ValueKey<String>('settings-forget'),
-                  color: const Color(0xFFE5484D),
-                  onTap: () => unawaited(_forget(f)),
-                ),
-              ]),
-            ],
-          ),
-        ),
+              ),
+            ]),
+          section(null, <Widget>[
+            row(
+              l.factoryReset,
+              key: const ValueKey<String>('settings-reset'),
+              color: const Color(0xFFE5484D),
+              onTap: ready && !_busy
+                  ? () => unawaited(_factoryReset(f, session))
+                  : null,
+            ),
+            row(
+              l.forgetLight,
+              key: const ValueKey<String>('settings-forget'),
+              color: const Color(0xFFE5484D),
+              onTap: () => unawaited(_forget(f)),
+            ),
+          ]),
+        ],
       ),
     );
   }

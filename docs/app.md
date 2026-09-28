@@ -21,6 +21,7 @@ The Flutter app in `app/` (iOS and Android) controls every ElectroBright fixture
   - In the background every light is released after 20 s.
 - **Demo lights** (onboarding, or Settings on Home): one simulated light of every type plus one on the original firmware. They run a copy of the firmware logic.
 - **Reflashed as another type:** a light reflashed as a different fixture type is detected on the next connect ("Kitchen is now a CCT light"). Its saved presets and last state are reset.
+- **Setup needed:** a light whose firmware has no fixture type yet (3.7.0+, CAPS `LAYOUT=NONE`) shows "Setup needed" on its tile, with or without the developer tools. Tapping it opens only **Find the right type** and the type list (§4a). It is in no group until it has a type. The add flow saves such a light as "New light", marked as needing setup.
 - **Old app data:** saved lights from the previous app are imported once, on the first launch. Presets are not: firmware 3.6.0 clears the presets on every light once, and the app drops its old preset names and looks once to match.
 
 ## 2. Control screen
@@ -104,6 +105,15 @@ A group exists with two or more lights, and new lights join their group on their
 - **Channel test** lights each LED on its own for 1.2 s, then restores the look. If the link drops during the test, the look is restored when the light returns within 60 s.
 - **Sound**, **Factory reset** (the confirmation shows the type's factory look; it also clears the preset names) and **Forget**.
 
+## 4a. Developer tools
+- **Settings → Advanced → Developer tools** (off by default, remembered). When it is on, Settings and each light's settings have a **Developer** row. When it is off, nothing of it shows.
+- **Developer** lists every saved light with its type, firmware version and connection state. A light opens its developer page, which keeps it connected:
+  - **Fixture type:** the current type. Firmware without CAPS `TYPES=` gets "Changing the type needs firmware 3.7.0 or later".
+  - **Find the right type** (CAPS `PROBE=1`): the app lights each output with PROBE (red, green, blue, white/cool, warm) and asks "Is it lighting up?" (Yes / No / Retry). It then suggests the type that drives exactly those outputs; any other combination gets a clear message. The suggestion is preselected, and all five types stay selectable.
+  - **Change type:** a confirmation (the light restarts, its presets are cleared, it moves to the matching group), then SET_TYPE. The page waits while the light restarts and is re-identified, then shows the result.
+  - **Firmware:** the installed version.
+  - **Diagnostics:** DIAG in plain words (running time, last restart reason, firmware slot, rollback, then the rendering, connection and memory counters), with Refresh and Copy (readable text plus the raw reply).
+
 ## 5. How it stays in sync
 - **Handshake:** INFO names the layout, CAPS confirms it (`LAYOUT`, `MODES`), and then STATUS, MODE_SETTINGS and PRESET_LIST are read.
   - Lights that can't be controlled are shown as such, never retried in a loop: the original firmware ("Firmware update needed"), an unknown layout ("Needs a newer app version") or malformed replies.
@@ -125,7 +135,7 @@ A group exists with two or more lights, and new lights join their group on their
 | `sessions` | Connection manager, discovery, per-light session, registry, colour and white groups with their presets, identify / channel test |
 | `sim` | Firmware twin and simulated Bluetooth (demo lights and tests) |
 | `design` | Tokens, theme, glass, controls, haptics, gallery |
-| `features` | Onboarding, Home, add light, control screen, groups, light settings, firmware update, diagnostics |
+| `features` | Onboarding, Home, add light, control screen, groups, light settings, developer tools, firmware update, diagnostics |
 
 ## 7. Run and test
 ```bash

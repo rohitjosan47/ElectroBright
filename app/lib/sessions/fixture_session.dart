@@ -6,6 +6,7 @@ import '../core/ble/ble_link.dart';
 import '../core/color/colour_engine.dart';
 import '../core/model/fixture.dart';
 import '../core/model/channel_color.dart';
+import '../core/model/channel_layout.dart';
 import '../core/protocol/eb/eb_scene.dart';
 import '../core/util/scheduler.dart';
 import '../drivers/electrobright/eb_session.dart';
@@ -281,10 +282,14 @@ final class FixtureSession {
   /// Takes over a fresh link: handshake, then replay recent offline changes.
   /// Throws what [EbSession.start] throws (the caller decides on retries).
   /// [setupFirst]: the light advertises setup-needed mode ([Eb.setupName]).
+  /// [keepSetup]: a light in setup-needed mode keeps the link instead of
+  /// throwing, so it can be set up ([probe], [setType], [diag]); its phase is
+  /// [LinkPhase.incompatible] with [EbIncompatibility.setupNeeded].
   Future<void> attach(
     BleLink link, {
     EbSessionOptions? options,
     bool setupFirst = false,
+    bool keepSetup = false,
   }) async {
     await _detach();
     final EbSession s = EbSession(
@@ -298,7 +303,20 @@ final class FixtureSession {
     _pick = null;
     setPhase(LinkPhase.handshaking);
     try {
-      await s.start(setupFirst: setupFirst || _setupNeeded);
+      await s.start(
+        setupFirst: setupFirst || _setupNeeded || fixture.setupNeeded,
+      );
+    } on EbIncompatible catch (e) {
+      if (keepSetup && e.kind == EbIncompatibility.setupNeeded) {
+        setPhase(
+          LinkPhase.incompatible,
+          incompatibility: e.kind,
+          detail: e.reason,
+        );
+        return;
+      }
+      await _detach();
+      rethrow;
     } on Object {
       await _detach();
       rethrow;
@@ -329,11 +347,12 @@ final class FixtureSession {
     if (wake != null) s.storeWakeBrightness(wake);
   }
 
-  /// The link ended (the manager already knows).
+  /// The link ended (the manager already knows). A light that was kept in
+  /// setup-needed mode stays marked so.
   Future<void> linkClosed() async {
     final EbSession? s = _session;
     _pendingWake = s?.pendingWakeBrightness ?? _pendingWake;
-    if (s != null && s.phase != EbPhase.connecting) {
+    if (s != null && s.phase != EbPhase.connecting && s.setup == null) {
       _status = FixtureStatus(
         phase: _status.phase,
         lastKnown: s.confirmed,
@@ -645,4 +664,31 @@ final class FixtureSession {
 
   Future<EbResult> factoryReset() =>
       _session?.factoryReset() ?? Future<EbResult>.value(EbResult.disconnected);
+
+  // ---- setting up (developer tools) --------------------------------------------
+
+  /// The link is kept open in setup-needed mode (see [attach]'s keepSetup).
+  bool get inSetup {
+    final EbSession? s = _session;
+    return s != null && s.setup != null && s.phase != EbPhase.closed;
+  }
+
+  /// The session to set the light up with: a connected light, or one kept in
+  /// setup-needed mode.
+  EbSession? get _setupTarget => _live || inSetup ? _session : null;
+
+  /// PROBE: lights one physical output (0 red, 1 green, 2 blue, 3 white/cool,
+  /// 4 warm) for up to 3 s, or ends that ([EbSession.probe]).
+  Future<EbResult> probe(int output, {required bool on}) =>
+      _setupTarget?.probe(output, on: on) ??
+      Future<EbResult>.value(EbResult.disconnected);
+
+  /// SET_TYPE: the light restarts as a [layout] fixture ([EbSession.setType]).
+  Future<EbResult> setType(ChannelLayout layout) =>
+      _setupTarget?.setType(layout) ??
+      Future<EbResult>.value(EbResult.disconnected);
+
+  /// DIAG counters, or null when not connected or not answered.
+  Future<Map<String, int>?> diag() =>
+      _setupTarget?.diag() ?? Future<Map<String, int>?>.value();
 }

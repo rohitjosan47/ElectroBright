@@ -672,14 +672,15 @@ final class GroupSession {
   GroupLook get look => _groupLook;
   Stream<GroupLook> get looks => _looks.stream;
 
-  /// Every saved light of the group's kind, in Home's order.
+  /// Every saved light of the group's kind, in Home's order (a light
+  /// without a fixture type yet is in no group).
   List<Fixture> get _lights => <Fixture>[
     for (final Fixture f in _registry.fixtures)
-      if (GroupKind.of(f.layout) == kind) f,
+      if (GroupKind.holds(kind, f)) f,
   ];
 
   bool _isMine(String id) => switch (_registry.byId(id)) {
-    final Fixture f => GroupKind.of(f.layout) == kind,
+    final Fixture f => GroupKind.holds(kind, f),
     null => false,
   };
 

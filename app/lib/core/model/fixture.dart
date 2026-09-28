@@ -109,6 +109,7 @@ final class Fixture {
     this.icon = 'bulb',
     this.favourite = false,
     this.lastConnectedAt,
+    this.setupNeeded = false,
   });
 
   /// App-level id (stable across re-links).
@@ -134,6 +135,12 @@ final class Fixture {
   final DateTime addedAt;
   final DateTime? lastConnectedAt;
 
+  /// The light last reported that it has no fixture type yet (firmware
+  /// 3.7.0+ setup-needed mode). Until it is given one, Home offers only
+  /// setting it up and it is in no group; [layout] is the type it was
+  /// believed to have.
+  final bool setupNeeded;
+
   /// What the light can do: learned from its firmware, else assumed.
   LightCapabilities get capabilities =>
       identity?.capabilities ?? LightCapabilities.assumed(layout);
@@ -151,6 +158,7 @@ final class Fixture {
     String? icon,
     bool? favourite,
     Object? lastConnectedAt = _keep,
+    bool? setupNeeded,
   }) => Fixture(
     id: id,
     deviceId: deviceId ?? this.deviceId,
@@ -170,6 +178,7 @@ final class Fixture {
     lastConnectedAt: identical(lastConnectedAt, _keep)
         ? this.lastConnectedAt
         : lastConnectedAt as DateTime?,
+    setupNeeded: setupNeeded ?? this.setupNeeded,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -185,6 +194,7 @@ final class Fixture {
     'favourite': favourite,
     'addedAt': addedAt.toUtc().toIso8601String(),
     'lastConnectedAt': lastConnectedAt?.toUtc().toIso8601String(),
+    if (setupNeeded) 'setupNeeded': true,
   };
 
   /// Strict: null when required fields are missing or invalid.
@@ -229,6 +239,7 @@ final class Fixture {
       lastConnectedAt: json['lastConnectedAt'] == null
           ? null
           : DateTime.tryParse('${json['lastConnectedAt']}'),
+      setupNeeded: json['setupNeeded'] == true,
     );
   }
 
@@ -246,7 +257,8 @@ final class Fixture {
       other.icon == icon &&
       other.favourite == favourite &&
       other.addedAt == addedAt &&
-      other.lastConnectedAt == lastConnectedAt;
+      other.lastConnectedAt == lastConnectedAt &&
+      other.setupNeeded == setupNeeded;
 
   @override
   int get hashCode => Object.hash(
@@ -262,6 +274,7 @@ final class Fixture {
     favourite,
     addedAt,
     lastConnectedAt,
+    setupNeeded,
   );
 
   @override

@@ -4,9 +4,10 @@ import 'package:meta/meta.dart';
 import '../core/color/colour_engine.dart';
 import '../core/color/led_white_points.dart';
 import '../core/model/channel_layout.dart';
+import '../core/model/fixture.dart';
 import '../core/model/light_capabilities.dart';
 
-/// The two automatic groups; every light is in exactly one.
+/// The two automatic groups; every light with a type is in exactly one.
 enum GroupKind {
   /// Lights with colour LEDs (RGB, RGBW, RGBCCT).
   colour,
@@ -16,6 +17,11 @@ enum GroupKind {
 
   static GroupKind of(ChannelLayout layout) =>
       layout.hasColour ? colour : white;
+
+  /// Whether [f] belongs to the [kind] group: its type's, once it has one
+  /// (a light in setup-needed mode is in no group).
+  static bool holds(GroupKind kind, Fixture f) =>
+      !f.setupNeeded && of(f.layout) == kind;
 }
 
 /// One light of a group, as far as the group's controls go.

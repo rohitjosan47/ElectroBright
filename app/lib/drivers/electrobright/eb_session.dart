@@ -169,6 +169,15 @@ final class EbSession {
   EbPhase get phase => _phase;
   EbFirmware? get firmware => _firmware;
 
+  /// The handshake found the light in setup-needed mode (no fixture type):
+  /// its CAPS and VERSION. Kept open by its owner, the session still sends
+  /// the commands that mode accepts ([probe], [setType], [diag]).
+  ({EbCaps caps, String? version})? get setup => _setup;
+  ({EbCaps caps, String? version})? _setup;
+
+  /// CAPS of the light, from the handshake (typed or setup-needed).
+  EbCaps? get _caps => _firmware?.caps ?? _setup?.caps;
+
   /// The light's layout (the expected one until the handshake identified it).
   ChannelLayout get layout => _layout;
 
@@ -247,7 +256,7 @@ final class EbSession {
       );
       _throwIfClosed(caps);
       if (caps.isSuccess && (caps.reply! as EbCaps).setupNeeded) {
-        await _setupNeeded();
+        await _setupNeeded(caps.reply! as EbCaps);
       }
       // Given a type since (or older firmware): the usual handshake.
     }
@@ -264,7 +273,7 @@ final class EbSession {
       );
       _throwIfClosed(caps);
       if (caps.isSuccess && (caps.reply! as EbCaps).setupNeeded) {
-        await _setupNeeded();
+        await _setupNeeded(caps.reply! as EbCaps);
       }
     }
     if (!info.isSuccess) throw const EbNoResponse();
@@ -348,15 +357,14 @@ final class EbSession {
 
   /// Ends the handshake of a light in setup-needed mode: VERSION for the
   /// record, then [EbIncompatibility.setupNeeded]. Nothing else is sent.
-  Future<Never> _setupNeeded() async {
+  Future<Never> _setupNeeded(EbCaps caps) async {
     final EbResult v = await _commands.enqueue(
       const VersionQuery(),
       seq: ++_seq,
     );
     _throwIfClosed(v);
-    final String version = v.isSuccess
-        ? (v.reply! as EbVersion).version
-        : '?';
+    final String version = v.isSuccess ? (v.reply! as EbVersion).version : '?';
+    _setup = (caps: caps, version: v.isSuccess ? version : null);
     throw EbIncompatible(
       EbIncompatibility.setupNeeded,
       'no fixture type yet (firmware $version)',
@@ -681,7 +689,7 @@ final class EbSession {
   /// 2 blue, 3 white/cool, 4 warm) for up to 3 s, or ends that. Any other
   /// command also ends it; nothing is stored.
   Future<EbResult> probe(int output, {required bool on}) {
-    if (!(_firmware?.capabilities.supportsProbe ?? false)) return _skipped;
+    if (!(_caps?.probe ?? false)) return _skipped;
     return _send(Probe(output, on: on), const <String>[]);
   }
 
@@ -690,12 +698,7 @@ final class EbSession {
   /// the link drops; the next handshake identifies it as that type. The same
   /// type is an OK that changes nothing.
   Future<EbResult> setType(ChannelLayout layout) {
-    final EbFirmware? fw = _firmware;
-    if (fw == null ||
-        !fw.capabilities.supportsTypeChange ||
-        !fw.caps.types.contains(layout.wire)) {
-      return _skipped;
-    }
+    if (!(_caps?.types.contains(layout.wire) ?? false)) return _skipped;
     return _send(SetType(layout), const <String>[]);
   }
 

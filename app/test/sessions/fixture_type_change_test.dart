@@ -105,14 +105,19 @@ void main() {
     expect(registry.byId('f1')!.capabilities.supportsProbe, isTrue);
     // App-side preset names of this light (and another light's).
     store.write('presetMeta', <String, Object?>{
-      'f1': <String, Object?>{'3': <String, Object?>{'name': 'Movie'}},
-      'f2': <String, Object?>{'1': <String, Object?>{'name': 'Read'}},
+      'f1': <String, Object?>{
+        '3': <String, Object?>{'name': 'Movie'},
+      },
+      'f2': <String, Object?>{
+        '1': <String, Object?>{'name': 'Read'},
+      },
     });
     expect(members(groups.colour), <String>['f1']);
     expect(members(groups.white), <String>['f2']);
     final List<LayoutChange> changes = <LayoutChange>[];
-    final StreamSubscription<LayoutChange> sub = registry.layoutChanges
-        .listen(changes.add);
+    final StreamSubscription<LayoutChange> sub = registry.layoutChanges.listen(
+      changes.add,
+    );
 
     expect(
       (await _settled(s.session!.probe(3, on: true), run)).outcome,
@@ -153,36 +158,119 @@ void main() {
     await sub.cancel();
   });
 
-  test('a setup-needed light is kept and only sent the setup commands',
-      () async {
-    // Seen advertising first: the handshake starts with CAPS.
-    final ScanLease scan = discovery.acquire(ScanNeed.addFlow);
-    await run(const Duration(seconds: 1));
-    scan.release();
-    registry.add(light('f3', 'dev3', ChannelLayout.rgbw));
-    final Want w = manager.want('f3', WantReason.screen);
-    await run(const Duration(seconds: 5));
+  test(
+    'a setup-needed light is kept and only sent the setup commands',
+    () async {
+      // Seen advertising first: the handshake starts with CAPS.
+      final ScanLease scan = discovery.acquire(ScanNeed.addFlow);
+      await run(const Duration(seconds: 1));
+      scan.release();
+      registry.add(light('f3', 'dev3', ChannelLayout.rgbw));
+      final Want w = manager.want('f3', WantReason.screen);
+      await run(const Duration(seconds: 5));
 
-    final FixtureSession s = manager.session('f3')!;
-    expect(s.status.phase, LinkPhase.incompatible);
-    expect(s.status.incompatibility, EbIncompatibility.setupNeeded);
-    expect(registry.byId('f3'), isNotNull);
-    expect(registry.byId('f3')!.layout, ChannelLayout.rgbw); // untouched
-    Map<String, Object> stats() =>
-        twin('dev3').state()['stats']! as Map<String, Object>;
-    // CAPS and VERSION only: no command the light rejects.
-    expect(stats()['err'], 0);
-    expect(stats()['unk'], 0);
-    expect(stats()['rx'], 2);
+      final FixtureSession s = manager.session('f3')!;
+      expect(s.status.phase, LinkPhase.incompatible);
+      expect(s.status.incompatibility, EbIncompatibility.setupNeeded);
+      expect(registry.byId('f3'), isNotNull);
+      expect(registry.byId('f3')!.layout, ChannelLayout.rgbw); // untouched
+      Map<String, Object> stats() =>
+          twin('dev3').state()['stats']! as Map<String, Object>;
+      // CAPS and VERSION only: no command the light rejects.
+      expect(stats()['err'], 0);
+      expect(stats()['unk'], 0);
+      expect(stats()['rx'], 2);
 
-    // Retried by the user: still nothing outside the allowed set.
-    manager.retry('f3');
-    await run(const Duration(seconds: 5));
-    expect(s.status.incompatibility, EbIncompatibility.setupNeeded);
-    expect(stats()['err'], 0);
-    expect(stats()['rx'], 4); // CAPS + VERSION again
-    w.release();
-  });
+      // Retried by the user: still nothing outside the allowed set.
+      manager.retry('f3');
+      await run(const Duration(seconds: 5));
+      expect(s.status.incompatibility, EbIncompatibility.setupNeeded);
+      expect(stats()['err'], 0);
+      expect(stats()['rx'], 4); // CAPS + VERSION again
+      w.release();
+    },
+  );
+
+  test(
+    'a light being set up keeps its link, probes and comes back typed',
+    () async {
+      registry
+        ..add(light('f3', 'dev3', ChannelLayout.rgbw))
+        ..add(light('f1', 'dev1', ChannelLayout.rgbw));
+      final Want w = manager.want('f3', WantReason.setup);
+      await run(const Duration(seconds: 5));
+      final FixtureSession s = manager.session('f3')!;
+      expect(s.status.phase, LinkPhase.incompatible);
+      expect(s.status.incompatibility, EbIncompatibility.setupNeeded);
+      expect(s.inSetup, isTrue);
+      expect(central.fixtures[2].connected, isTrue);
+      // Saved as needing setup: in no group meanwhile.
+      expect(registry.byId('f3')!.setupNeeded, isTrue);
+      expect(groups.colour.members, <String>['f1']);
+      store.write('presetMeta', <String, Object?>{
+        'f3': <String, Object?>{
+          '0': <String, Object?>{'name': 'Old'},
+        },
+      });
+
+      expect((await _settled(s.probe(2, on: true), run)).outcome, EbOutcome.ok);
+      // Output 2 (blue) is lit.
+      expect(
+        (twin('dev3').state()['render']! as Map<String, Object>)['probe'],
+        3,
+      );
+      expect((await s.diag())?['rx'], isNotNull);
+      final Future<EbResult> set = s.setType(ChannelLayout.rgb);
+      await run(const Duration(seconds: 1));
+      expect((await set).outcome, EbOutcome.ok);
+      expect(twin('dev3').restarts, 1);
+      await run(const Duration(seconds: 8));
+
+      expect(s.status.isReady, isTrue);
+      expect(s.inSetup, isFalse);
+      final Fixture f = registry.byId('f3')!;
+      expect(f.layout, ChannelLayout.rgb);
+      expect(f.setupNeeded, isFalse);
+      expect(f.identity!.model, 'EB-C3-RGB-V1');
+      // Presets from before are gone; it joined its group.
+      expect(store.read('presetMeta'), isNot(contains('f3')));
+      await _pump();
+      expect(groups.colour.members, <String>['f3', 'f1']);
+      // Nothing it was sent was refused.
+      final Map<String, Object> stats =
+          twin('dev3').state()['stats']! as Map<String, Object>;
+      expect(stats['err'], 0);
+      expect(stats['unk'], 0);
+      w.release();
+    },
+  );
+
+  test(
+    'released, a light in setup-needed mode drops the link and stays so',
+    () async {
+      registry.add(light('f3', 'dev3', ChannelLayout.rgbw));
+      final Want home = manager.want('f3', WantReason.favourite);
+      final Want w = manager.want('f3', WantReason.setup);
+      await run(const Duration(seconds: 5));
+      final FixtureSession s = manager.session('f3')!;
+      expect(s.inSetup, isTrue);
+      w.release();
+      await run(const Duration(seconds: 2));
+      expect(central.fixtures[2].connected, isFalse);
+      expect(s.inSetup, isFalse);
+      expect(s.status.phase, LinkPhase.incompatible);
+      expect(s.status.incompatibility, EbIncompatibility.setupNeeded);
+      // Not tried again and again while Home wants it.
+      final int connects = central.connects;
+      await run(const Duration(seconds: 20));
+      expect(central.connects, connects);
+      expect(await s.probe(0, on: true), EbResult.disconnected);
+      // Saved across restarts of the app.
+      final Fixture again = Fixture.fromJson(registry.byId('f3')!.toJson())!;
+      expect(again.setupNeeded, isTrue);
+      home.release();
+    },
+  );
 
   test('a retry never adds a rejected command', () async {
     registry.add(light('f3', 'dev3', ChannelLayout.rgbw));

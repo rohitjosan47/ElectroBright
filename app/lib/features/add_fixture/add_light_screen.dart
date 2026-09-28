@@ -64,6 +64,10 @@ class _AddLightScreenState extends ConsumerState<AddLightScreen> {
   StreamSubscription<FixtureStatus>? _sub;
   Timer? _timeout;
   EbFirmware? _firmware;
+
+  /// The light has no fixture type yet (setup-needed mode): it is saved as
+  /// such and set up from Home.
+  bool _setupNeeded = false;
   bool _identifying = false;
   bool _saved = false;
   final TextEditingController _name = TextEditingController();
@@ -159,8 +163,19 @@ class _AddLightScreenState extends ConsumerState<AddLightScreen> {
       HapticsScope.of(context).play(HapticEvent.connected);
       setState(() {
         _firmware = fw;
+        _setupNeeded = false;
         _step = _Step.found;
         _name.text = _defaultName(fw.layout);
+      });
+    } else if (st.phase == LinkPhase.incompatible &&
+        st.incompatibility == EbIncompatibility.setupNeeded) {
+      _timeout?.cancel();
+      HapticsScope.of(context).play(HapticEvent.connected);
+      setState(() {
+        _firmware = null;
+        _setupNeeded = true;
+        _step = _Step.found;
+        _name.text = _newName();
       });
     } else if (st.phase == LinkPhase.incompatible) {
       _timeout?.cancel();
@@ -191,6 +206,12 @@ class _AddLightScreenState extends ConsumerState<AddLightScreen> {
     );
   }
 
+  /// "New light", numbered to be unique (a light without a type).
+  String _newName() => uniqueLightName(
+    AppLocalizations.of(context).newLightName,
+    _app.registry.fixtures.map((Fixture f) => f.name),
+  );
+
   Future<void> _identify() async {
     final String? id = _candidateId;
     final FixtureSession? s = id == null
@@ -206,7 +227,11 @@ class _AddLightScreenState extends ConsumerState<AddLightScreen> {
     final String? id = _candidateId;
     final EbFirmware? fw = _firmware;
     final NearbyLight? n = _picked;
-    if (id == null || fw == null || n == null) return;
+    if (id == null || n == null) return;
+    if (fw == null) {
+      if (_setupNeeded) _saveSetupNeeded(id, n);
+      return;
+    }
     final String name = _name.text.trim().isEmpty
         ? _defaultName(fw.layout)
         : _name.text.trim();
@@ -231,6 +256,25 @@ class _AddLightScreenState extends ConsumerState<AddLightScreen> {
           learnedAt: DateTime.now(),
         ),
         lastConnectedAt: DateTime.now(),
+      ),
+    );
+    HapticsScope.of(context).play(HapticEvent.success);
+    Navigator.of(context).pop(id);
+  }
+
+  void _saveSetupNeeded(String id, NearbyLight n) {
+    final ChannelLayout guess = n.layoutHint ?? ChannelLayout.rgbw;
+    _saved = true;
+    _app.registry.add(
+      Fixture(
+        id: id,
+        deviceId: n.seen.id,
+        name: _name.text.trim().isEmpty ? _newName() : _name.text.trim(),
+        layout: guess,
+        driver: DriverKind.electroBright,
+        addedAt: DateTime.now(),
+        whitePoints: EbFixtureCatalog.whitePointsFor(layout: guess),
+        setupNeeded: true,
       ),
     );
     HapticsScope.of(context).play(HapticEvent.success);
@@ -282,7 +326,7 @@ class _AddLightScreenState extends ConsumerState<AddLightScreen> {
                       },
                     ),
                     _Step.found => _Found(
-                      firmware: _firmware!,
+                      firmware: _firmware,
                       name: _name,
                       identifying: _identifying,
                       onIdentify: _identify,
@@ -460,7 +504,9 @@ class _Found extends StatelessWidget {
     required this.onIdentify,
     required this.onSave,
   });
-  final EbFirmware firmware;
+
+  /// Null for a light without a fixture type yet (setup-needed mode).
+  final EbFirmware? firmware;
   final TextEditingController name;
   final bool identifying;
   final VoidCallback onIdentify;
@@ -469,7 +515,8 @@ class _Found extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
-    final LightCapabilities caps = firmware.capabilities;
+    final EbFirmware? fw = firmware;
+    final LightCapabilities? caps = fw?.capabilities;
     return ListView(
       children: <Widget>[
         GlassSurface(
@@ -477,24 +524,31 @@ class _Found extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              FixtureTypeBadge(layout: caps.layout),
+              if (caps == null)
+                const SetupNeededBadge()
+              else
+                FixtureTypeBadge(layout: caps.layout),
               const SizedBox(height: Space.s),
               Text(
-                l.addFound(
-                  fixtureTypeDescription(l, caps.layout),
-                  firmware.version.version,
-                ),
+                caps == null
+                    ? l.addFoundSetup
+                    : l.addFound(
+                        fixtureTypeDescription(l, caps.layout),
+                        fw!.version.version,
+                      ),
                 style: const TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: Space.m),
-              OutlinedButton.icon(
-                onPressed: identifying ? null : onIdentify,
-                icon: const Icon(Icons.flare_rounded),
-                label: Text(l.addIdentify),
-              ),
+              if (caps != null) ...<Widget>[
+                const SizedBox(height: Space.m),
+                OutlinedButton.icon(
+                  onPressed: identifying ? null : onIdentify,
+                  icon: const Icon(Icons.flare_rounded),
+                  label: Text(l.addIdentify),
+                ),
+              ],
             ],
           ),
         ),

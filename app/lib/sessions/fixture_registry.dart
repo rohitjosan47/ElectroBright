@@ -133,6 +133,10 @@ final class FixtureRegistry {
   void _onStatus(String id, FixtureStatus st) {
     final EbFirmware? fw = st.view?.firmware;
     if (fw != null) _learn(id, fw);
+    if (st.phase == LinkPhase.incompatible &&
+        st.incompatibility == EbIncompatibility.setupNeeded) {
+      _markSetupNeeded(id);
+    }
     // Disconnected: keep what the light last confirmed.
     if (st.phase != LinkPhase.ready && st.lastKnown != null) {
       _saveLastKnown(id, st.lastKnown!);
@@ -167,18 +171,33 @@ final class FixtureRegistry {
         f.identity!.capabilities == identity.capabilities &&
         f.identity!.model == identity.model &&
         f.identity!.firmwareVersion == identity.firmwareVersion &&
-        f.identity!.caps == identity.caps;
+        f.identity!.caps == identity.caps &&
+        !f.setupNeeded;
     if (same) return;
     final Fixture next = f.copyWith(
       layout: fw.layout,
       identity: identity,
       whitePoints: wp,
       lastConnectedAt: _clock(),
+      setupNeeded: false,
     );
     _fixtures[id] = next;
     _connections.session(id)?.fixture = next;
-    if (fw.layout != f.layout) _dropPerLight(id);
+    // A light that was given a type has no presets yet, whatever it was
+    // believed to be.
+    if (fw.layout != f.layout || f.setupNeeded) _dropPerLight(id);
     if (typeChanged) _layoutChanges.add(LayoutChange(f, next));
+    _persist();
+  }
+
+  /// The light has no fixture type (setup-needed mode): Home offers only
+  /// setting it up, and it leaves its group, until it is given one.
+  void _markSetupNeeded(String id) {
+    final Fixture? f = _fixtures[id];
+    if (f == null || f.setupNeeded) return;
+    final Fixture next = f.copyWith(setupNeeded: true);
+    _fixtures[id] = next;
+    _connections.session(id)?.fixture = next;
     _persist();
   }
 

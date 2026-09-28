@@ -12,8 +12,10 @@ import '../drivers/electrobright/eb_types.dart';
 import 'discovery.dart';
 import 'fixture_session.dart';
 
-/// Why a light should be connected, strongest first.
-enum WantReason { screen, action, group, scene, favourite }
+/// Why a light should be connected, strongest first. [setup]: a screen
+/// setting the light up (developer tools), which also keeps a light in
+/// setup-needed mode connected.
+enum WantReason { setup, screen, action, group, scene, favourite }
 
 /// A registered want; release it when no longer needed.
 final class Want {
@@ -214,7 +216,9 @@ final class ConnectionManager {
     slot.idleTimer?.cancel();
     slot.idleTimer = null;
     // A direct user action skips the remaining backoff.
-    if (reason == WantReason.action || reason == WantReason.screen) {
+    if (reason == WantReason.action ||
+        reason == WantReason.screen ||
+        reason == WantReason.setup) {
       slot.retry?.cancel();
       slot.retry = null;
       slot.userAt = _scheduler.now;
@@ -372,6 +376,10 @@ final class ConnectionManager {
       if (s.wants.isEmpty && s.link == null && !s.connecting) {
         s.session.setPhase(LinkPhase.idle);
       }
+      // A light kept in setup-needed mode goes as soon as nothing sets it up.
+      if (s.link != null && s.session.inSetup && !s.wantsSetup) {
+        unawaited(_disconnect(s.link));
+      }
       // A waiting (open-ended) connect nobody wants any more is abandoned.
       if (s.wants.isEmpty) s.cancelConnect();
     }
@@ -384,7 +392,10 @@ final class ConnectionManager {
                   s.link == null &&
                   !s.connecting &&
                   s.retry == null &&
-                  s.session.status.phase != LinkPhase.incompatible,
+                  (s.session.status.phase != LinkPhase.incompatible ||
+                      (s.wantsSetup &&
+                          s.session.status.incompatibility ==
+                              EbIncompatibility.setupNeeded)),
             )
             .toList()
           ..sort((_Slot a, _Slot b) {
@@ -514,6 +525,8 @@ final class ConnectionManager {
         setupFirst: _discovery.devices.any(
           (SeenDevice d) => d.id == f.deviceId && d.name == Eb.setupName,
         ),
+        // Being set up: such a light keeps the link for PROBE and SET_TYPE.
+        keepSetup: s.wantsSetup,
       );
       s.attempt = 0;
       s.gatt133 = 0;
@@ -609,8 +622,13 @@ final class ConnectionManager {
     s.eventSub = null;
     await s.session.linkClosed();
     if (_disposed) return;
+    final bool setupNeeded =
+        s.session.status.incompatibility == EbIncompatibility.setupNeeded;
     if (reason == LinkLossReason.adapterOff) {
       s.session.setPhase(LinkPhase.bluetoothOff);
+    } else if (setupNeeded && !s.wantsSetup) {
+      // Released after setting up: it stays what it was until retried.
+      s.session.setPhase(LinkPhase.incompatible);
     } else if (s.wants.isNotEmpty && !_inBackground) {
       s.session.setPhase(LinkPhase.waiting);
       if (reason != LinkLossReason.requested) _retryIn(s, policy.backoff.first);
@@ -654,6 +672,9 @@ final class _Slot {
   // Cancelled in _onClosed / on re-attach.
   // ignore: cancel_subscriptions
   StreamSubscription<EbEvent>? eventSub;
+
+  /// A screen is setting the light up ([WantReason.setup]).
+  bool get wantsSetup => wants.any((Want w) => w.reason == WantReason.setup);
 
   WantReason get priority => wants.isEmpty
       ? WantReason.favourite

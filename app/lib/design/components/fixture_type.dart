@@ -159,3 +159,47 @@ class FixtureTypeBadge extends StatelessWidget {
     );
   }
 }
+
+/// Capsule in place of [FixtureTypeBadge] for a light that has no fixture
+/// type yet (setup-needed mode).
+class SetupNeededBadge extends StatelessWidget {
+  const SetupNeededBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final AppLocalizations l = AppLocalizations.of(context);
+    final bool dark = ToneScope.darkOf(context);
+    final Color fg = dark ? Colors.white : const Color(0xFF15171C);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: Space.xs, vertical: 3),
+      decoration: ShapeDecoration(
+        shape: const StadiumBorder(),
+        color: fg.withValues(alpha: 0.08),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(
+            Icons.build_circle_outlined,
+            size: 12,
+            color: fg.withValues(alpha: 0.75),
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              l.presenceSetupNeeded,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: fg.withValues(alpha: 0.75),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
