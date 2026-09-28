@@ -1,5 +1,7 @@
 # ElectroBright Firmware (ESP32-C3)
 
+Build, flashing, update images and versioning are summarised in [docs/firmware.md](../docs/firmware.md); this README is the firmware reference.
+
 Firmware for ElectroBright BLE light fixtures. One **shared core** holds everything the fixtures have in common:
 - all 13 modes and effects;
 - the BLE protocol;
@@ -39,6 +41,7 @@ firmware/
 | Libraries | **NimBLE-Arduino 2.x** by h2zero (verified with 2.5.1), via Library Manager; **ElectroBrightCore** (this repo, step 1) |
 | Board | **ESP32C3 Dev Module** (`esp32:esp32:esp32c3`) |
 | USB CDC On Boot | Enabled (only needed for serial logs) |
+| Partition Scheme | Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS): two update slots; needs 4 MB of flash |
 
 1. **Once:** run `firmware/tools/install_ide_core.sh`, then restart the IDE.
    - The script links `core/ElectroBrightCore` into `~/Documents/Arduino/libraries`, so every sketch always builds against the working tree.

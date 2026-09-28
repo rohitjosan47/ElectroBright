@@ -21,6 +21,13 @@ ElectroBright/
 │   └── tools/                     # IDE setup, build script, conformance suite, gamma-table generator
 ├── app/                           # Flutter app (iOS, Android)
 └── docs/
+    ├── architecture.md            # system, app and firmware layers, update pipeline
+    ├── design_decisions.md        # why things are the way they are
+    ├── firmware.md                # build, flash, update images, versioning
+    ├── testing.md                 # automated suites and hardware checklists
+    ├── troubleshooting.md         # symptoms, causes, fixes; Diagnostics fields
+    ├── release.md                 # release procedure
+    ├── security.md                # current security state
     ├── app.md                     # app features, controls per light type, code layout
     ├── protocol.md                # BLE protocol contract for every fixture (layouts, frames, STATUS)
     ├── wiring_guide.md            # circuit, MOSFETs, buck converter and pinout (all fixtures)
@@ -33,7 +40,7 @@ ElectroBright/
 1. In the Arduino IDE, install the **esp32** board package (≥ 3.0) and the **NimBLE-Arduino** 2.x library.
 2. Once: run `firmware/tools/install_ide_core.sh`. It makes the shared core library visible to the IDE. Then restart the IDE.
 3. Click **File → Open...** and select the sketch of your fixture's type, e.g. `firmware/fixtures/ElectroBright_RGB/ElectroBright_RGB.ino` (a light that already has a type keeps it).
-4. Select Board: **ESP32C3 Dev Module**, select your USB port and click **Upload**.
+4. Select Board: **ESP32C3 Dev Module**, Partition Scheme **Default 4MB with spiffs** (see [docs/firmware.md](docs/firmware.md)), select your USB port and click **Upload**.
 
 Or from a terminal (macOS/Linux, with the Arduino IDE installed): `firmware/tools/flash.sh RGB` builds that sketch, flashes the one connected board (at least 4 MB of flash) and prints the version it reports. Once flashed, lights update wirelessly from the app (firmware 3.8.0+; the current firmware is 3.8.1, bundled into the app by `app/tool/bundle_firmware.sh` from `firmware/tools/build_update_image.sh`).
 
@@ -55,7 +62,7 @@ Details, including every control per light type, are in [docs/app.md](docs/app.m
 ```bash
 make -C firmware/test                # firmware: host unit, simulation and golden tests
 make -C firmware/test conformance    # protocol conformance of every fixture against the simulator
-app/tool/check.sh                    # everything: format, analyze, firmware tests, conformance, app tests
+app/tool/check.sh                    # format, analyze, firmware host tests, all app tests (not conformance)
 ```
 
 ## Documentation
@@ -67,3 +74,4 @@ app/tool/check.sh                    # everything: format, analyze, firmware tes
 * [Hardware Wiring Guide](docs/wiring_guide.md) — circuit schematics, parts, resistor values and ESP32-C3 pin connections.
 * [App](docs/app.md) — every app feature and control, per light type; code layout; how to run and test.
 * [Backup Power](docs/backup_power.md) — keeping the controller alive through short power cuts.
+* [Architecture](docs/architecture.md), [Design decisions](docs/design_decisions.md), [Firmware build & flash](docs/firmware.md), [Testing](docs/testing.md), [Troubleshooting](docs/troubleshooting.md), [Release](docs/release.md), [Security](docs/security.md), [Changelog](CHANGELOG.md).

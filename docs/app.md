@@ -1,6 +1,6 @@
 # ElectroBright App
 
-The Flutter app in `app/` (iOS and Android) controls every ElectroBright fixture over Bluetooth Low Energy. It reads what each light's firmware can do and builds its controls from that. The wire contract is in [protocol.md](protocol.md).
+The Flutter app in `app/` (version 2.0.0, build 200, in `app/pubspec.yaml`; iOS and Android) controls every ElectroBright fixture over Bluetooth Low Energy. It reads what each light's firmware can do and builds its controls from that. The wire contract is in [protocol.md](protocol.md); the layers are in [architecture.md](architecture.md) and the tests in [testing.md](testing.md).
 
 ## 1. Lights and connection
 - **Home** lists your saved lights ("3 of 5 connected"); it never lists nearby lights. With no saved light it shows a short welcome, **Add your first light**, pointing to the **Add light** button. Each tile has:
@@ -19,7 +19,7 @@ The Flutter app in `app/` (iOS and Android) controls every ElectroBright fixture
 - **Connection:**
   - Lights you open are connected, plus up to three favourite or recent lights while Home is open.
   - A dropped link reconnects on its own.
-  - Changes made while reconnecting are sent when the light is back if they are less than 10 s old.
+  - Changes made while a light is unreachable wait for it for 60 s (`FixtureSession.offlineWindow`) and are sent when it is back; after that they are dropped and the controls return to the light's real values. They are kept in memory only, so an app restart drops them.
   - In the background every light is released after 20 s.
 - **Demo lights** (onboarding, or Settings on Home): one simulated light of every type plus one on the original firmware. They run a copy of the firmware logic.
 - **Reflashed as another type:** a light reflashed as a different fixture type is detected on the next connect ("Kitchen is now a CCT light"). Its saved presets and last state are reset.
@@ -154,7 +154,7 @@ A group exists with two or more lights, and new lights join their group on their
 cd app
 flutter run                                  # simulator (demo lights) or a connected phone
 flutter run --release -d <iphone-id>         # install on an iPhone (Developer Mode on)
-tool/check.sh                                # format, analyze, firmware tests + conformance, all app tests
+tool/check.sh                                # format, analyze, firmware host tests, all app tests (conformance: make -C ../firmware/test conformance)
 flutter test integration_test -d <simulator> # end-to-end flow with every demo light type
 ```
 

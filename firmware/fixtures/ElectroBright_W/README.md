@@ -42,4 +42,4 @@ See [`docs/wiring_guide.md`](../../../docs/wiring_guide.md) §10.
 
 Run `firmware/tools/install_ide_core.sh` once. Then open `ElectroBright_W.ino` in the Arduino IDE (board **ESP32C3 Dev Module**) and upload. See [`firmware/README.md`](../../README.md).
 
-**Status:** host-tested and simulator-tested, including the conformance suite against fwsim. It still needs a run on real hardware with `firmware/tools/fw_conformance.py --name _W_`. The app currently accepts RGBW lights only; W support comes with the app's layout work.
+**Status:** host-tested and simulator-tested, including the conformance suite against fwsim. It still needs a run on real hardware with `firmware/tools/fw_conformance.py --name _W_`. The app (`app/`) supports this type.
