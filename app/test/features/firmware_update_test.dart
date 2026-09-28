@@ -13,11 +13,15 @@ import 'package:electrobright/sessions/connection_manager.dart';
 import 'package:electrobright/sessions/firmware_update.dart';
 import 'package:electrobright/sessions/fixture_session.dart';
 import 'package:electrobright/sim/sim_central.dart';
+import 'package:electrobright/sim/eb_device_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/demo_app.dart';
+
+/// The firmware version the app bundles (and the demo lights run).
+const String _current = EbDeviceModel.firmwareVersion;
 
 /// Records the keep-awake calls (everything else has no host in tests).
 final class _Host extends PlatformHostApi {
@@ -41,7 +45,7 @@ Future<void> _settle(WidgetTester t, [int seconds = 2]) async {
 }
 
 /// Wireless firmware updates in demo mode: the demo's RGB light ("Desk
-/// strip") runs 3.7.0; the app bundles 3.8.0.
+/// strip") runs 3.7.0; the app bundles the current firmware.
 void main() {
   late _Host host;
 
@@ -86,7 +90,7 @@ void main() {
     connect(d, 'Desk strip');
     connect(d, 'Living room');
     await _settle(t);
-    // Only Desk strip (3.7.0) has an update; Living room runs 3.8.0.
+    // Only Desk strip (3.7.0) has an update; Living room runs the current firmware.
     expect(find.text('1 light has an update'), findsOneWidget);
     expect(_key('tile-update-badge'), findsOneWidget);
     final Rect badge = t.getRect(_key('tile-update-badge'));
@@ -102,12 +106,12 @@ void main() {
     await _settle(t, 1);
     expect(find.byType(UpdateFirmwareScreen), findsOneWidget);
     expect(find.text('Update firmware'), findsOneWidget);
-    expect(find.text('3.7.0 → 3.8.0'), findsOneWidget);
+    expect(find.text('3.7.0 → $_current'), findsOneWidget);
     expect(
       find.text('Keep the app open and stay near the light.'),
       findsOneWidget,
     );
-    expect(find.textContaining('Desk strip gets firmware 3.8.0'), findsOne);
+    expect(find.textContaining('Desk strip gets firmware $_current'), findsOne);
     expect(host.awake, isEmpty);
 
     await startUpdate(t);
@@ -137,14 +141,14 @@ void main() {
     expect(find.byType(UpdateFirmwareScreen), findsOneWidget);
 
     await _settle(t, 35);
-    expect(find.text('Updated to 3.8.0'), findsOneWidget);
-    expect(find.text('Desk strip runs firmware 3.8.0.'), findsOneWidget);
+    expect(find.text('Updated to $_current'), findsOneWidget);
+    expect(find.text('Desk strip runs firmware $_current.'), findsOneWidget);
     expect(host.awake, <bool>[true, false]);
-    expect(d.model('Desk strip').runningVersion, '3.8.0');
+    expect(d.model('Desk strip').runningVersion, _current);
     expect(d.model('Desk strip').restarts, 1);
     expect(
       d.app.registry.byId(d.id('Desk strip'))!.identity!.firmwareVersion,
-      '3.8.0',
+      _current,
     );
 
     await t.tap(_key('update-done'));
@@ -243,7 +247,7 @@ void main() {
       scrollable: find.byType(Scrollable).last,
     );
     expect(
-      find.text('Firmware 3.8.0 is available (this light has 3.7.0)'),
+      find.text('Firmware $_current is available (this light has 3.7.0)'),
       findsOneWidget,
     );
     await t.tap(_key('settings-update-firmware'));
@@ -277,12 +281,12 @@ void main() {
     expect(
       find.descendant(
         of: _key('dev-bundled-firmware'),
-        matching: find.text('3.8.0'),
+        matching: find.text(_current),
       ),
       findsOneWidget,
     );
     expect(
-      find.text('Sends firmware 3.8.0 to this light again'),
+      find.text('Sends firmware $_current to this light again'),
       findsOneWidget,
     );
     await t.ensureVisible(_key('dev-reinstall'));
@@ -290,14 +294,62 @@ void main() {
     await t.tap(_key('dev-reinstall'));
     await _settle(t, 1);
     expect(find.text('Reinstall firmware'), findsOneWidget);
-    expect(find.textContaining('gets firmware 3.8.0 again'), findsOneWidget);
+    expect(
+      find.textContaining('gets firmware $_current again'),
+      findsOneWidget,
+    );
     await startUpdate(t);
     await _settle(t, 35);
-    expect(find.text('Updated to 3.8.0'), findsOneWidget);
+    expect(find.text('Updated to $_current'), findsOneWidget);
     expect(d.model('Living room').restarts, 1);
     expect(d.model('Living room').otaFlash.running, 1);
     await DemoApp.shutDown(t);
   });
+
+  for (final (String option, String image) in <(String, String)>[
+    ('rollback-fails-check', 'fails its check'),
+    ('rollback-freezes', 'freezes'),
+  ]) {
+    testWidgets('debug build: the rollback test image that $image goes back '
+        'to the previous firmware on its own', (WidgetTester t) async {
+      final DemoApp d = await start(t);
+      ProviderScope.containerOf(t.element(find.byType(HomeScreen)))
+          .read(developerToolsProvider.notifier)
+          .set(on: true);
+      await push(t, LightDeveloperScreen(fixtureId: d.id('Living room')));
+      await _settle(t);
+      await t.scrollUntilVisible(
+        _key('dev-rollback-test'),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await t.ensureVisible(_key('dev-rollback-test'));
+      await t.pump();
+      expect(find.text('Install rollback test image'), findsOneWidget);
+      await t.tap(_key('dev-rollback-test'));
+      await _settle(t, 1);
+      await t.tap(_key(option));
+      await _settle(t, 1);
+      expect(find.text('Rollback test'), findsOneWidget);
+      expect(find.text('$_current → 3.8.9999'), findsOneWidget);
+      await startUpdate(t);
+      await _settle(t, 45);
+      expect(find.text('Rolled back as expected'), findsOneWidget);
+      expect(
+        find.text(
+          'Living room is back on firmware $_current. DIAG: rb=1, slot 0, '
+          'the one it ran before.',
+        ),
+        findsOneWidget,
+      );
+      final EbDeviceModel m = d.model('Living room');
+      expect(m.runningVersion, _current);
+      expect(m.otaFlash.running, 0);
+      expect(m.otaFlash.rolledBack, isTrue);
+      expect(d.session('Living room').status.isReady, isTrue);
+      await DemoApp.shutDown(t);
+    });
+  }
 
   testWidgets('never a downgrade', (WidgetTester t) async {
     final DemoApp d = await start(t);
@@ -332,7 +384,7 @@ void main() {
       scrollable: find.byType(Scrollable).last,
     );
     expect(
-      find.text("This light has newer firmware than this app's (3.8.0)."),
+      find.text("This light has newer firmware than this app's ($_current)."),
       findsOneWidget,
     );
     expect(t.widget<ListTile>(_key('dev-reinstall')).enabled, isFalse);

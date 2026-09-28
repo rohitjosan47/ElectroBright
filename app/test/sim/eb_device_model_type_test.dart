@@ -88,7 +88,8 @@ void main() {
     final EbDeviceModel m = connected();
     int probe() =>
         ((m.state()['render']! as Map<String, Object>)['probe']!) as int;
-    final Map<String, Object> scene = m.state()['scene']! as Map<String, Object>;
+    final Map<String, Object> scene =
+        m.state()['scene']! as Map<String, Object>;
     expect(send(m, 'PROBE:4:1'), 'OK\n');
     expect(probe(), 5);
     expect(send(m, 'PROBE:1:1'), 'OK\n');

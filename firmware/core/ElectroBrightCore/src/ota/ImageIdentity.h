@@ -15,8 +15,9 @@ struct ImageIdentity {
   char magic[8];     // "EBIMGID1" (no terminator)
   char product[16];  // "ElectroBright"
   char kind[12];     // "universal": every type in one image, the light keeps its own
-  char version[16];  // "3.8.0"
-  uint8_t reserved[12];
+  char version[16];  // "3.8.1"
+  uint8_t rollbackTest;  // cfg::kRollbackTest: 0, or a rollback test image (1 fails its check, 2 freezes)
+  uint8_t reserved[11];
 };
 static_assert(sizeof(ImageIdentity) == 64, "the identity block is 64 bytes");
 
@@ -42,7 +43,7 @@ bool find(const uint8_t* image, size_t len, ImageIdentity& out);
 // True when the block names an ElectroBright universal image with a valid version.
 bool isUniversal(const ImageIdentity& id);
 
-// "3.8.0" -> {3, 8, 0}; false for anything else.
+// "3.8.1" -> {3, 8, 1}; false for anything else.
 bool parseVersion(const char* text, FirmwareVersion& out);
 int compare(const FirmwareVersion& a, const FirmwareVersion& b);
 

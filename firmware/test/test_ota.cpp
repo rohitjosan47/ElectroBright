@@ -1,4 +1,4 @@
-// Wireless updates (3.8.0): SHA-256, the image identity block, the receiver's
+// Wireless updates (3.8.0; watchdog and rollback test images 3.8.1): SHA-256, the image identity block, the receiver's
 // protocol (full transfer, resume, duplicates and gaps, every error), the
 // busy light during a transfer, and the first-boot self-check with rollback,
 // on the fake two-slot flash and bootloader (Fakes.h MockOtaFlash).
@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "Fakes.h"
+#include "core/WatchdogPlan.h"
 #include "TestFramework.h"
 #include "fwsim/SimDevice.h"
 #include "ota/ImageIdentity.h"
@@ -177,6 +178,7 @@ TEST(ota_identity_block_of_this_firmware) {
   const ImageIdentity& id = imageid::running();
   CHECK(imageid::isUniversal(id));
   CHECK_STR(id.version, cfg::kFirmwareVersion);
+  CHECK_EQ(id.rollbackTest, 0);
   CHECK_STR(id.product, "ElectroBright");
   CHECK_STR(id.kind, "universal");
   FirmwareVersion v;
@@ -645,4 +647,56 @@ TEST(ota_fwsim_overflowing_writes_are_recovered_by_ack) {
   CHECK(next > 0 && next < 40000u);
   CHECK(transfer(d, img, next));
   CHECK_EQ(control(d, kEnd).at(0)[0], ota::kEndOk);
+}
+
+// ---- Task watchdog and rollback test images (3.8.1) ----------------------------------
+
+TEST(ota_task_watchdog_is_reconfigured_and_restarts_the_chip) {
+  // The Arduino core's startup already runs the TWDT: reconfigured, not initialised.
+  const wdtplan::Plan core = wdtplan::make(true, 1);
+  CHECK(core.reconfigure);
+  CHECK_EQ(core.timeoutMs, cfg::kWatchdogTimeoutMs);
+  CHECK_EQ(core.idleCoreMask, 1u);  // the ESP32-C3's one core
+  CHECK(core.panicOnTimeout);       // the panic handler restarts: an unconfirmed update rolls back
+  const wdtplan::Plan own = wdtplan::make(false, 2);
+  CHECK(!own.reconfigure);
+  CHECK_EQ(own.idleCoreMask, 3u);
+  CHECK(own.panicOnTimeout);
+  // A frozen update is reset well before its self-check deadline.
+  CHECK(cfg::kWatchdogTimeoutMs + selfcheck::kFreezeAfterMs < selfcheck::kDeadlineMs);
+}
+
+TEST(ota_rollback_test_images_never_confirm) {
+  using selfcheck::TestImage;
+  using selfcheck::Verdict;
+  const selfcheck::Inputs ok{true, true, 100000, true};
+  CHECK(selfcheck::evaluate(ok, 2000, TestImage::None) == Verdict::Pass);
+  // Fails its check: everything is up, and still it fails at the deadline.
+  CHECK(selfcheck::evaluate(ok, 2000, TestImage::FailCheck) == Verdict::Pending);
+  CHECK(selfcheck::evaluate(ok, selfcheck::kDeadlineMs - 1, TestImage::FailCheck) == Verdict::Pending);
+  CHECK(selfcheck::evaluate(ok, selfcheck::kDeadlineMs, TestImage::FailCheck) == Verdict::Fail);
+  CHECK(!selfcheck::freezeNow(TestImage::FailCheck, 60000));
+  // Freezes: never passes, and stops its control task 3 s after boot.
+  CHECK(selfcheck::evaluate(ok, 2000, TestImage::Freeze) == Verdict::Pending);
+  CHECK(!selfcheck::freezeNow(TestImage::Freeze, selfcheck::kFreezeAfterMs - 1));
+  CHECK(selfcheck::freezeNow(TestImage::Freeze, selfcheck::kFreezeAfterMs));
+  CHECK(!selfcheck::freezeNow(TestImage::None, 60000));
+}
+
+TEST(ota_rollback_test_version_is_accepted_but_is_not_a_release) {
+  // This build is the normal firmware.
+  CHECK_EQ(cfg::kRollbackTest, 0);
+  CHECK_STR(cfg::kBuildVersion, cfg::kFirmwareVersion);
+  FirmwareVersion release, test;
+  CHECK(imageid::parseVersion(cfg::kFirmwareVersion, release));
+  CHECK(imageid::parseVersion(cfg::kRollbackTestVersion, test));
+  CHECK(test.major == release.major && test.minor == release.minor);
+  CHECK(imageid::compare(test, release) > 0);
+  // A light takes a test image like any newer image.
+  OtaRig r;
+  const Bytes img = makeImage(30000, cfg::kRollbackTestVersion);
+  CHECK_EQ(beginStart(r.control(beginMsg(img, test.major, test.minor, test.patch))), 0u);
+  r.send(img, 0, static_cast<uint32_t>(img.size()));
+  CHECK_EQ(r.control(kEnd).at(0), ota::kEndOk);
+  CHECK_EQ(r.flash.boot, 1);
 }

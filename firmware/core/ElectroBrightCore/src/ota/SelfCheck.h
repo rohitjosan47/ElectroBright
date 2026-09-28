@@ -24,9 +24,22 @@ struct Inputs {
 
 enum class Verdict : uint8_t { Pending, Pass, Fail };
 
-inline Verdict evaluate(const Inputs& in, uint32_t sinceBootMs) {
-  if (in.nvsReadable && in.typeLoaded && in.renderFrames >= kMinRenderFrames && in.bleUp) return Verdict::Pass;
+// Rollback test images (cfg::kRollbackTest) never pass: FailCheck fails at the
+// deadline like a broken image; Freeze stops the control task kFreezeAfterMs
+// after boot (freezeNow), so the task watchdog restarts the chip unconfirmed.
+enum class TestImage : uint8_t { None = 0, FailCheck = 1, Freeze = 2 };
+constexpr uint32_t kFreezeAfterMs = 3000;
+
+inline Verdict evaluate(const Inputs& in, uint32_t sinceBootMs, TestImage test = TestImage::None) {
+  if (test == TestImage::None && in.nvsReadable && in.typeLoaded && in.renderFrames >= kMinRenderFrames && in.bleUp) {
+    return Verdict::Pass;
+  }
   return sinceBootMs >= kDeadlineMs ? Verdict::Fail : Verdict::Pending;
+}
+
+// The Freeze test image stops here (only while it is unconfirmed).
+inline bool freezeNow(TestImage test, uint32_t sinceBootMs) {
+  return test == TestImage::Freeze && sinceBootMs >= kFreezeAfterMs;
 }
 
 }  // namespace selfcheck

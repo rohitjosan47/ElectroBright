@@ -806,5 +806,72 @@
         "type": "String"
       }
     }
-  }
+  },
+  "rollbackTestInstall": "Install rollback test image",
+  "rollbackTestHint": "Debug builds only. The light installs an image that fails on purpose and must return to its firmware on its own.",
+  "rollbackTestChoose": "Which test image?",
+  "rollbackTestFailsCheck": "Fails its check",
+  "rollbackTestFailsCheckHint": "Starts, then fails its self-check after 15 s.",
+  "rollbackTestFreezes": "Freezes",
+  "rollbackTestFreezesHint": "Starts, then freezes; the task watchdog restarts it.",
+  "rollbackTestTitle": "Rollback test",
+  "rollbackTestFailsBody": "{name} installs a test image that fails its self-check on purpose. It restarts into it, fails, and must go back to firmware {from} on its own, within about 20 seconds.",
+  "@rollbackTestFailsBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "from": {
+        "type": "String"
+      }
+    }
+  },
+  "rollbackTestFreezesBody": "{name} installs a test image that freezes on purpose before its self-check. The task watchdog restarts it, and it must go back to firmware {from} on its own, within about 10 seconds.",
+  "@rollbackTestFreezesBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "from": {
+        "type": "String"
+      }
+    }
+  },
+  "rollbackTestPassed": "Rolled back as expected",
+  "rollbackTestPassedBody": "{name} is back on firmware {from}. DIAG: rb=1, slot {slot}, the one it ran before.",
+  "@rollbackTestPassedBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "from": {
+        "type": "String"
+      },
+      "slot": {
+        "type": "int"
+      }
+    }
+  },
+  "rollbackTestDiagMismatch": "{name} is back on firmware {from}, but DIAG reports rb={rb}, slot {slot} (before: {before}).",
+  "@rollbackTestDiagMismatch": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "from": {
+        "type": "String"
+      },
+      "rb": {
+        "type": "String"
+      },
+      "slot": {
+        "type": "String"
+      },
+      "before": {
+        "type": "String"
+      }
+    }
+  },
+  "rollbackTestConfirmed": "The test image confirmed itself",
+  "rollbackTestConfirmedBody": "It never should. Reinstall the firmware from the Developer page."
 }

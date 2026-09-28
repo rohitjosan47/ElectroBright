@@ -27,11 +27,13 @@ abstract final class ImageIdentityTwin {
   static const int searchBytes = 1024;
 
   /// The block as the firmware lays it out: magic, product[16], kind[12],
-  /// version[16], reserved[12].
+  /// version[16], rollbackTest (3.8.1: 0, or 1 fails its check, 2 freezes),
+  /// reserved[11].
   static Uint8List build({
     required String version,
     String productName = product,
     String kindName = kind,
+    int rollbackTest = 0,
   }) {
     final Uint8List b = Uint8List(size);
     b.setAll(0, magic);
@@ -43,8 +45,16 @@ abstract final class ImageIdentityTwin {
     field(8, 16, productName);
     field(24, 12, kindName);
     field(36, 16, version);
+    b[rollbackTestAt] = rollbackTest;
     return b;
   }
+
+  /// Offset of the rollback-test mark in the block.
+  static const int rollbackTestAt = 52;
+
+  /// The rollback-test mark of the block at [at] (0: a normal image).
+  static int rollbackTestOf(List<int> image, int at) =>
+      image[at + rollbackTestAt];
 
   /// imageid::find: the block's offset in the image head, or null.
   static int? find(List<int> image) {

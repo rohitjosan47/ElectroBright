@@ -30,12 +30,13 @@ List<FirmwareFixture> firmwareFixtureList() {
   final Map<String, String> folderByType = <String, String>{};
   for (final FileSystemEntity e in Directory(firmwareFixtures).listSync()) {
     if (e is! Directory) continue;
-    final String folder = e.uri.pathSegments.lastWhere((String x) => x.isNotEmpty);
+    final String folder = e.uri.pathSegments.lastWhere(
+      (String x) => x.isNotEmpty,
+    );
     final File ino = File('${e.path}/$folder.ino');
     if (!ino.existsSync()) continue;
-    final RegExpMatch? m = RegExp(
-      r'App::start\(FixtureType::(\w+)\)',
-    ).firstMatch(ino.readAsStringSync());
+    final RegExpMatch? m = RegExp(r'App::start\(FixtureType::(\w+)\)')
+        .firstMatch(ino.readAsStringSync());
     if (m != null) folderByType[m.group(1)!] = folder;
   }
   return <FirmwareFixture>[
@@ -44,9 +45,9 @@ List<FirmwareFixture> firmwareFixtureList() {
     ).allMatches(registry))
       () {
         final String source = profileSource(m.group(2)!);
-        final String type = RegExp(
-          r'FixtureType::(\w+)',
-        ).firstMatch(source)!.group(1)!;
+        final String type = RegExp(r'FixtureType::(\w+)')
+            .firstMatch(source)!
+            .group(1)!;
         return (
           name: m.group(1)!,
           folder: folderByType[type] ?? '(no sketch)',
@@ -92,7 +93,11 @@ String firmwareCaps(String layout, int modeMask) {
   final String replies = readFirmware('protocol/Replies.cpp');
   const String head =
       'CAPS:PROTOCOL=1,PWM=%u,GAMMA=2.2,MASTER=PERCEPTUAL,PRESETS=%u,IDENTIFY=1,TYPES=';
-  for (final String piece in <String>[head, ',PROBE=1,LAYOUT=%s', ',MODES=%X']) {
+  for (final String piece in <String>[
+    head,
+    ',PROBE=1,LAYOUT=%s',
+    ',MODES=%X',
+  ]) {
     if (!replies.contains(piece)) {
       throw StateError('Replies.cpp CAPS format changed: $piece');
     }
@@ -110,9 +115,9 @@ String firmwareCaps(String layout, int modeMask) {
 /// Layout names of profiles::kAll, in order (CAPS TYPES=).
 List<String> firmwareTypes() {
   final String table = readFirmware('fixture/Profiles.h');
-  final String all = RegExp(
-    r'kAll\[\] = \{([^}]*)\}',
-  ).firstMatch(table)!.group(1)!;
+  final String all = RegExp(r'kAll\[\] = \{([^}]*)\}')
+      .firstMatch(table)!
+      .group(1)!;
   return <String>[
     for (final RegExpMatch m in RegExp(r'&k(\w+)').allMatches(all))
       RegExp(r'&layouts::k(\w+),')
@@ -132,7 +137,9 @@ int firmwareModeMask(String name) {
   int mask = 0x1FFF;
   for (final RegExpMatch m in RegExp(r'~modeBit\((\w+)\)').allMatches(row)) {
     final int mode = int.parse(
-      RegExp('constexpr uint8_t ${m.group(1)} = (\\d+);').firstMatch(src)!.group(1)!,
+      RegExp('constexpr uint8_t ${m.group(1)} = (\\d+);')
+          .firstMatch(src)!
+          .group(1)!,
     );
     mask &= ~(1 << (mode - 1));
   }
@@ -140,7 +147,6 @@ int firmwareModeMask(String name) {
 }
 
 int configInt(Map<String, String> c, String name) {
-  final String raw =
-      c[name] ?? (throw StateError('$name missing in Config.h'));
+  final String raw = c[name] ?? (throw StateError('$name missing in Config.h'));
   return int.parse(raw.replaceAll(RegExp(r'[uUlL]+$'), ''));
 }

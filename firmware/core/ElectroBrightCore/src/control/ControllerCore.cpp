@@ -347,7 +347,7 @@ void ControllerCore::execute(const Command& c, uint32_t nowMs) {
       return;
 
     case CmdId::Version:
-      snprintf(buf_, sizeof(buf_), "VERSION:%s", cfg::kFirmwareVersion);
+      snprintf(buf_, sizeof(buf_), "VERSION:%s", cfg::kBuildVersion);
       env_.sendLine(buf_);
       return;
 

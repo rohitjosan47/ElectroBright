@@ -114,6 +114,9 @@ final class UpdateProgress {
     this.timeLeft,
     this.reconnecting = false,
     this.problem,
+    this.slotBefore,
+    this.slotAfter,
+    this.rolledBackFlag,
   });
 
   final String fixtureId;
@@ -135,6 +138,11 @@ final class UpdateProgress {
   final bool reconnecting;
   final UpdateProblem? problem;
 
+  /// DIAG `slot` before the update, and `slot` and `rb` after a rollback.
+  final int? slotBefore;
+  final int? slotAfter;
+  final bool? rolledBackFlag;
+
   double get fraction => total == 0 ? 0 : sent / total;
   bool get running => !stage.finished;
 
@@ -151,6 +159,9 @@ final class UpdateProgress {
     Duration? timeLeft,
     bool? reconnecting,
     UpdateProblem? problem,
+    int? slotBefore,
+    int? slotAfter,
+    bool? rolledBackFlag,
   }) => UpdateProgress(
     fixtureId: fixtureId,
     stage: stage ?? this.stage,
@@ -162,6 +173,9 @@ final class UpdateProgress {
     timeLeft: timeLeft,
     reconnecting: reconnecting ?? this.reconnecting,
     problem: problem ?? this.problem,
+    slotBefore: slotBefore ?? this.slotBefore,
+    slotAfter: slotAfter ?? this.slotAfter,
+    rolledBackFlag: rolledBackFlag ?? this.rolledBackFlag,
   );
 
   @override
@@ -176,7 +190,10 @@ final class UpdateProgress {
       other.total == total &&
       other.timeLeft == timeLeft &&
       other.reconnecting == reconnecting &&
-      other.problem == problem;
+      other.problem == problem &&
+      other.slotBefore == slotBefore &&
+      other.slotAfter == slotAfter &&
+      other.rolledBackFlag == rolledBackFlag;
 
   @override
   int get hashCode => Object.hash(
@@ -190,6 +207,9 @@ final class UpdateProgress {
     timeLeft,
     reconnecting,
     problem,
+    slotBefore,
+    slotAfter,
+    rolledBackFlag,
   );
 
   @override
@@ -449,6 +469,7 @@ final class _Run {
       // back to it.
       final Map<String, int>? before = await session.diag();
       final int? slotBefore = before?['slot'];
+      _set(progress.copyWith(slotBefore: slotBefore));
       fs.setUpdating(on: true);
       _checkCancel();
 
@@ -715,7 +736,7 @@ final class _Run {
         s!.firmware!.version.version,
       );
       if (v != progress.to) {
-        if (v == from) throw const _Stop(UpdateStage.rolledBack);
+        if (v == from) throw await _rolledBack(s);
         throw const _Stop(UpdateStage.failed, UpdateProblem.otherVersion);
       }
       final Duration left = installedAt + _t.confirm - _scheduler.now;
@@ -728,10 +749,27 @@ final class _Run {
       final Map<String, int>? d = await s.diag();
       if (d != null &&
           (d['rb'] == 1 || (slotBefore != null && d['slot'] == slotBefore))) {
+        _recordDiag(d);
         throw const _Stop(UpdateStage.rolledBack);
       }
       return _finish(const _Stop(UpdateStage.done));
     }
+  }
+
+  /// Back on the previous firmware: what DIAG says about it (slot, rb).
+  Future<_Stop> _rolledBack(EbSession s) async {
+    _recordDiag(await s.diag());
+    return const _Stop(UpdateStage.rolledBack);
+  }
+
+  void _recordDiag(Map<String, int>? d) {
+    if (d == null) return;
+    _set(
+      progress.copyWith(
+        slotAfter: d['slot'],
+        rolledBackFlag: d['rb'] == null ? null : d['rb'] == 1,
+      ),
+    );
   }
 
   _Stop _abandonedOr(UpdateProblem p) => _abandon

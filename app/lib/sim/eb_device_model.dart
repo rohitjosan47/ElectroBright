@@ -75,7 +75,7 @@ final class EbDeviceModel {
   /// Makes flash writes fail (like fwsim `KVFAIL`), for fault tests.
   set flashWritesFail(bool fail) => _flash.failWrites = fail;
 
-  static const String firmwareVersion = '3.8.0';
+  static const String firmwareVersion = '3.8.1';
 
   /// The firmware flashed over USB (the factory slot's).
   final String flashedVersion;
@@ -95,6 +95,21 @@ final class EbDeviceModel {
   /// Test fault: a newly installed firmware never passes its self-check, so
   /// it rolls back at the deadline.
   bool failSelfCheck = false;
+
+  /// The rollback-test mark of the image in the running slot (3.8.1 test
+  /// builds, EB_ROLLBACK_TEST): 1 never passes its self-check; 2 freezes its
+  /// control task 3 s after boot, and the task watchdog restarts it. Only
+  /// with [versionFromImage] (the demo lights run what they installed).
+  int _testImage = 0;
+  int get _runningTestImage {
+    if (!versionFromImage) return 0;
+    final List<int> image = otaFlash.slot[otaFlash.running];
+    final int? at = ImageIdentityTwin.find(image);
+    return at == null ? 0 : ImageIdentityTwin.rollbackTestOf(image, at);
+  }
+
+  static const int _freezeAfterMs = 3000;
+  static const int _watchdogMs = 3000;
 
   /// The fake OTA app slots and the bootloader's rollback rules (survive
   /// restarts, like flash).
@@ -160,6 +175,7 @@ final class EbDeviceModel {
     _rig.core.begin(_now);
     _selfChecking = otaFlash.pendingVerify;
     _bootMs = _now;
+    _testImage = _runningTestImage;
   }
 
   /// Power cycle: RAM state is lost, flash survives, the link drops, and the
@@ -357,9 +373,18 @@ final class EbDeviceModel {
   void _selfCheck() {
     if (!_selfChecking) return;
     final int since = _now - _bootMs;
+    final int test = _testImage;
+    if (test == 2 && since >= _freezeAfterMs + _watchdogMs) {
+      // Frozen, then reset by the task watchdog: unconfirmed, so the
+      // bootloader goes back to the previous firmware.
+      _restarts++;
+      _restartNow();
+      return;
+    }
     final int? marker = _flash.updateType;
     final bool typeLoaded = marker == null || marker == _typeValue(fixture);
     final bool pass =
+        test == 0 &&
         !failSelfCheck &&
         typeLoaded &&
         since ~/ 5 >= SelfCheckTwin.minRenderFrames;
@@ -381,9 +406,14 @@ final class EbDeviceModel {
   }
 
   void pass() {
+    if (_frozen) return _selfCheck();
     passBegin();
     passEnd();
   }
+
+  /// A freeze test image after its freeze: nothing runs until the watchdog.
+  bool get _frozen =>
+      _selfChecking && _testImage == 2 && _now - _bootMs >= _freezeAfterMs;
 
   /// Idle wake-ups: the control task runs at least every 50 ms.
   void advance(int ms) {

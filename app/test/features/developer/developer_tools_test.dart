@@ -9,12 +9,16 @@ import 'package:electrobright/features/developer/developer_screen.dart';
 import 'package:electrobright/features/developer/light_developer_screen.dart';
 import 'package:electrobright/features/fixture_settings/light_settings_screen.dart';
 import 'package:electrobright/sim/sim_central.dart';
+import 'package:electrobright/sim/eb_device_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../support/demo_app.dart';
+
+/// The firmware version the app bundles (and the demo lights run).
+const String _current = EbDeviceModel.firmwareVersion;
 
 /// Developer tools: the switch in Settings, the Developer list, a light's
 /// developer page (probe test, type change, firmware, diagnostics) and the
@@ -115,7 +119,7 @@ void main() {
     for (final String name in DemoApp.lights.keys) {
       expect(key('dev-light-${d.id(name)}'), findsOneWidget, reason: name);
     }
-    expect(find.textContaining('Firmware 3.8.0'), findsWidgets);
+    expect(find.textContaining('Firmware $_current'), findsWidgets);
     await pop(t, DeveloperScreen);
 
     // A light's settings has a Developer row.
@@ -389,13 +393,13 @@ void main() {
     expect(key('dev-firmware'), findsOneWidget);
     // Installed, and next to it the version bundled with the app.
     expect(
-      find.descendant(of: key('dev-firmware'), matching: find.text('3.8.0')),
+      find.descendant(of: key('dev-firmware'), matching: find.text(_current)),
       findsOneWidget,
     );
     expect(
       find.descendant(
         of: key('dev-bundled-firmware'),
-        matching: find.text('3.8.0'),
+        matching: find.text(_current),
       ),
       findsOneWidget,
     );
@@ -417,7 +421,7 @@ void main() {
     expect(rx(), before + 1);
     await t.tap(key('dev-diag-copy'));
     await t.pump();
-    expect(copied, startsWith('Living room · Firmware 3.8.0\n'));
+    expect(copied, startsWith('Living room · Firmware $_current\n'));
     expect(copied, contains('Last restart: Powered on'));
     expect(copied!.split('\n').last, startsWith('DIAG:rx='));
     expect(find.text('Copied'), findsOneWidget);

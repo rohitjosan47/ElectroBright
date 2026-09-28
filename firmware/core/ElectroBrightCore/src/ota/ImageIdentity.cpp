@@ -11,9 +11,10 @@ constexpr ImageIdentity makeIdentity() {
   for (size_t i = 0; i < sizeof(id.magic); ++i) id.magic[i] = imageid::kMagic[i];
   for (size_t i = 0; imageid::kProduct[i] && i + 1 < sizeof(id.product); ++i) id.product[i] = imageid::kProduct[i];
   for (size_t i = 0; imageid::kKind[i] && i + 1 < sizeof(id.kind); ++i) id.kind[i] = imageid::kKind[i];
-  for (size_t i = 0; cfg::kFirmwareVersion[i] && i + 1 < sizeof(id.version); ++i) {
-    id.version[i] = cfg::kFirmwareVersion[i];
+  for (size_t i = 0; cfg::kBuildVersion[i] && i + 1 < sizeof(id.version); ++i) {
+    id.version[i] = cfg::kBuildVersion[i];
   }
+  id.rollbackTest = cfg::kRollbackTest;
   return id;
 }
 

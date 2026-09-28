@@ -40,6 +40,8 @@ if [[ "$BUILDS" == 1 ]]; then
   flutter build ios --simulator --debug
   step "Android release build (signed with the upgrade key)"
   flutter build apk --release
+  step "Release build: no rollback test images or option"
+  tool/check_release_excludes_tests.sh build/app/outputs/flutter-apk/app-release.apk
 fi
 
 printf '\n\033[1;32mAll checks passed.\033[0m\n'

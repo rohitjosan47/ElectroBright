@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:electrobright/core/firmware/firmware_bundle.dart';
+import 'package:electrobright/features/developer/rollback_test.dart';
 import 'package:electrobright/sim/eb_device_model.dart';
 import 'package:electrobright/sim/ota_twin.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -112,5 +113,47 @@ void main() {
         reason: bad.key,
       );
     }
+  });
+
+  // The rollback test images (debug builds only): what the firmware's test
+  // builds are, and never a release.
+  for (final (RollbackTest kind, int mark) in <(RollbackTest, int)>[
+    (RollbackTest.failsCheck, 1),
+    (RollbackTest.freezes, 2),
+  ]) {
+    test('rollback test image ${kind.name}: a newer test version, marked, '
+        'intact', () async {
+      final FirmwareBundle bundle = rollbackTestImage(kind)!;
+      final FirmwareManifest m = bundle.manifest;
+      final Map<String, String> c = configConstants();
+      expect('${m.version}', c['kRollbackTestVersion']);
+      expect(m.rollbackTest, mark);
+      expect(m.version > manifest!.version, isTrue, reason: 'accepted');
+      expect(m.version, isNot(manifest.version));
+      expect(m.file, startsWith('ElectroBright_RollbackTest-'));
+      // Checked against its manifest (size, SHA-256) as the app loads it.
+      final FirmwareImage image = await bundle.image();
+      final Uint8List bytes = image.bytes;
+      expect(bytes.first, 0xE9);
+      final int at = ImageIdentityTwin.find(bytes)!;
+      expect(ImageIdentityTwin.universalVersion(bytes, at), <int>[
+        m.version.major,
+        m.version.minor,
+        m.version.patch,
+      ]);
+      expect(ImageIdentityTwin.rollbackTestOf(bytes, at), mark);
+      expect(bytes.length, lessThanOrEqualTo(SimOtaFlash().capacity));
+    });
+  }
+
+  test('the release image is not a rollback test image', () {
+    final Uint8List bytes = File(
+      '${FirmwareBundle.directory}/${manifest!.file}',
+    ).readAsBytesSync();
+    expect(
+      ImageIdentityTwin.rollbackTestOf(bytes, ImageIdentityTwin.find(bytes)!),
+      0,
+    );
+    expect(manifest.rollbackTest, 0);
   });
 }

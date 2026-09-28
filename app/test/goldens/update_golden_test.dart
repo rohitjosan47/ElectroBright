@@ -4,13 +4,17 @@ library;
 import 'package:electrobright/features/firmware_update/update_firmware_screen.dart';
 import 'package:electrobright/features/home/home_screen.dart';
 import 'package:electrobright/sessions/connection_manager.dart';
+import 'package:electrobright/sim/eb_device_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/demo_app.dart';
 
+/// The firmware version the app bundles (and the demo lights run).
+const String _current = EbDeviceModel.firmwareVersion;
+
 /// The firmware update screen of the demo's older light (Desk strip, 3.7.0
-/// to the bundled 3.8.0): during the transfer and when it is done, both
+/// to the bundled current firmware): during the transfer and when it is done, both
 /// themes.
 void main() {
   for (final bool dark in <bool>[false, true]) {
@@ -70,7 +74,7 @@ void main() {
     testWidgets('update done $theme', (WidgetTester t) async {
       await updating(t);
       await settle(t, 35);
-      expect(find.text('Updated to 3.8.0'), findsOneWidget);
+      expect(find.text('Updated to $_current'), findsOneWidget);
       await expectLater(
         find.byType(UpdateFirmwareScreen),
         matchesGoldenFile('update_done_$theme.png'),

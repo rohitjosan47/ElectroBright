@@ -57,6 +57,7 @@ final class FirmwareManifest {
     required this.file,
     this.product = productName,
     this.kind = universalKind,
+    this.rollbackTest = 0,
   });
 
   static const String productName = 'ElectroBright';
@@ -75,6 +76,10 @@ final class FirmwareManifest {
   final String product;
   final String kind;
 
+  /// 0, or a rollback test image (1 fails its self-check, 2 freezes): the
+  /// identity block's mark (firmware 3.8.1 test builds).
+  final int rollbackTest;
+
   /// Strict: null when a field is missing or malformed, or the image is not
   /// an ElectroBright universal image.
   static FirmwareManifest? fromJson(Object? json) {
@@ -85,7 +90,11 @@ final class FirmwareManifest {
     final Object? size = json['size'];
     final Object? sha = json['sha256'];
     final Object? file = json['file'];
+    final Object test = json['rollbackTest'] ?? 0;
     if (version == null ||
+        test is! int ||
+        test < 0 ||
+        test > 2 ||
         size is! int ||
         size <= 0 ||
         sha is! String ||
@@ -102,6 +111,7 @@ final class FirmwareManifest {
       size: size,
       sha256: sha,
       file: file,
+      rollbackTest: test,
     );
   }
 }

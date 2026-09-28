@@ -454,6 +454,29 @@ void main() {
     expect(s.status.updating, isFalse);
   });
 
+  for (final (int mark, String name) in <(int, String)>[
+    (1, 'fails its self-check'),
+    (2, 'freezes before its self-check'),
+  ]) {
+    test('a rollback test image that $name goes back on its own; DIAG says '
+        'so', () async {
+      final FixtureSession s = await connected(version: '3.8.1');
+      final UpdateProgress r = await update(
+        testImage(version: '3.8.9999', rollbackTest: mark),
+      );
+      expect(r.stage, UpdateStage.rolledBack, reason: '$r');
+      expect(r.slotBefore, 0);
+      expect(r.slotAfter, 0);
+      expect(r.rolledBackFlag, isTrue);
+      final EbDeviceModel m = twin('dev1');
+      expect(m.runningVersion, '3.8.1');
+      expect(m.otaFlash.running, 0);
+      expect(m.otaFlash.rolledBack, isTrue);
+      expect(s.status.view!.firmware!.version.version, '3.8.1');
+      expect(s.status.isReady, isTrue);
+    });
+  }
+
   test('no update service: unsupported, nothing sent', () async {
     await connected();
     radio.hideUpdateService = true;

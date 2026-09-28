@@ -14,6 +14,7 @@ FirmwareImage testImage({
   int seed = 1,
   String? product,
   bool identity = true,
+  int rollbackTest = 0,
 }) {
   final Random r = Random(seed);
   final Uint8List img = Uint8List(size);
@@ -27,6 +28,7 @@ FirmwareImage testImage({
       ImageIdentityTwin.build(
         version: version,
         productName: product ?? ImageIdentityTwin.product,
+        rollbackTest: rollbackTest,
       ),
     );
   }

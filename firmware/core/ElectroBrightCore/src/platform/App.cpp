@@ -6,6 +6,7 @@
 #include <esp_system.h>
 #include <esp_task_wdt.h>
 #include <esp_timer.h>
+#include <sdkconfig.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/message_buffer.h>
 #include <freertos/queue.h>
@@ -19,6 +20,7 @@
 #include "../control/ControllerCore.h"
 #include "../core/SeqLock.h"
 #include "../core/Stats.h"
+#include "../core/WatchdogPlan.h"
 #include "../feedback/SoundSequencer.h"
 #include "../fixture/FixtureSelect.h"
 #include "../ota/ImageIdentity.h"
@@ -138,9 +140,15 @@ void pollConsole() {
 // ---- First boot after an update: confirm, or return to the previous firmware ---------
 void selfCheck(uint32_t now) {
   if (!g_selfChecking) return;
+  constexpr auto kTest = static_cast<selfcheck::TestImage>(cfg::kRollbackTest);
+  if (selfcheck::freezeNow(kTest, now)) {
+    // Rollback test image: hang this task without feeding the watchdog.
+    ESP_LOGW(kTag, "rollback test: control task frozen, waiting for the task watchdog");
+    for (;;) __asm__ __volatile__("nop");
+  }
   const selfcheck::Inputs in{g_nvsOk, fxselect::typeLoaded(g_system, g_fixture->type),
                              Stats::get(g_stats.renderFrames), ble::advertising() || ble::connected()};
-  switch (selfcheck::evaluate(in, now)) {
+  switch (selfcheck::evaluate(in, now, kTest)) {
     case selfcheck::Verdict::Pending:
       return;
     case selfcheck::Verdict::Pass:
@@ -157,8 +165,12 @@ void selfCheck(uint32_t now) {
 }
 
 // ---- Control task: the only owner of device state ------------------------------
+void watchThisTask(const char* name) {
+  if (esp_task_wdt_add(nullptr) != ESP_OK) ESP_LOGE(kTag, "task watchdog: %s not subscribed", name);
+}
+
 void controlTask(void*) {
-  esp_task_wdt_add(nullptr);
+  watchThisTask("eb-control");
 
   static LineAssembler assembler;
   static char lines[cfg::kMaxLinesPerBatch][cfg::kMaxLineLength + 1];
@@ -252,7 +264,7 @@ void onFrameTimer(void*) {
 }
 
 void renderTask(void*) {
-  esp_task_wdt_add(nullptr);
+  watchThisTask("eb-render");
   RenderParams params{};
   g_params.tryRead(params);  // published by g_core->begin() before this task starts
   uint16_t duty[kMaxChannels] = {};
@@ -280,14 +292,30 @@ void renderTask(void*) {
   }
 }
 
+// What the rollback path relies on in the Arduino core's prebuilt ESP-IDF.
+#if !CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+#error "wireless updates need CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE (esp32 core 3.x)"
+#endif
+#if defined(CONFIG_ESP_SYSTEM_PANIC_PRINT_HALT) || defined(CONFIG_ESP_SYSTEM_PANIC_SILENT_HALT) || \
+    defined(CONFIG_ESP_SYSTEM_PANIC_GDBSTUB)
+#error "a panic must restart the chip (a task-watchdog timeout rolls back an unconfirmed update)"
+#endif
+#if defined(CONFIG_ESP_TASK_WDT_INIT) && CONFIG_ESP_TASK_WDT_INIT
+constexpr bool kTwdtStartedByCore = true;  // IDF startup initialised it (core 3.3.11 / 3.3.12)
+#else
+constexpr bool kTwdtStartedByCore = false;
+#endif
+
+// The task watchdog (core/WatchdogPlan.h): reconfigured when the core's startup
+// already runs it, so the firmware's settings apply without a boot error.
 void configureWatchdog() {
+  constexpr wdtplan::Plan plan = wdtplan::make(kTwdtStartedByCore, portNUM_PROCESSORS);
   esp_task_wdt_config_t wdt = {};
-  wdt.timeout_ms = cfg::kWatchdogTimeoutMs;
-  wdt.idle_core_mask = (1u << portNUM_PROCESSORS) - 1;  // also catch CPU starvation
-  wdt.trigger_panic = true;                              // reboot instead of hanging
-  if (esp_task_wdt_init(&wdt) == ESP_ERR_INVALID_STATE) {
-    esp_task_wdt_reconfigure(&wdt);  // the Arduino core already started it
-  }
+  wdt.timeout_ms = plan.timeoutMs;
+  wdt.idle_core_mask = plan.idleCoreMask;
+  wdt.trigger_panic = plan.panicOnTimeout;
+  const esp_err_t err = plan.reconfigure ? esp_task_wdt_reconfigure(&wdt) : esp_task_wdt_init(&wdt);
+  if (err != ESP_OK) ESP_LOGE(kTag, "task watchdog setup failed (%d)", static_cast<int>(err));
 }
 
 }  // namespace
@@ -351,7 +379,7 @@ void start(FixtureType buildDefault) {
   BleSinks sinks{g_rxText, g_colorMailbox, g_events, g_controlTask, &g_stats, g_otaControl, g_otaData};
   if (!ble::begin(sinks, *g_fixture)) ESP_LOGE(kTag, "BLE advertising failed to start");
 
-  ESP_LOGI(kTag, "ElectroBright %s %s ready", g_fixture->modelId, cfg::kFirmwareVersion);
+  ESP_LOGI(kTag, "ElectroBright %s %s ready", g_fixture->modelId, cfg::kBuildVersion);
 #if ARDUINO_USB_CDC_ON_BOOT
   Serial.setTxTimeoutMs(0);  // never wait for a USB host that is not there
 #endif

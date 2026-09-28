@@ -29,6 +29,7 @@ import '../home/presence.dart';
 import 'diag_report.dart';
 import 'fixture_probe.dart';
 import 'probe_sheet.dart';
+import 'rollback_test.dart';
 
 /// How long a type change waits for the light to come back as its new type.
 const Duration typeChangeReconnectLimit = Duration(seconds: 30);
@@ -365,6 +366,18 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
                   enabled: status.isConnected && wireless && !busy,
                   wireless: wireless || !status.isConnected,
                 ),
+              // Debug builds only (release builds have neither the images nor
+              // this option).
+              if (rollbackTestsAvailable)
+                ListTile(
+                  key: const ValueKey<String>('dev-rollback-test'),
+                  leading: Icon(Icons.history_rounded, color: fg),
+                  title: Text(l.rollbackTestInstall, style: title),
+                  subtitle: Text(l.rollbackTestHint, style: detail),
+                  trailing: Icon(Icons.chevron_right_rounded, color: fg),
+                  enabled: status.isConnected && wireless && !busy,
+                  onTap: () => unawaited(_rollbackTest()),
+                ),
             ],
           ),
           SettingsSection(
@@ -404,6 +417,53 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
           ),
         ],
       ],
+    );
+  }
+
+  /// Debug builds: pick a rollback test image, then install it.
+  Future<void> _rollbackTest() async {
+    final AppLocalizations l = AppLocalizations.of(context);
+    final RollbackTest? test = await showModalBottomSheet<RollbackTest>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(Space.m, 0, Space.m, Space.xs),
+              child: Text(
+                l.rollbackTestChoose,
+                style: Theme.of(ctx).textTheme.titleMedium,
+              ),
+            ),
+            ListTile(
+              key: const ValueKey<String>('rollback-fails-check'),
+              leading: const Icon(Icons.rule_rounded),
+              title: Text(l.rollbackTestFailsCheck),
+              subtitle: Text(l.rollbackTestFailsCheckHint),
+              onTap: () => Navigator.of(ctx).pop(RollbackTest.failsCheck),
+            ),
+            ListTile(
+              key: const ValueKey<String>('rollback-freezes'),
+              leading: const Icon(Icons.ac_unit_rounded),
+              title: Text(l.rollbackTestFreezes),
+              subtitle: Text(l.rollbackTestFreezesHint),
+              onTap: () => Navigator.of(ctx).pop(RollbackTest.freezes),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (test == null || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => UpdateFirmwareScreen(
+          fixtureId: widget.fixtureId,
+          rollbackTest: test,
+        ),
+      ),
     );
   }
 

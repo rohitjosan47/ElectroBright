@@ -137,7 +137,11 @@ void main() {
         'error ${EbOtaError.timeout.code}',
         'error ${EbOtaError.incomplete.code}',
       ]) {
-        expect(seen[what] ?? 0, greaterThan(0), reason: '$what never happened: $seen');
+        expect(
+          seen[what] ?? 0,
+          greaterThan(0),
+          reason: '$what never happened: $seen',
+        );
       }
     }, timeout: const Timeout(Duration(minutes: 10)));
   }
@@ -207,7 +211,9 @@ Future<void> _runSeed(
     }
     final Map<String, Object?> o = want['ota']! as Map<String, Object?>;
     if (o['rolledBack'] == 1) count('rolledBack');
-    if (wasPending && o['pending'] == 0 && o['rolledBack'] == 0) count('confirmed');
+    if (wasPending && o['pending'] == 0 && o['rolledBack'] == 0) {
+      count('confirmed');
+    }
     wasPending = o['pending'] == 1;
   }
 

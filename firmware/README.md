@@ -9,7 +9,7 @@ Since 3.7.0 it is **one universal image** for every fixture type. The core holds
 
 Each **sketch** in `fixtures/` builds that same firmware. The only thing a sketch sets is the **default type for a first install**: a light that has no type yet takes the sketch's type. A light that already has a type keeps it, whichever sketch is flashed. Every type works with the ElectroBright app. The protocol contract is in [`docs/protocol.md`](../docs/protocol.md), and the hardware is described in [`docs/wiring_guide.md`](../docs/wiring_guide.md).
 
-Firmware version **3.8.0**. Lights update wirelessly from the app (section 2, "Wireless updates").
+Firmware version **3.8.1**. Lights update wirelessly from the app (section 2, "Wireless updates").
 
 | Type | Sketch (default type) | Channels | Model id | BLE name | Status |
 |---|---|---|---|---|---|
@@ -35,7 +35,7 @@ firmware/
 | Item | Requirement (verified) |
 |---|---|
 | IDE | Arduino IDE 2.x |
-| Board package | **esp32 by Espressif ≥ 3.0** (verified with 3.3.11) |
+| Board package | **esp32 by Espressif ≥ 3.0** (verified with 3.3.12; 3.3.11 has the same rollback and watchdog configuration) |
 | Libraries | **NimBLE-Arduino 2.x** by h2zero (verified with 2.5.1), via Library Manager; **ElectroBrightCore** (this repo, step 1) |
 | Board | **ESP32C3 Dev Module** (`esp32:esp32:esp32c3`) |
 | USB CDC On Boot | Enabled (only needed for serial logs) |
@@ -57,10 +57,11 @@ firmware/tools/flash.sh RGBW            # build + upload to the one USB board co
 firmware/tools/flash.sh CCT /dev/cu.usbmodem1101   # the same on a named port
 firmware/tools/build_update_image.sh    # the wireless-update image, into firmware/update/dist/
 ```
-- `flash.sh <RGBW|RGB|RGBCCT|CCT|W> [port]` finds the port itself when exactly one USB board is connected. It stops with a message when the board has less than 4 MB of flash (two 1.25 MB firmware slots are needed for wireless updates). After the upload it asks the board over USB (`VERSION`) and prints what it reports, e.g. `VERSION:3.8.0 EB-C3-RGBW-V1`. The firmware also prints `ElectroBright <model> <version> ready` on the USB console at boot.
+- `flash.sh <RGBW|RGB|RGBCCT|CCT|W> [port]` finds the port itself when exactly one USB board is connected. It stops with a message when the board has less than 4 MB of flash (two 1.25 MB firmware slots are needed for wireless updates). After the upload it asks the board over USB (`VERSION`) and prints what it reports, e.g. `VERSION:3.8.1 EB-C3-RGBW-V1`. The firmware also prints `ElectroBright <model> <version> ready` on the USB console at boot.
 - `build_update_image.sh` builds `update/ElectroBright_Update` (the universal firmware without a default type), checks that the image carries the ElectroBright identity block, and writes `ElectroBright_Update-<version>.bin` plus `ElectroBright_Update-<version>.json` (`version`, `size`, `sha256`). `OUT_DIR=…` writes elsewhere.
+- `build_update_image.sh --rollback-test fail|freeze` builds a **rollback test image** (`EB_ROLLBACK_TEST=1|2`): the same firmware with the test version `kRollbackTestVersion` (3.8.9999: newer, so a light accepts it, but never a release) and the identity block's `rollbackTest` mark. Installed wirelessly it never confirms itself: `fail` fails its self-check at the 15 s deadline, `freeze` stops its control task 3 s after boot so the task watchdog restarts it. Either way the light returns to its previous firmware and DIAG reports `rb=1` with the previous slot. The app bundles them in debug builds only (`app/tool/bundle_firmware.sh`).
 
-Reference build (3.8.0), identical for every sketch and the update image: 679,793 bytes flash (51.9 % of a 1,280 KB app slot, 630,927 bytes to spare) and 32.3 KB static RAM (10 %), with zero compiler warnings under `--warnings all`. The default partition scheme (`sketch.yaml` sets none) has two OTA app slots, `app0` and `app1`, of 1,310,720 bytes each.
+Reference build (3.8.1, esp32 core 3.3.12), identical for every sketch and the update image: 679,849 bytes flash (51.9 % of a 1,280 KB app slot, 630,871 bytes to spare) and 32.3 KB static RAM (10 %), with zero compiler warnings under `--warnings all`. The default partition scheme (`sketch.yaml` sets none) has two OTA app slots, `app0` and `app1`, of 1,310,720 bytes each.
 
 **Storage.** Every type keeps its settings, scene and presets in NVS namespace `eb3`. The fixture type is one byte, key `fx`, in its own namespace `ebsys`, so `FACTORY_RESET` (which erases `eb3`) keeps it.
 - At boot the stored type wins. Without one, the sketch's default type is saved and used. A build without a default never invents a type: it starts in setup-needed mode (see section 2).
@@ -119,7 +120,8 @@ The app sends a new image over BLE (protocol: [`docs/protocol.md`](../docs/proto
 - **Receiving** (`ota/OtaReceiver`, portable): the image goes to the spare app slot through the ESP-IDF OTA API with sequential writes, so each 4 KB sector is erased as the data reaches it and BLE keeps running. Chunks carry their offset; the light ACKs every 8 KB window and after an out-of-order chunk. A dropped link resumes (same image: same size, SHA-256 and version) in the same boot. `ABORT`, or 15 s without data, stops the transfer; the running firmware is untouched.
 - **Checks before switching:** byte count, SHA-256 (`ota/Sha256`), `esp_ota_end`'s image validation, then the identity block read back from the slot (`ota/ImageIdentity`: magic `EBIMGID1`, `ElectroBright`, `universal`, the announced version). The block is in section `.rodata_custom_desc`, which the linker places right after the app descriptor: image offset 0x120. Only then is the slot selected and the light restarts.
 - **During a transfer** normal commands get `ERROR:BUSY` (queries still answer), effects, identify and probes stop, and the light breathes slowly at a low level on its white LEDs (the RGB LEDs on RGB). The breathing is the LEDC's hardware fade (`render/OtaGlow.h`, `PwmOutput::glow`): the CPU only turns the ramp around every 2 s, so flash writes, which stall the CPU, cannot make it stutter.
-- **Rollback:** the Arduino core (esp32 3.3.11) is built with `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`, and its prebuilt bootloader contains the pending-verify handling. The core would confirm a new firmware at once in `initArduino()`; the firmware overrides `verifyRollbackLater()` so its own self-check (`ota/SelfCheck.h`) decides: NVS readable, the fixture type loaded (the type recorded when the light switched, NVS `ebsys/ofx`), the render loop running and BLE advertising, all within 15 s. Then `esp_ota_mark_app_valid_cancel_rollback()`; otherwise `esp_ota_mark_app_invalid_rollback_and_reboot()`. A crash or a task-watchdog reset before that has the same result: the bootloader returns to the previous firmware. DIAG reports `slot` and `rb`.
+- **Task watchdog (3.8.1):** the core's ESP-IDF startup already runs the task watchdog (`CONFIG_ESP_TASK_WDT_INIT=1`, 5 s), so `esp_task_wdt_init()` used to log `task_wdt: esp_task_wdt_init(517): TWDT already initialized` at every boot. The firmware now reconfigures it (`esp_task_wdt_reconfigure`; `core/WatchdogPlan.h`, host-tested): 3 s, the idle task watched, a panic on timeout, and the panic handler restarts the chip (`CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT`; the build stops if the core ever halts instead). The control and render tasks subscribe themselves and log if they cannot. A frozen update is therefore reset, unconfirmed, and rolls back.
+- **Rollback:** the Arduino core (esp32 3.3.12; the same in 3.3.11: identical sdkconfig for rollback, watchdog and panic, identical `libapp_update`, `libbootloader_support` and `libesp_system`, bootloaders differing only in their build date, and the same `initArduino()` rollback code) is built with `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`, and its prebuilt bootloader contains the pending-verify handling. The core would confirm a new firmware at once in `initArduino()`; the firmware overrides `verifyRollbackLater()` so its own self-check (`ota/SelfCheck.h`) decides: NVS readable, the fixture type loaded (the type recorded when the light switched, NVS `ebsys/ofx`), the render loop running and BLE advertising, all within 15 s. Then `esp_ota_mark_app_valid_cancel_rollback()`; otherwise `esp_ota_mark_app_invalid_rollback_and_reboot()`. A crash or a task-watchdog reset before that has the same result: the bootloader returns to the previous firmware. DIAG reports `slot` and `rb`.
 - **The update image** is `update/ElectroBright_Update` (`App::start()` without a default type): a typed light keeps its type; a light without one starts in setup-needed mode.
 
 ### Adding a fixture type
@@ -296,7 +298,7 @@ How this firmware differs from the original (pre-3.x) firmware:
 
 ## 6. Tests
 
-**Host tests** (`test/`: portable core, ASan + UBSan, `-Werror`): 219 tests.
+**Host tests** (`test/`: portable core, ASan + UBSan, `-Werror`): 222 tests.
 ```bash
 make -C firmware/test                 # portable check, all tests, fwsim
 make -C firmware/test run T=rgb       # filter by name
@@ -339,7 +341,7 @@ What they cover:
   - parity with the RGBW W LED.
 - **Scene codec** (`test_state.cpp`): the legacy flash format, byte for byte, plus round trips for every fixture.
 - **Per-fixture invariants** (`test_layouts.cpp`): identity and wiring (driven plus parked = all five board outputs), CAPS, `3n + 11` STATUS fields, colour arity, frame round trips, binary data never reaching the text parser, and bounded rendering. These run for every type in `test/Fixtures.h`.
-- **Wireless updates** (`test_ota.cpp`): SHA-256 vectors; the identity block; a full transfer; resume after a dropout mid-window and after the timeout; duplicates and gaps; overflowing writes; hash mismatch, invalid image, wrong identity (product, kind, version, none); downgrade, same version and reinstall; busy (another image, a pending restart, an unconfirmed firmware); timeout; abort; flash errors; busy commands and the glow channels; the first boot with the self-check passing, failing, and a crash before confirming (rollback).
+- **Wireless updates** (`test_ota.cpp`): SHA-256 vectors; the identity block; a full transfer; resume after a dropout mid-window and after the timeout; duplicates and gaps; overflowing writes; hash mismatch, invalid image, wrong identity (product, kind, version, none); downgrade, same version and reinstall; busy (another image, a pending restart, an unconfirmed firmware); timeout; abort; flash errors; busy commands and the glow channels; the first boot with the self-check passing, failing, and a crash before confirming (rollback); the task-watchdog plan (reconfigured, restart on timeout, before the self-check deadline); the rollback test modes (never confirm; fail at the deadline or freeze) and their version (accepted as newer, never a release).
 - **Universal firmware** (`test_universal.cpp`): the boot choice of type (stored, build default, none); `SET_TYPE` (stored, presets cleared, scene reset, restart, invalid names, same type); setup-needed mode (outputs off, only the setup commands); `PROBE` (the right pin for every output and type, expiry, cancellation, nothing stored); `FACTORY_RESET` keeping the type; the parked outputs of every type.
 
 The per-fixture tests run the universal build with each type selected: `Rig` and `SimDevice` boot through the same type selection as the device (`fxselect::select`).

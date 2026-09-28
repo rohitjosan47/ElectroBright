@@ -128,17 +128,20 @@ void main() {
     );
   });
 
-  test('the Dart firmware twin\'s setup-needed mode equals profiles::kNone', () {
-    final List<String> strings = profileStrings(profileSource('None'));
-    const EbFixtureSpec setup = EbDeviceModel.setupSpec;
-    expect(strings[0], setup.modelId);
-    expect(strings[1], setup.bleName);
-    expect(setup.capsReply, firmwareCaps('NONE', 0));
-    expect((parseEbReply(setup.capsReply) as EbCaps).setupNeeded, isTrue);
-    final EbDeviceModel m = EbDeviceModel(fixture: null);
-    expect(m.setupNeeded, isTrue);
-    expect(m.fixture.capsReply, setup.capsReply);
-  });
+  test(
+    'the Dart firmware twin\'s setup-needed mode equals profiles::kNone',
+    () {
+      final List<String> strings = profileStrings(profileSource('None'));
+      const EbFixtureSpec setup = EbDeviceModel.setupSpec;
+      expect(strings[0], setup.modelId);
+      expect(strings[1], setup.bleName);
+      expect(setup.capsReply, firmwareCaps('NONE', 0));
+      expect((parseEbReply(setup.capsReply) as EbCaps).setupNeeded, isTrue);
+      final EbDeviceModel m = EbDeviceModel(fixture: null);
+      expect(m.setupNeeded, isTrue);
+      expect(m.fixture.capsReply, setup.capsReply);
+    },
+  );
 
   test('the Dart firmware twin reports each fixture\'s identity', () {
     for (final EbFixtureSpec spec in EbFixtureCatalog.all) {

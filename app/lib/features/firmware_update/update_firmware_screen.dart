@@ -15,23 +15,28 @@ import '../../l10n/app_localizations.dart';
 import '../../sessions/connection_manager.dart';
 import '../../sessions/firmware_update.dart';
 import '../../sessions/fixture_session.dart';
+import '../developer/rollback_test.dart';
 import 'update_providers.dart';
 
 /// A light's wireless firmware update: what will happen, then the transfer
 /// (progress, time left, Cancel while that is safe) and the result. With
 /// [reinstall] (developer tools) the bundled version is sent even when the
-/// light already runs it. Never offers a downgrade. Keeps the light
+/// light already runs it. With [rollbackTest] (debug builds only) it installs
+/// that rollback test image instead, and the expected result is the light
+/// back on its previous firmware. Never offers a downgrade. Keeps the light
 /// connected while open (the screen stays awake while an update runs, see
 /// AppSession).
 class UpdateFirmwareScreen extends ConsumerStatefulWidget {
   const UpdateFirmwareScreen({
     required this.fixtureId,
     this.reinstall = false,
+    this.rollbackTest,
     super.key,
   });
 
   final String fixtureId;
   final bool reinstall;
+  final RollbackTest? rollbackTest;
 
   @override
   ConsumerState<UpdateFirmwareScreen> createState() =>
@@ -40,6 +45,11 @@ class UpdateFirmwareScreen extends ConsumerStatefulWidget {
 
 class _UpdateFirmwareScreenState extends ConsumerState<UpdateFirmwareScreen> {
   Want? _want;
+
+  /// The rollback test image, when this is a rollback test.
+  late final FirmwareBundle? _testImage = widget.rollbackTest == null
+      ? null
+      : rollbackTestImage(widget.rollbackTest!);
 
   @override
   void initState() {
@@ -83,7 +93,10 @@ class _UpdateFirmwareScreenState extends ConsumerState<UpdateFirmwareScreen> {
     final AppLocalizations l = AppLocalizations.of(context);
     final Fixture? f = ref.watch(fixtureProvider(widget.fixtureId));
     if (f == null) return const Scaffold();
-    final FirmwareBundle? bundle = ref.watch(bundledFirmwareProvider);
+    final FirmwareBundle? bundled = ref.watch(bundledFirmwareProvider);
+    final FirmwareBundle? bundle = widget.rollbackTest == null
+        ? bundled
+        : _testImage;
     final UpdateProgress? progress = ref.watch(
       updateProgressProvider(widget.fixtureId),
     );
@@ -121,7 +134,11 @@ class _UpdateFirmwareScreenState extends ConsumerState<UpdateFirmwareScreen> {
     };
 
     return SettingsPage(
-      title: widget.reinstall ? l.reinstallFirmware : l.updateFirmware,
+      title: widget.rollbackTest != null
+          ? l.rollbackTestTitle
+          : widget.reinstall
+          ? l.reinstallFirmware
+          : l.updateFirmware,
       children: <Widget>[
         SettingsSection(
           children: <Widget>[
@@ -186,12 +203,20 @@ class _UpdateFirmwareScreenState extends ConsumerState<UpdateFirmwareScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text(
-                  widget.reinstall
-                      ? l.reinstallWhatHappens(f.name, '${bundle?.version}')
-                      : l.updateWhatHappens(f.name, '${bundle?.version}'),
-                  style: title.copyWith(fontWeight: FontWeight.w400),
-                ),
+                Text(switch (widget.rollbackTest) {
+                  RollbackTest.failsCheck => l.rollbackTestFailsBody(
+                    f.name,
+                    '$installed',
+                  ),
+                  RollbackTest.freezes => l.rollbackTestFreezesBody(
+                    f.name,
+                    '$installed',
+                  ),
+                  null =>
+                    widget.reinstall
+                        ? l.reinstallWhatHappens(f.name, '${bundle?.version}')
+                        : l.updateWhatHappens(f.name, '${bundle?.version}'),
+                }, style: title.copyWith(fontWeight: FontWeight.w400)),
                 const SizedBox(height: Space.s),
                 _Note(icon: Icons.phone_iphone_rounded, text: l.updateStayNear),
                 const SizedBox(height: Space.xs),
@@ -330,7 +355,35 @@ class _UpdateFirmwareScreenState extends ConsumerState<UpdateFirmwareScreen> {
     FirmwareBundle? bundle,
   ) {
     final Color fg = settingsInk(context);
+    final bool test = widget.rollbackTest != null;
     final (IconData icon, String heading, String? text) = switch (p.stage) {
+      // A rollback test passes when the light went back to the firmware and
+      // the slot it ran before, and DIAG says it rolled back.
+      UpdateStage.rolledBack when test =>
+        p.rolledBackFlag == true &&
+                p.slotAfter != null &&
+                p.slotAfter == p.slotBefore
+            ? (
+                Icons.check_circle_rounded,
+                l.rollbackTestPassed,
+                l.rollbackTestPassedBody(f.name, '${p.from}', p.slotAfter!),
+              )
+            : (
+                Icons.error_outline_rounded,
+                l.updateRolledBack,
+                l.rollbackTestDiagMismatch(
+                  f.name,
+                  '${p.from}',
+                  '${p.rolledBackFlag == null ? '?' : (p.rolledBackFlag! ? 1 : 0)}',
+                  '${p.slotAfter ?? '?'}',
+                  '${p.slotBefore ?? '?'}',
+                ),
+              ),
+      UpdateStage.done when test => (
+        Icons.error_outline_rounded,
+        l.rollbackTestConfirmed,
+        l.rollbackTestConfirmedBody,
+      ),
       UpdateStage.done => (
         Icons.check_circle_rounded,
         l.updateDone('${p.to}'),

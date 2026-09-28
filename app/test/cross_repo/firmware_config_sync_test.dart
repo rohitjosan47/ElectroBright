@@ -79,10 +79,7 @@ void main() {
     expect(() => Probe(-1, on: true), throwsA(anything));
     expect(ranges.containsKey('SET_TYPE'), isTrue);
     for (final String type in firmwareTypes()) {
-      expect(
-        SetType(ChannelLayout.fromWire(type)!).wire,
-        'SET_TYPE:$type',
-      );
+      expect(SetType(ChannelLayout.fromWire(type)!).wire, 'SET_TYPE:$type');
     }
 
     void accepts(

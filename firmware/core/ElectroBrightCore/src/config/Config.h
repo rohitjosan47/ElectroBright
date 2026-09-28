@@ -12,7 +12,23 @@ namespace cfg {
 // --- Identity -------------------------------------------------------------------
 // One universal image for every fixture type; a type's identity (model id,
 // BLE name, layout, pins) lives in the profile table (fixture/Profiles.h).
-constexpr const char* kFirmwareVersion = "3.8.0";
+constexpr const char* kFirmwareVersion = "3.8.1";
+
+// Rollback test images (tools/build_update_image.sh --rollback-test fail|freeze
+// builds them with EB_ROLLBACK_TEST=1|2; the app offers them in debug builds
+// only). Installed wirelessly they must never confirm themselves: 1 fails the
+// first-boot self-check, 2 freezes its control task before the check, so the
+// task watchdog restarts it. Either way the bootloader returns to the previous
+// firmware. They carry kRollbackTestVersion, which a light accepts as newer
+// but which is never offered as a normal update. 0 = the normal firmware.
+#ifndef EB_ROLLBACK_TEST
+#define EB_ROLLBACK_TEST 0
+#endif
+static_assert(EB_ROLLBACK_TEST >= 0 && EB_ROLLBACK_TEST <= 2, "EB_ROLLBACK_TEST is 0, 1 (fails check) or 2 (freezes)");
+constexpr uint8_t kRollbackTest = EB_ROLLBACK_TEST;
+constexpr const char* kRollbackTestVersion = "3.8.9999";
+// What this build reports (VERSION, the identity block).
+constexpr const char* kBuildVersion = kRollbackTest ? kRollbackTestVersion : kFirmwareVersion;
 
 // Nordic UART Service
 constexpr const char* kServiceUuid = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
@@ -85,7 +101,7 @@ constexpr uint32_t kRenderStackBytes  = 4096;
 constexpr uint32_t kControlPriority   = 6;
 constexpr uint32_t kRenderPriority    = 10;
 constexpr uint32_t kControlWakeMs     = 50;     // max idle wait (timer precision, egress retry)
-constexpr uint32_t kWatchdogTimeoutMs = 3000;
+constexpr uint32_t kWatchdogTimeoutMs = 3000;  // task watchdog; a timeout restarts the chip (core/WatchdogPlan.h)
 
 // --- Feedback -------------------------------------------------------------------
 constexpr bool kConnectChirp = false;   // short beep when a phone connects
