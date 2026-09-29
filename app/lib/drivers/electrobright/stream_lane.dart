@@ -157,8 +157,9 @@ final class StreamLane {
               if (e is LinkClosedException) return;
               if (++_fenceFailures >= fenceAttempts) {
                 _fenceFailures = 0;
-                final List<Completer<void>> failed =
-                    List<Completer<void>>.of(_fenceWaiters);
+                final List<Completer<void>> failed = List<Completer<void>>.of(
+                  _fenceWaiters,
+                );
                 _fenceWaiters.clear();
                 for (final Completer<void> c in failed) {
                   c.completeError(const FenceFailed());
