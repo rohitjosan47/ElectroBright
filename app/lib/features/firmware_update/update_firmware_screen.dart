@@ -16,6 +16,7 @@ import '../../sessions/connection_manager.dart';
 import '../../sessions/firmware_update.dart';
 import '../../sessions/fixture_session.dart';
 import '../developer/rollback_test.dart';
+import '../shared/removed_screen.dart';
 import 'update_providers.dart';
 
 /// A light's wireless firmware update: what will happen, then the transfer
@@ -92,7 +93,7 @@ class _UpdateFirmwareScreenState extends ConsumerState<UpdateFirmwareScreen> {
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
     final Fixture? f = ref.watch(fixtureProvider(widget.fixtureId));
-    if (f == null) return const Scaffold();
+    if (f == null) return RemovedScreen(message: l.lightRemovedNotice);
     final FirmwareBundle? bundled = ref.watch(bundledFirmwareProvider);
     final FirmwareBundle? bundle = widget.rollbackTest == null
         ? bundled

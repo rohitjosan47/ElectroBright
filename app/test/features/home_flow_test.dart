@@ -110,6 +110,13 @@ void main() {
     expect(find.text('Tunable white'), findsWidgets); // type badge
     expect(find.textContaining('On · 100 %'), findsOneWidget);
     expect(find.text('Connected'), findsOneWidget);
+    // Screen readers hear that a long press opens the light's options.
+    final SemanticsHandle tileSemantics = t.ensureSemantics();
+    expect(
+      t.getSemantics(find.bySemanticsLabel(RegExp(r'^Kitchen, '))).hint,
+      'Double tap and hold for options',
+    );
+    tileSemantics.dispose();
     // Saved (in demo mode's own store) with the firmware's identity.
     final JsonStore demoStore = ProviderScope.containerOf(
       t.element(find.text('Kitchen')),

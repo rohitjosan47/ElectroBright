@@ -37,11 +37,15 @@ const List<Duration> timerSteps = <Duration>[
 ];
 
 /// A step for the dial ("30 s", "5 min", "1.5 h").
-String stepLabel(Duration d) => d.inHours >= 1
-    ? '${d.inMinutes % 60 == 0 ? d.inHours : (d.inMinutes / 60).toStringAsFixed(1)} h'
+String stepLabel(AppLocalizations l, Duration d) => d.inHours >= 1
+    ? l.timerStepHours(
+        d.inMinutes % 60 == 0
+            ? '${d.inHours}'
+            : (d.inMinutes / 60).toStringAsFixed(1),
+      )
     : d.inMinutes >= 1
-    ? '${d.inMinutes} min'
-    : '${d.inSeconds} s';
+    ? l.timerStepMinutes(d.inMinutes)
+    : l.timerStepSeconds(d.inSeconds);
 
 /// A running countdown ("4:59", "1:02:03").
 String countdown(Duration d) {
@@ -353,7 +357,7 @@ class _TimerSheetState extends ConsumerState<_TimerSheet> {
                     steps: timerSteps,
                     index: _index,
                     label: left == null
-                        ? stepLabel
+                        ? (Duration d) => stepLabel(l, d)
                         : (_) => l.timerOff(countdown(left)),
                     progress: left == null || deadline == null
                         ? null

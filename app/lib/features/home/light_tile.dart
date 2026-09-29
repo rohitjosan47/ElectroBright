@@ -22,6 +22,7 @@ import '../../drivers/electrobright/eb_types.dart';
 import '../../l10n/app_localizations.dart';
 import '../../sessions/connection_manager.dart';
 import '../../sessions/fixture_session.dart';
+import '../control/effects/mode_presentation.dart';
 import '../firmware_update/update_providers.dart';
 import 'presence.dart';
 
@@ -83,15 +84,16 @@ class LightTile extends ConsumerWidget {
       setup ? null : state,
       fg,
     );
-    final String modeName = scene == null
+    final String mode = scene == null
         ? ''
-        : EbModeCatalog.byId(scene.mode).name;
+        : modeName(EbModeCatalog.byId(scene.mode), f.layout, l);
     final bool live = phase == LinkPhase.ready && !updating;
 
     return Semantics(
       button: true,
       label: setup ? f.name : '${f.name}, ${fixtureTypeName(l, f.layout)}',
       value: presence,
+      hint: l.lightTileHint,
       child: GestureDetector(
         onTap: onOpen,
         onLongPress: () {
@@ -153,12 +155,7 @@ class LightTile extends ConsumerWidget {
               Text(
                 scene == null
                     ? presence
-                    : stateLine(
-                        l,
-                        scene,
-                        sleeping: sleeping,
-                        modeName: modeName,
-                      ),
+                    : stateLine(l, scene, sleeping: sleeping, modeName: mode),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(

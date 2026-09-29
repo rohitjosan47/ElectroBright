@@ -39,6 +39,7 @@ import '../control/shared/control_header.dart';
 import '../control/shared/tab_switcher.dart';
 import '../control/timer_sheet.dart';
 import '../home/bluetooth_notice.dart';
+import '../shared/removed_screen.dart';
 import 'group_presets_tab.dart';
 
 enum _GroupTab { colour, white, effects, presets }
@@ -96,7 +97,7 @@ class _GroupScreenState extends ConsumerState<GroupScreen> {
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
     final GroupSession? group = _group;
-    if (group == null) return const Scaffold();
+    if (group == null) return RemovedScreen(message: l.groupRemovedNotice);
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color fg = dark ? Colors.white : const Color(0xFF15171C);
     final bool anyOn = ref.watch(groupAnyOnProvider(group.kind));

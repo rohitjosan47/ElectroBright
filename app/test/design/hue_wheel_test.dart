@@ -1,5 +1,9 @@
+import 'dart:ui' show Tristate;
+
 import 'package:electrobright/design/controls/hue_wheel.dart';
+import 'package:electrobright/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// The wheel inside a scroll view: a touch on the square or the ring is the
@@ -14,6 +18,8 @@ void main() {
     changes = <Hsv>[];
     await t.pumpWidget(
       MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
           body: ListView(
             controller: scroll,
@@ -90,6 +96,8 @@ void main() {
     final List<Hsv> got = <Hsv>[];
     await t.pumpWidget(
       MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
           body: ListView(
             controller: scroll,
@@ -109,5 +117,90 @@ void main() {
     await t.pumpAndSettle();
     expect(scroll.offset, greaterThan(100));
     expect(got, isEmpty);
+  });
+
+  /// The wheel's adjustable value labelled [label] for screen readers.
+  SemanticsNode axis(WidgetTester t, String label) =>
+      t.getSemantics(find.bySemanticsLabel(label));
+
+  Future<void> adjust(WidgetTester t, String label, SemanticsAction a) async {
+    final SemanticsNode n = axis(t, label);
+    n.owner!.performAction(n.id, a);
+    await t.pump();
+  }
+
+  testWidgets('screen readers adjust hue, saturation and brightness', (
+    WidgetTester t,
+  ) async {
+    final SemanticsHandle semantics = t.ensureSemantics();
+    await pumpWheel(t);
+    final SemanticsData hue = axis(t, 'Hue').getSemanticsData();
+    expect(hue.value, '200 degrees');
+    expect(hue.increasedValue, '210 degrees');
+    expect(hue.decreasedValue, '190 degrees');
+    expect(hue.hasAction(SemanticsAction.increase), isTrue);
+    expect(hue.customSemanticsActionIds, isEmpty);
+    expect(axis(t, 'Saturation').getSemanticsData().value, '50%');
+    expect(axis(t, 'Colour brightness').getSemanticsData().value, '50%');
+
+    await adjust(t, 'Hue', SemanticsAction.increase);
+    expect(changes.last, const Hsv(210, 0.5, 0.5));
+    await adjust(t, 'Saturation', SemanticsAction.decrease);
+    expect(changes.last.s, closeTo(0.4, 1e-9));
+    await adjust(t, 'Colour brightness', SemanticsAction.increase);
+    expect(changes.last.v, closeTo(0.6, 1e-9));
+    expect(axis(t, 'Colour brightness').getSemanticsData().value, '60%');
+    semantics.dispose();
+  });
+
+  testWidgets('the hue wraps; saturation stops at its ends', (
+    WidgetTester t,
+  ) async {
+    final SemanticsHandle semantics = t.ensureSemantics();
+    changes = <Hsv>[];
+    await t.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: HueWheel(value: const Hsv(355, 1, 0.5), onChanged: changes.add),
+        ),
+      ),
+    );
+    expect(axis(t, 'Hue').getSemanticsData().increasedValue, '5 degrees');
+    final SemanticsData sat = axis(t, 'Saturation').getSemanticsData();
+    expect(sat.hasAction(SemanticsAction.increase), isFalse);
+    expect(sat.hasAction(SemanticsAction.decrease), isTrue);
+    semantics.dispose();
+  });
+
+  testWidgets('a disabled wheel offers no actions to screen readers', (
+    WidgetTester t,
+  ) async {
+    final SemanticsHandle semantics = t.ensureSemantics();
+    await t.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: HueWheel(
+            value: const Hsv(200, 0.5, 0.5),
+            enabled: false,
+            onChanged: (_) {},
+          ),
+        ),
+      ),
+    );
+    for (final String label in <String>[
+      'Hue',
+      'Saturation',
+      'Colour brightness',
+    ]) {
+      final SemanticsData d = axis(t, label).getSemanticsData();
+      expect(d.actions, 0, reason: label);
+      expect(d.customSemanticsActionIds, isEmpty, reason: label);
+      expect(d.flagsCollection.isEnabled, Tristate.isFalse, reason: label);
+    }
+    semantics.dispose();
   });
 }

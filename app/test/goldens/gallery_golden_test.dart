@@ -4,6 +4,7 @@ library;
 import 'package:electrobright/design/gallery/gallery.dart';
 import 'package:electrobright/design/glass/glass_surface.dart';
 import 'package:electrobright/design/theme/app_theme.dart';
+import 'package:electrobright/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -45,6 +46,8 @@ Future<void> _pumpGallery(
   await tester.pumpWidget(
     MaterialApp(
       debugShowCheckedModeBanner: false,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       theme: dark ? AppTheme.dark() : AppTheme.light(),
       builder: (BuildContext context, Widget? child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(

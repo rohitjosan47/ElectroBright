@@ -5,9 +5,9 @@ import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
-import 'package:flutter/semantics.dart';
 
 import '../../core/color/hsv.dart';
+import '../../l10n/app_localizations.dart';
 import '../haptics/haptics.dart';
 import '../haptics/haptics_scope.dart';
 import '../tokens/tokens.dart';
@@ -37,7 +37,8 @@ enum _Target { ring, square }
 
 /// Hue ring with an inner saturation/value square (the design chosen in the
 /// previous app), rebuilt: responsive, repaint-isolated, a magnifying glass
-/// thumb, hue detent haptics and full screen-reader support.
+/// thumb, hue detent haptics and full screen-reader support (hue, saturation
+/// and brightness as adjustable values).
 ///
 /// A touch on the ring or the square is the wheel's at once (a scroll view
 /// around it never wins it), and the thumbs follow raw pointer moves; touches
@@ -210,66 +211,131 @@ class _HueWheelState extends State<HueWheel>
         return Center(
           child: SizedBox.square(
             dimension: size,
-            child: ValueListenableBuilder<Hsv>(
-              valueListenable: _v,
-              builder: (BuildContext context, Hsv v, Widget? child) => Semantics(
-                label: 'Colour',
-                value:
-                    'hue ${v.h.round()} degrees, saturation '
-                    '${(v.s * 100).round()}%, brightness ${(v.v * 100).round()}%',
-                customSemanticsActions: <CustomSemanticsAction, VoidCallback>{
-                  const CustomSemanticsAction(
-                    label: 'Hue plus 10 degrees',
-                  ): () =>
-                      _nudge(Hsv((v.h + 10) % 360, v.s, v.v)),
-                  const CustomSemanticsAction(
-                    label: 'Hue minus 10 degrees',
-                  ): () =>
-                      _nudge(Hsv((v.h + 350) % 360, v.s, v.v)),
-                  const CustomSemanticsAction(label: 'More saturated'): () =>
-                      _nudge(Hsv(v.h, (v.s + 0.1).clamp(0, 1), v.v)),
-                  const CustomSemanticsAction(label: 'Less saturated'): () =>
-                      _nudge(Hsv(v.h, (v.s - 0.1).clamp(0, 1), v.v)),
-                },
-                child: child,
-              ),
-              // Moves go straight to the thumbs, outside the gesture arena;
-              // the recogniser below only claims the pointer and ends it.
-              child: Listener(
-                onPointerMove: widget.enabled
-                    ? (PointerMoveEvent e) {
-                        if (e.pointer == _pointer) {
-                          _move(e.localPosition, size, h);
+            child: Stack(
+              children: <Widget>[
+                // Moves go straight to the thumbs, outside the gesture arena;
+                // the recogniser below only claims the pointer and ends it.
+                Listener(
+                  onPointerMove: widget.enabled
+                      ? (PointerMoveEvent e) {
+                          if (e.pointer == _pointer) {
+                            _move(e.localPosition, size, h);
+                          }
                         }
-                      }
-                    : null,
-                child: RawGestureDetector(
-                  behavior: HitTestBehavior.deferToChild,
-                  excludeFromSemantics: true,
-                  gestures: <Type, GestureRecognizerFactory>{
-                    if (widget.enabled)
-                      _WheelGrab:
-                          GestureRecognizerFactoryWithHandlers<_WheelGrab>(
-                            () => _WheelGrab(debugOwner: this),
-                            (_WheelGrab r) => r
-                              ..hits = ((Offset p) => _hit(p, size) != null)
-                              ..onGrab = ((PointerDownEvent e) =>
-                                  _grab(e, size, h))
-                              ..onRelease = _up,
-                          ),
-                  },
-                  child: RepaintBoundary(
-                    child: CustomPaint(
-                      painter: _WheelPainter(_v, _press, _art, dpr),
-                      size: Size.square(size),
+                      : null,
+                  child: RawGestureDetector(
+                    behavior: HitTestBehavior.deferToChild,
+                    excludeFromSemantics: true,
+                    gestures: <Type, GestureRecognizerFactory>{
+                      if (widget.enabled)
+                        _WheelGrab:
+                            GestureRecognizerFactoryWithHandlers<_WheelGrab>(
+                              () => _WheelGrab(debugOwner: this),
+                              (_WheelGrab r) => r
+                                ..hits = ((Offset p) => _hit(p, size) != null)
+                                ..onGrab = ((PointerDownEvent e) =>
+                                    _grab(e, size, h))
+                                ..onRelease = _up,
+                            ),
+                    },
+                    child: RepaintBoundary(
+                      child: CustomPaint(
+                        painter: _WheelPainter(_v, _press, _art, dpr),
+                        size: Size.square(size),
+                      ),
                     ),
                   ),
                 ),
-              ),
+                // Screen readers: the ring and the square's two axes as
+                // three adjustable values (never hit by a touch).
+                Positioned.fill(
+                  child: ValueListenableBuilder<Hsv>(
+                    valueListenable: _v,
+                    builder: (BuildContext context, Hsv v, _) =>
+                        _semantics(AppLocalizations.of(context), v, size),
+                  ),
+                ),
+              ],
             ),
           ),
         );
       },
+    );
+  }
+
+  /// One adjustable axis: [step] away from [at] within 0..1 unless [wrap].
+  Widget _axis({
+    required String label,
+    required double at,
+    required double step,
+    required String Function(double x) text,
+    required Hsv Function(double x) apply,
+    bool wrap = false,
+  }) {
+    double? to(int dir) {
+      final double x = at + dir * step;
+      if (wrap) return x % 1;
+      if ((dir > 0 && at >= 1) || (dir < 0 && at <= 0)) return null;
+      return x.clamp(0.0, 1.0);
+    }
+
+    final double? up = widget.enabled ? to(1) : null;
+    final double? down = widget.enabled ? to(-1) : null;
+    return Semantics(
+      slider: true,
+      enabled: widget.enabled,
+      label: label,
+      value: text(at),
+      increasedValue: up == null ? null : text(up),
+      decreasedValue: down == null ? null : text(down),
+      onIncrease: up == null ? null : () => _nudge(apply(up)),
+      onDecrease: down == null ? null : () => _nudge(apply(down)),
+      child: const SizedBox.expand(),
+    );
+  }
+
+  Widget _semantics(AppLocalizations l, Hsv v, double size) {
+    final double half = _geometry(size).half;
+    String percent(double x) => l.wheelPercent((x * 100).round());
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(
+          child: _axis(
+            label: l.wheelHue,
+            at: v.h / 360,
+            step: 10 / 360,
+            wrap: true,
+            text: (double x) => l.wheelDegrees((x * 360).round() % 360),
+            apply: (double x) => Hsv(x * 360, v.s, v.v),
+          ),
+        ),
+        Positioned(
+          left: size / 2 - half,
+          top: size / 2 - half,
+          width: half * 2,
+          height: half,
+          child: _axis(
+            label: l.wheelSaturation,
+            at: v.s,
+            step: 0.1,
+            text: percent,
+            apply: (double x) => Hsv(v.h, x, v.v),
+          ),
+        ),
+        Positioned(
+          left: size / 2 - half,
+          top: size / 2,
+          width: half * 2,
+          height: half,
+          child: _axis(
+            label: l.wheelBrightness,
+            at: v.v,
+            step: 0.1,
+            text: percent,
+            apply: (double x) => Hsv(v.h, v.s, x),
+          ),
+        ),
+      ],
     );
   }
 }

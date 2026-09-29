@@ -7,6 +7,7 @@ import 'package:flutter/physics.dart';
 import '../../core/color/light_surfaces.dart';
 import '../../core/color/light_tone.dart';
 import '../../core/protocol/eb/mode_catalog.dart';
+import '../../l10n/app_localizations.dart';
 import '../glass/glass_surface.dart';
 import '../haptics/haptics.dart';
 import '../haptics/haptics_scope.dart';
@@ -315,17 +316,30 @@ class _GlassSegmentedState<T> extends State<GlassSegmented<T>>
                               h.play(HapticEvent.selection);
                               widget.onChanged(value);
                             },
-                            child: Center(
-                              child: Text(
-                                label,
-                                style: TextStyle(
-                                  color: fg.withValues(
-                                    alpha: value == widget.selected
-                                        ? 1
-                                        : LightSurfaces.dim(0.65, dark: dark),
+                            // Large text scales down to fit its segment.
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: Space.xxs,
+                              ),
+                              child: Center(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    label,
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      color: fg.withValues(
+                                        alpha: value == widget.selected
+                                            ? 1
+                                            : LightSurfaces.dim(
+                                                0.65,
+                                                dark: dark,
+                                              ),
+                                      ),
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                    ),
                                   ),
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
                                 ),
                               ),
                             ),
@@ -667,6 +681,7 @@ class LightOrb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppLocalizations l = AppLocalizations.of(context);
     final List<Color> palette = <Color>[
       for (final int c in spec.gradient) Color(c),
     ];
@@ -680,7 +695,7 @@ class LightOrb extends StatelessWidget {
           );
     return Semantics(
       image: true,
-      label: on ? '${spec.name}, on' : 'Off',
+      label: on ? l.orbOn(spec.name) : l.orbOff,
       child: SizedBox.square(
         dimension: size,
         child: dim(
@@ -848,7 +863,7 @@ class _TimerDialState extends State<TimerDial> {
         final Size size = Size.square(s);
         return Semantics(
           slider: !running,
-          label: 'Sleep timer',
+          label: AppLocalizations.of(context).timerDialLabel,
           value: widget.label(widget.steps[widget.index]),
           increasedValue: widget.label(
             widget.steps[math.min(widget.index + 1, widget.steps.length - 1)],
@@ -881,16 +896,25 @@ class _TimerDialState extends State<TimerDial> {
                   accent: Color(tone.accent),
                   dark: tone.dark,
                 ),
-                child: Center(
-                  child: Text(
-                    widget.label(widget.steps[widget.index]),
-                    style: TextStyle(
-                      color: fg,
-                      fontSize: 32,
-                      fontWeight: FontWeight.w600,
-                      fontFeatures: const <FontFeature>[
-                        FontFeature.tabularFigures(),
-                      ],
+                // Inside the ring's detent dots (32 in from its edge); large
+                // text scales down to fit.
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 36),
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        widget.label(widget.steps[widget.index]),
+                        maxLines: 1,
+                        style: TextStyle(
+                          color: fg,
+                          fontSize: 32,
+                          fontWeight: FontWeight.w600,
+                          fontFeatures: const <FontFeature>[
+                            FontFeature.tabularFigures(),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),

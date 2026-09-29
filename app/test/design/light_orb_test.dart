@@ -1,6 +1,7 @@
 import 'package:electrobright/core/protocol/eb/mode_catalog.dart';
 import 'package:electrobright/design/components/glass_controls.dart';
 import 'package:electrobright/design/components/mode_glyph.dart';
+import 'package:electrobright/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -14,10 +15,14 @@ void main() {
   Widget orb(EbModeSpec spec, Color color, {bool reduced = false}) =>
       MediaQuery(
         data: MediaQueryData(disableAnimations: reduced),
-        child: Directionality(
-          textDirection: TextDirection.ltr,
-          child: Center(
-            child: LightOrb(spec: spec, color: color, on: true),
+        child: Localizations(
+          locale: const Locale('en'),
+          delegates: AppLocalizations.localizationsDelegates,
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Center(
+              child: LightOrb(spec: spec, color: color, on: true),
+            ),
           ),
         ),
       );

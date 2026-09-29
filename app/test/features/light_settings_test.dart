@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:electrobright/features/control/control_screen.dart';
 import 'package:electrobright/features/fixture_settings/light_settings_screen.dart';
 import 'package:electrobright/sim/eb_device_model.dart';
 import 'package:flutter/material.dart';
@@ -103,6 +106,35 @@ void main() {
     expect(find.byType(LightSettingsScreen), findsNothing);
     expect(find.text('Lights'), findsOneWidget);
     expect(d.app.registry.byId(DemoApp.idOf('Living room')), isNull);
+    // Forgotten on purpose: no "removed" notice.
+    expect(find.text('This light was removed'), findsNothing);
+    await DemoApp.shutDown(t);
+  });
+
+  testWidgets('a light removed while its screens are open closes to Home', (
+    WidgetTester t,
+  ) async {
+    final DemoApp d = await open(t, 'Desk strip');
+    // Settings over the control screen: both close, one message.
+    bool gone = false;
+    unawaited(
+      d.app.registry.forget(d.id('Desk strip')).then((_) => gone = true),
+    );
+    // Tearing its session down takes real time as well as app time.
+    for (int i = 0; i < 50 && !gone; i++) {
+      await t.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await t.pump(const Duration(milliseconds: 100));
+    }
+    expect(gone, isTrue);
+    await settle(t, 1);
+    expect(find.byType(LightSettingsScreen), findsNothing);
+    expect(find.byType(ControlScreen), findsNothing);
+    expect(find.text('Lights'), findsOneWidget);
+    expect(find.text('This light was removed'), findsOneWidget);
+    await settle(t, 3);
+    expect(find.text('This light was removed'), findsNothing);
     await DemoApp.shutDown(t);
   });
 }

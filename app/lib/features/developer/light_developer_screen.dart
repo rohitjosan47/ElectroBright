@@ -29,6 +29,7 @@ import '../control/presets/preset_meta.dart';
 import '../firmware_update/update_firmware_screen.dart';
 import '../firmware_update/update_providers.dart';
 import '../home/presence.dart';
+import '../shared/removed_screen.dart';
 import 'diag_report.dart';
 import 'fixture_probe.dart';
 import 'probe_sheet.dart';
@@ -227,7 +228,7 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
     final Fixture? f = ref.watch(fixtureProvider(widget.fixtureId));
-    if (f == null) return const Scaffold();
+    if (f == null) return RemovedScreen(message: l.lightRemovedNotice);
     final FixtureStatus status = ref.watch(
       fixtureStatusProvider(widget.fixtureId),
     );

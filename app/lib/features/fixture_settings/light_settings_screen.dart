@@ -32,6 +32,7 @@ import '../developer/light_developer_screen.dart';
 import '../firmware_update/update_firmware_screen.dart';
 import '../firmware_update/update_providers.dart';
 import '../../core/firmware/firmware_bundle.dart';
+import '../shared/removed_screen.dart';
 
 /// One light's settings: name, type and what it can do, identify / channel
 /// test, sound, factory reset and forget.
@@ -84,7 +85,7 @@ class _LightSettingsScreenState extends ConsumerState<LightSettingsScreen> {
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
     final Fixture? f = ref.watch(fixtureProvider(widget.fixtureId));
-    if (f == null) return const Scaffold();
+    if (f == null) return RemovedScreen(message: l.lightRemovedNotice);
     // Only what the screen shows.
     final (bool isReady, EbDeviceState? state) = ref.watch(
       fixtureStatusProvider(widget.fixtureId)
@@ -451,7 +452,8 @@ class CapabilitySheet extends StatelessWidget {
     final bool learned = id != null && !id.assumed;
     final List<String> missing = <String>[
       for (final EbModeSpec m in EbModeCatalog.modes)
-        if (!capabilities.supportsMode(m.id)) m.name,
+        if (!capabilities.supportsMode(m.id))
+          modeName(m, capabilities.layout, l),
     ];
     final int supported = capabilities.modes.length;
     Widget item(String k, Widget v) => Padding(

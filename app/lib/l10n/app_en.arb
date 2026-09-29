@@ -919,5 +919,137 @@
     }
   },
   "rollbackTestConfirmed": "The test image confirmed itself",
-  "rollbackTestConfirmedBody": "It never should. Reinstall the firmware from the Developer page."
+  "rollbackTestConfirmedBody": "It never should. Reinstall the firmware from the Developer page.",
+  "wheelHue": "Hue",
+  "@wheelHue": {
+    "description": "Screen-reader label of the colour wheel's hue ring."
+  },
+  "wheelSaturation": "Saturation",
+  "@wheelSaturation": {
+    "description": "Screen-reader label of the colour wheel's saturation axis."
+  },
+  "wheelBrightness": "Colour brightness",
+  "@wheelBrightness": {
+    "description": "Screen-reader label of the colour wheel's brightness axis."
+  },
+  "wheelDegrees": "{degrees} degrees",
+  "@wheelDegrees": {
+    "placeholders": {
+      "degrees": {
+        "type": "int"
+      }
+    }
+  },
+  "wheelPercent": "{percent}%",
+  "@wheelPercent": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "orbOn": "{mode}, on",
+  "@orbOn": {
+    "description": "Screen-reader label of the light orb while the light is on.",
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "orbOff": "Off",
+  "timerDialLabel": "Sleep timer",
+  "@timerDialLabel": {
+    "description": "Screen-reader label of the sleep timer dial."
+  },
+  "timerStepHours": "{hours} h",
+  "@timerStepHours": {
+    "description": "A dial step in hours; hours may be a decimal such as 1.5.",
+    "placeholders": {
+      "hours": {
+        "type": "String"
+      }
+    }
+  },
+  "timerStepMinutes": "{minutes} min",
+  "@timerStepMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "timerStepSeconds": "{seconds} s",
+  "@timerStepSeconds": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "lightTileHint": "Double tap and hold for options",
+  "@lightTileHint": {
+    "description": "Screen-reader hint on a Home light tile: a long press opens its menu."
+  },
+  "lightRemovedNotice": "This light was removed",
+  "@lightRemovedNotice": {
+    "description": "Shown on returning to Home when the open light no longer exists."
+  },
+  "groupRemovedNotice": "This group is no longer available",
+  "@groupRemovedNotice": {
+    "description": "Shown on returning to Home when the open group no longer exists."
+  },
+  "modeSolidName": "Solid Color",
+  "@modeSolidName": {
+    "description": "Name of lighting mode 1."
+  },
+  "modeSolidDesc": "Steady light in your colour",
+  "modeBlinkName": "Blink",
+  "modeBlinkDesc": "A crisp on/off pulse",
+  "modeBreathName": "Breath",
+  "modeBreathDesc": "Slow, organic breathing",
+  "modeFireworksName": "Fireworks",
+  "modeFireworksDesc": "Rockets, bursts and crackle",
+  "modeTvName": "TV Simulator",
+  "modeTvDesc": "The flicker of a TV in a dark room",
+  "modeThunderName": "Thunderstorm",
+  "modeThunderDesc": "Lightning with real strike patterns",
+  "modeFaultyName": "Faulty Bulb",
+  "modeFaultyDesc": "A failing tube that sputters",
+  "modeWeldingName": "Welding",
+  "modeWeldingDesc": "Arc, sparks and a glowing bead",
+  "modeClubName": "Club Lights",
+  "modeClubDesc": "Rhythmic strobes and colour",
+  "modeRainbowName": "Rainbow",
+  "modeRainbowDesc": "An endless flow through the spectrum",
+  "modeFireName": "Fire",
+  "modeFireDesc": "A living hearth fire",
+  "modePoliceName": "Police Strobe",
+  "modePoliceDesc": "Emergency wig-wag beacons",
+  "modeCandleName": "Candle",
+  "modeCandleDesc": "A gentle wick in a draught",
+  "sliderBlinkRate": "Blink Rate",
+  "@sliderBlinkRate": {
+    "description": "An effect slider label."
+  },
+  "sliderBreathShape": "Breath Shape",
+  "sliderBreathingRate": "Breathing Rate",
+  "sliderBurstSpeed": "Burst Speed",
+  "sliderLaunchRate": "Launch Rate",
+  "sliderScenePace": "Scene Pace",
+  "sliderCutsFlicker": "Cuts & Flicker",
+  "sliderStrokeTempo": "Stroke Tempo",
+  "sliderStrikeRate": "Strike Rate",
+  "sliderGlitchSpeed": "Glitch Speed",
+  "sliderGlitchRate": "Glitch Rate",
+  "sliderWeldLength": "Weld Length",
+  "sliderWeldGap": "Weld Gap",
+  "sliderTempo": "Tempo",
+  "sliderEnergy": "Energy",
+  "sliderCycleSpeed": "Cycle Speed",
+  "sliderFlickerSpeed": "Flicker Speed",
+  "sliderFlameIntensity": "Flame Intensity",
+  "sliderFlashSpeed": "Flash Speed",
+  "sliderFlashesPerSide": "Flashes per Side",
+  "sliderFlickerDepth": "Flicker Depth"
 }

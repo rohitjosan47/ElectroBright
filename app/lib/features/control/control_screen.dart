@@ -29,6 +29,7 @@ import '../../sessions/connection_manager.dart';
 import '../../sessions/fixture_session.dart';
 import '../fixture_settings/light_settings_screen.dart';
 import '../home/presence.dart';
+import '../shared/removed_screen.dart';
 import 'colour/colour_editor.dart';
 import 'effects/effects_panel.dart';
 import 'effects/mode_presentation.dart';
@@ -117,7 +118,7 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
     final Fixture? f = ref.watch(fixtureProvider(widget.fixtureId));
-    if (f == null) return const Scaffold();
+    if (f == null) return RemovedScreen(message: l.lightRemovedNotice);
     // Neither colour nor brightness frames rebuild the screen: the tone, the
     // orb, the pill and the tab body each watch what they show.
     final _ScreenState st = ref.watch(
