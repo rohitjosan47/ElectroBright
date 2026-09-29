@@ -245,6 +245,38 @@ void main() {
       expect(d.off, isFalse);
       expect(<double>[d.color.r, d.color.g, d.color.b], <double>[1, 1, 1]);
     }
+    // A white picked on an RGB + CCT light moves nothing the app shows: no
+    // levels to keep, and the light is shown as neutral white, not off.
+    const WhiteIntent whitePick = WhiteIntent(4000, 1);
+    final ChannelColor rgbcctWhite = engine.encode(
+      whitePick,
+      ChannelLayout.rgbcct,
+    );
+    final SteadyLevels? none = SteadyLevels.next(
+      null,
+      rgbcctWhite,
+      intent: engine.fullLevels(whitePick, ChannelLayout.rgbcct),
+    );
+    expect(none, isNull);
+    final DisplayColor pickedWhite = DisplayColor.ofScene(
+      EbScene.defaults(ChannelLayout.rgbcct).copyWith(color: rgbcctWhite),
+      sleeping: false,
+      steady: none,
+    );
+    expect(pickedWhite.off, isFalse);
+    expect(
+      <double>[pickedWhite.color.r, pickedWhite.color.g, pickedWhite.color.b],
+      <double>[1, 1, 1],
+    );
+    // On a tunable-white light the pick's levels are kept.
+    expect(
+      SteadyLevels.next(
+        null,
+        engine.encode(whitePick, ChannelLayout.cct),
+        intent: engine.fullLevels(whitePick, ChannelLayout.cct),
+      ),
+      isNotNull,
+    );
     // A light without colour LEDs shows its whites.
     final ChannelColor cct = ChannelColor(ChannelLayout.cct, <int>[0, 255]);
     expect(DisplayColor.emitted(cct, wp).max, greaterThan(0));

@@ -1,3 +1,5 @@
+import 'package:electrobright/app/providers.dart';
+import 'package:electrobright/core/color/light_tone.dart';
 import 'package:electrobright/core/model/channel_color.dart';
 import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/design/components/glass_controls.dart';
@@ -9,6 +11,7 @@ import 'package:electrobright/design/tone/light_level.dart';
 import 'package:electrobright/features/control/colour/colour_editor.dart';
 import 'package:electrobright/features/control/control_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/demo_app.dart';
@@ -195,6 +198,20 @@ void main() {
     expect(find.byType(HueWheel), findsNothing);
     await slideToEnd(t, 'Colour temperature', warm: true);
     expect(d.twin('Bedroom').color.values, <int>[0, 0, 0, 0, 255]);
+    // A picked white is shown as a neutral white, never as off.
+    final ProviderContainer container = ProviderScope.containerOf(
+      t.element(find.byType(ColourEditor)),
+    );
+    final DisplayColor shown = DisplayColor.ofScene(
+      d.session('Bedroom').status.view!.state.scene,
+      sleeping: false,
+      steady: container.read(steadyLevelsProvider(DemoApp.idOf('Bedroom'))),
+    );
+    expect(shown.off, isFalse);
+    expect(
+      <double>[shown.color.r, shown.color.g, shown.color.b],
+      <double>[1, 1, 1],
+    );
     // Colour: the whites go to zero.
     await t.tap(
       find.descendant(

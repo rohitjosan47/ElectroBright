@@ -31,6 +31,19 @@ void main() {
       expect(worst, lessThanOrEqualTo(1));
     });
 
+    test('an unusable temperature gives both whites, never cool white off', () {
+      expect(
+        engine
+            .encode(const WhiteIntent(double.nan, 1), ChannelLayout.cct)
+            .values,
+        <int>[255, 255],
+      );
+      expect(
+        engine.encode(const WhiteIntent(0, 1), ChannelLayout.rgbcct).values,
+        <int>[0, 0, 0, 255, 255],
+      );
+    });
+
     test('the LED temperatures are the ends of the range', () {
       expect(
         engine.encode(const WhiteIntent(6500, 1), ChannelLayout.cct).values,

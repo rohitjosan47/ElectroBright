@@ -59,9 +59,15 @@ class _ProbeFlowState extends State<ProbeFlow> {
   _Probe _phase = _Probe.sending;
   final Set<ProbeOutput> _lit = <ProbeOutput>{};
 
-  /// The output the light may still be showing (it ends by itself after
-  /// 3 s; ended early when the test moves on or closes).
+  /// The output the light may still be showing (ended early when the test
+  /// moves on or closes).
   ProbeOutput? _on;
+
+  /// The light ends a PROBE by itself after 3 s, so while the question is
+  /// open the output is sent again every [_keepLit]: a late look must not
+  /// read as "No".
+  static const Duration _keepLit = Duration(seconds: 2);
+  Timer? _keep;
 
   ProbeOutput get _output => ProbeOutput.values[_step];
 
@@ -73,22 +79,38 @@ class _ProbeFlowState extends State<ProbeFlow> {
 
   @override
   void dispose() {
+    _stopKeeping();
     final ProbeOutput? on = _on;
     if (on != null) unawaited(widget.session.probe(on.index, on: false));
     super.dispose();
   }
 
-  /// Lights the current output (again, for Retry).
+  void _stopKeeping() {
+    _keep?.cancel();
+    _keep = null;
+  }
+
+  /// Lights the current output (again, for Retry) and keeps it lit.
   Future<void> _light() async {
+    _stopKeeping();
     setState(() => _phase = _Probe.sending);
     final ProbeOutput o = _output;
     final EbResult r = await widget.session.probe(o.index, on: true);
     if (!mounted || o != _output) return;
     _on = r.isSuccess ? o : null;
     setState(() => _phase = r.isSuccess ? _Probe.asking : _Probe.noAnswer);
+    if (!r.isSuccess) return;
+    _keep = Timer.periodic(_keepLit, (_) {
+      if (!mounted || _phase != _Probe.asking || _on != o) {
+        _stopKeeping();
+        return;
+      }
+      unawaited(widget.session.probe(o.index, on: true));
+    });
   }
 
   void _answer({required bool lit}) {
+    _stopKeeping();
     if (lit) {
       _lit.add(_output);
     } else {
@@ -107,6 +129,7 @@ class _ProbeFlowState extends State<ProbeFlow> {
   }
 
   void _again() {
+    _stopKeeping();
     _lit.clear();
     setState(() => _step = 0);
     unawaited(_light());

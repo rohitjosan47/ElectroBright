@@ -187,6 +187,9 @@ final class ColourEngine {
   (double, double) _mix(double kelvin) {
     final double mCw = 1e6 / whitePoints.cwK;
     final double mWw = 1e6 / whitePoints.wwK;
+    // No usable temperature or range: both LEDs (neutral). Left to the clamp,
+    // a NaN would count as the warm end and switch cool white off.
+    if (!(kelvin > 0) || !kelvin.isFinite || !(mWw > mCw)) return (1, 1);
     final double t = ((1e6 / kelvin - mCw) / (mWw - mCw)).clamp(0.0, 1.0);
     final double cw = 1 - t, ww = t;
     final double peak = math.max(cw, ww);

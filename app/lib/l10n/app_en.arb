@@ -522,7 +522,7 @@
     }
   },
   "probeQuestion": "Is it lighting up?",
-  "probeLit": "The {output} output is on for 3 seconds.",
+  "probeLit": "The {output} output stays on until you answer.",
   "@probeLit": {
     "placeholders": {
       "output": {

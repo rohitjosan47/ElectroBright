@@ -158,9 +158,11 @@ void main() {
     expect(find.text('Output 1 of 5'), findsOneWidget);
     expect(find.text('Is it lighting up?'), findsOneWidget);
     expect(render(d, 'Hallway')['probe'], 1); // red
-    // It goes out by itself after 3 s; Retry lights it again.
+    // The light ends a PROBE by itself after 3 s; the app keeps it lit while
+    // the question is open (a late look must not read as "No"), and Retry
+    // lights it again.
     await settle(t, 4);
-    expect(render(d, 'Hallway')['probe'], 0);
+    expect(render(d, 'Hallway')['probe'], 1);
     await t.tap(key('probe-retry'));
     await settle(t, 1);
     expect(render(d, 'Hallway')['probe'], 1);

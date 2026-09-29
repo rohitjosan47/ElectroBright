@@ -6,6 +6,8 @@ Newest first. User-visible changes in plain words, from `git log` and the firmwa
 - **Channel test:** each LED is now confirmed by the light before its 1.2 s, and a dropped frame is sent again. Before, the frames were fire-and-forget on a latest-wins lane, so the last LED (warm white on RGBCCT) could be overwritten by the restore before it was ever seen. If the light stops answering, the test stops early, puts the look back and says so.
 - Android asks for Bluetooth permission (12+: scan and connect; 11 and older: location) and to switch Bluetooth on. Bluetooth off, permission denied, unsupported and Location Services off each have their own notice on Home, Add light and groups; Add light no longer searches forever. iOS: export-compliance flag and privacy manifest.
 - Accessibility and polish from the release review: the hue wheel exposes Hue, Saturation and Colour brightness to screen readers; a screen whose light or group was removed closes to Home with a notice.
+- A white picked on an RGB + CCT light no longer shows the light as off in the app (the tile and the screen stayed dark although the light was on).
+- **Find the right type** keeps each output lit until you answer instead of 3 s, so a late look no longer reads as "No". Troubleshooting gains a row for one dark LED colour.
 
 ## Firmware 3.8.2 (29 Sep)
 - **Safer updates.** A newly installed firmware confirms itself only once it has also written to its storage and read it back, has its control and update services up, and has a spare slot big enough for the next update; otherwise the light returns to its previous firmware.

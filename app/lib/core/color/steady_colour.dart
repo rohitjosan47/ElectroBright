@@ -75,7 +75,12 @@ final class SteadyLevels {
     }
 
     if (intent != null && intent.length == layout.n) {
-      return SteadyLevels(channels, shown(intent));
+      final List<double> levels = shown(intent);
+      // A white picked on a light with colour LEDs moves nothing the app
+      // shows: no levels to keep, the display comes from the colour itself
+      // (a neutral white, not off).
+      if (levels.every((double x) => x <= 0)) return null;
+      return SteadyLevels(channels, levels);
     }
     final int top = _top(channels);
     if (prev != null) {
