@@ -218,7 +218,7 @@ and is fully covered by the host tests.
 
 Protocol command names are unchanged (`SPEED:` / `FREQUENCY:`). The **UI
 names** now describe what each slider really does (`core/ElectroBrightCore/src/render/ModeRegistry.h`
-must match the app's `mode_definition.dart`; the app test
+must match the app's `core/protocol/eb/mode_catalog.dart`; the app test
 `mode_registry_sync_test.dart` enforces this).
 
 | # | Mode | Speed slider | Frequency slider |
@@ -301,7 +301,7 @@ How this firmware differs from the original (pre-3.x) firmware:
 
 ## 6. Tests
 
-**Host tests** (`test/`: portable core, ASan + UBSan, `-Werror`): 222 tests.
+**Host tests** (`test/`: portable core, ASan + UBSan, `-Werror`): 238 tests.
 ```bash
 make -C firmware/test                 # portable check, all tests, fwsim
 make -C firmware/test run T=rgb       # filter by name

@@ -1,5 +1,5 @@
 # Host-side unit + simulation tests for the shared firmware core (core/ElectroBrightCore)
-# and the fixture profiles (fixtures/*/Fixture.h).
+# and the fixture profiles (core/ElectroBrightCore/src/fixture/Profiles.h).
 #   make            build and run all tests, then build fwsim
 #   make run T=club run only tests whose name contains "club"
 #   make portable   verify portable sources never include Arduino / ESP-IDF headers
@@ -15,7 +15,7 @@ SRC_DIR  := ../core/ElectroBrightCore/src
 BUILD    := build
 CXXFLAGS := -std=c++17 -O1 -g -Wall -Wextra -Werror -Wshadow -Wconversion -Wno-sign-conversion \
             -Wno-float-conversion -Wno-implicit-int-float-conversion -fno-omit-frame-pointer -ffp-contract=off -MMD -MP \
-            -I$(SRC_DIR) -I../fixtures
+            -I$(SRC_DIR)
 SAN      := -fsanitize=address,undefined -fno-sanitize-recover=undefined
 
 # Everything except the platform layer is portable.

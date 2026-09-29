@@ -35,7 +35,7 @@ See [`docs/wiring_guide.md`](../../../docs/wiring_guide.md) §8.
 
 ## Behaviour
 
-- **Whites are raw LED levels.** `COLOR:0,0,0,255,0` is pure cool white and `COLOR:0,0,0,0,255` is pure warm white; anything in between mixes them. The app will offer a Kelvin control that computes CW/WW. Colours and whites can be combined freely.
+- **Whites are raw LED levels.** `COLOR:0,0,0,255,0` is pure cool white and `COLOR:0,0,0,0,255` is pure warm white; anything in between mixes them. The app offers a colour temperature control that computes CW/WW. Colours and whites can be combined freely.
 - **Power-up and factory reset** show both white LEDs at full, RGB off (a neutral white).
 - **Police defaults:** A is amber, B is both whites.
 - **White from effects** (the Club white strobe and the Fireworks burst flash) lights **both** white LEDs together, a neutral flash.

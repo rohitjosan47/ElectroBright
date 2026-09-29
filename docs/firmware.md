@@ -86,4 +86,4 @@ How the light receives, verifies and rolls back an image: [firmware/README.md](.
 
 ## Tests
 
-`make -C firmware/test` (222 host tests), `make -C firmware/test conformance`, and the on-device `firmware/tools/fw_conformance.py`. See [testing.md](testing.md).
+`make -C firmware/test` (238 host tests), `make -C firmware/test conformance`, and the on-device `firmware/tools/fw_conformance.py`. See [testing.md](testing.md).

@@ -7,7 +7,7 @@ import '../core/protocol/eb/eb_fixture_catalog.dart';
 import '../core/protocol/eb/eb_scene.dart';
 import 'ota_twin.dart';
 
-/// Dart twin of the ElectroBright firmware (v3.8.0, the universal image: the
+/// Dart twin of the ElectroBright firmware (v3.8.2, the universal image: the
 /// fixture type is stored in the light, every type via [EbFixtureSpec]; with
 /// the wireless-update service, see ota_twin.dart): the command parser,
 /// controller, persistence policy, reply buffer and the BLE/control-task glue,

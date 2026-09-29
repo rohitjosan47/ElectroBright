@@ -30,7 +30,7 @@ With no lights saved, Home shows **Add your first light**.
 1. Switch the light on.
 2. On Home, look at the **Add light** button. A number on it tells you how many new lights are nearby.
 3. Tap **Add light** and pick your light from the list.
-4. The app connects and tells you what kind of light it found. Tap **Flash it** to make the light blink twice and chirp, so you know which one it is.
+4. The app connects and tells you what kind of light it found. Tap **Flash it** to make the light blink twice (and chirp, if its sound is on), so you know which one it is.
 5. Give it a name and tap **Save**. Nothing is saved until you do. **Cancel** leaves the light alone.
 
 A light that belongs to a neighbour? Tap **Not mine**. It disappears from the list and the badge. **Show hidden lights**, at the bottom of the add screen, brings them back.
@@ -79,7 +79,7 @@ Open them with **Light settings** in the toolbar on a light's screen, or by long
 
 - **Name**, **Favourite** and the light's type.
 - **What this light can do:** its LEDs, effects, presets and firmware version.
-- **Identify:** the light flashes twice and chirps.
+- **Identify:** the light flashes twice and, if its sound is on, chirps.
 - **Channel test:** lights each LED on its own for a moment, so you can check the wiring.
 - **Sound**, **Factory reset** and **Forget**.
 

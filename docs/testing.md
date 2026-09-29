@@ -55,7 +55,7 @@ No suite touches real hardware. Run these after a firmware change, with a meter 
 - [ ] **Noise:** no whine from the buck converter or strip at any level (PWM is 25 kHz; see [wiring_guide.md](wiring_guide.md)).
 - [ ] **MOSFET warmth:** after 10 min at 50 % and at 100 %, MOSFETs are no more than warm to the touch.
 - [ ] **CCT sweep:** Temperature sweep (Rainbow on CCT) glides warm↔cool at steady brightness, no steps.
-- [ ] **Identify:** two crisp flashes and one chirp, then the previous look; also while asleep.
+- [ ] **Identify:** two crisp flashes and one chirp (sound on), then the previous look; also while asleep.
 
 ### Groups (two or more real lights)
 - [ ] Brightness, effect and timer reach every following light.

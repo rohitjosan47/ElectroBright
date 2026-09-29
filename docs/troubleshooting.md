@@ -37,7 +37,9 @@ Settings → Advanced → Developer tools → a light → **Diagnostics** shows 
 | `up` | Uptime in seconds. | Grows; a small value you didn't cause means a restart. |
 | `rst` | Last restart reason (below). | Power on, software, or USB. |
 | `slot` | Firmware slot running (0 or 1, 3.8.0+). | Changes after each successful update. |
-| `rb` | 1 if the last wireless update was rolled back (3.8.0+). | 0. |
+| `rb` | 1 if a rollback has happened since that slot was last written (3.8.0+; the next install clears it). | 0. |
+| `pv` | 1 while a newly installed firmware has not confirmed itself yet (3.8.2+). | 0 after a few seconds. |
+| `endms` | The last update's final check (END to `END_OK`), ms; 0 when none recorded (3.8.2+). | Any. |
 
 ### Counters
 
@@ -54,7 +56,7 @@ Settings → Advanced → Developer tools → a light → **Diagnostics** shows 
 | `err` | Rejected commands. | Low. |
 | `coal` | Lines superseded by a newer one before running. | Any (normal while dragging). |
 | `ovf` | Over-long lines dropped. | 0. |
-| `rej` | Garbage bytes dropped. | 0. |
+| `rej` | Garbage lines dropped. | 0. |
 | `sdrop` | Writes dropped, receive stream full. | 0 or low. |
 | `nretry` | Notify retries (Bluetooth stack busy). | Low. |
 | `edrop` | Reply lines dropped (buffer full). | 0. |
@@ -75,7 +77,7 @@ The ESP-IDF `esp_reset_reason_t` value.
 | 0 | Unknown | Not determined. |
 | 1 | Power on | Normal power-up. |
 | 2 | Reset pin | The board's reset button or pin. |
-| 3 | Software | A deliberate restart: after SET_TYPE, an update, or a factory reset. |
+| 3 | Software | A deliberate restart: after SET_TYPE or an update (a factory reset does not restart the light). |
 | 4 | Crash | Exception/panic. Report it. |
 | 5 | Interrupt watchdog | An interrupt handler hung. Report it. |
 | 6 | Task watchdog | A task stopped running (also the **Freezes** rollback test). |

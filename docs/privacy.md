@@ -44,12 +44,12 @@ A light stores nothing about your phone or you. It has no internet connection an
 
 ## What was verified, and how
 
-Checked in the code on 2026-09-28:
+Checked in the code on 2026-09-30:
 
-- **Dependencies:** `app/pubspec.yaml` lists only `flutter_reactive_ble`, `flutter_riverpod`, `liquid_glass_widgets`, `path_provider`, `shared_preferences`, `intl`, `collection`, `meta`, `cupertino_icons` and the Flutter SDK. A search of `app/pubspec.lock` (all 94 packages, including transitive ones) found no HTTP, Firebase, Sentry, analytics, URL-launching or connectivity package.
+- **Dependencies:** `app/pubspec.yaml` lists only `flutter_reactive_ble`, `flutter_riverpod`, `liquid_glass_widgets`, `path_provider`, `shared_preferences`, `intl`, `collection`, `meta`, `cupertino_icons` and the Flutter SDK. A search of `app/pubspec.lock` (all 92 packages, including transitive ones) found no HTTP, Firebase, Sentry, analytics, URL-launching or connectivity package.
 - **Network code:** a search of `app/lib` for `HttpClient`, `Socket`, `WebSocket`, `Uri.parse` and `launchUrl` found no uses.
 - **Internet permission:** the release Android manifest (`app/android/app/src/main/AndroidManifest.xml`) has no `INTERNET` permission. Only the debug and profile manifests add it, which Flutter needs for development tools.
 - **Logging:** the one `developer.log` call in `app/lib` (`sessions/connection_manager.dart`) runs inside an `assert`, so only in debug builds, and only to the local device log. Bluetooth tracing is also debug-only (commit de2545d).
 - **Storage:** every store read and write goes through `JsonStore` or the one-time `shared_preferences` import.
 
-Not verified: the behaviour of the operating system and third-party packages beyond their source not using the network. There is no iOS privacy manifest (`PrivacyInfo.xcprivacy`) yet; see [release.md](release.md).
+Not verified: the behaviour of the operating system and third-party packages beyond their source not using the network. The iOS privacy manifest is `app/ios/Runner/PrivacyInfo.xcprivacy`; see [release.md](release.md).

@@ -33,7 +33,7 @@ See [`docs/wiring_guide.md`](../../../docs/wiring_guide.md) §9.
 
 ## Behaviour
 
-- **Whites are raw LED levels.** `COLOR:255,0` is pure cool white and `COLOR:0,255` is pure warm white; anything in between mixes them. The app will offer a Kelvin control that computes the two values.
+- **Whites are raw LED levels.** `COLOR:255,0` is pure cool white and `COLOR:0,255` is pure warm white; anything in between mixes them. The app offers a colour temperature control that computes the two values.
 - **Power-up and factory reset** show both whites at full.
 - **Police defaults** (manual colours): A is warm, B is cool.
 - **Modes that make their own colours** show them as white temperature: Rainbow, TV, auto Police, the auto Fireworks and Club palettes, and the Fireworks embers.
@@ -48,4 +48,4 @@ See [`docs/wiring_guide.md`](../../../docs/wiring_guide.md) §9.
 
 Run `firmware/tools/install_ide_core.sh` once. Then open `ElectroBright_CCT.ino` in the Arduino IDE (board **ESP32C3 Dev Module**) and upload. See [`firmware/README.md`](../../README.md).
 
-**Status:** host-tested and simulator-tested, including the conformance suite against fwsim. It still needs a run on real hardware with `firmware/tools/fw_conformance.py --name CCT`. The app (`app/`) supports this type.
+**Status:** host-tested and simulator-tested, including the conformance suite against fwsim. It still needs a run on real hardware with `firmware/tools/fw_conformance.py --name _CCT_`. The app (`app/`) supports this type.
