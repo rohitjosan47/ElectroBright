@@ -444,6 +444,14 @@ final class EbSession {
     _changed();
   }
 
+  /// Completes once the latest colour and brightness reached the light with
+  /// response (a fence, released at once). Throws [LinkClosedException] when
+  /// the link ended and [FenceFailed] when the light kept refusing the frame.
+  Future<void> lookDelivered() async {
+    await _stream.fenceAndHold();
+    _stream.release();
+  }
+
   /// Sets the base colour; [live] while dragging (unreliable, paced frames).
   /// [color] must have the light's layout. Returns the change's sequence
   /// number (its [EbColorOrigin]), or null when nothing was set.

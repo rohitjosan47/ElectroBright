@@ -81,6 +81,21 @@ class _LightSettingsScreenState extends ConsumerState<LightSettingsScreen> {
     }
   }
 
+  /// Runs the channel test; says so if it had to stop before every LED.
+  Future<void> _channelTest(FixtureSession session, AppLocalizations l) async {
+    final bool complete = await session.channelTest(
+      onChannel: (int? c) {
+        if (mounted) setState(() => _testing = c);
+      },
+    );
+    if (complete || !mounted) return;
+    showGlassToast(
+      context,
+      l.channelTestStopped,
+      icon: Icons.error_outline_rounded,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
@@ -222,15 +237,7 @@ class _LightSettingsScreenState extends ConsumerState<LightSettingsScreen> {
                     )
                   : null,
               onTap: ready && !_busy
-                  ? () => unawaited(
-                      _run(
-                        () => session.channelTest(
-                          onChannel: (int? c) {
-                            if (mounted) setState(() => _testing = c);
-                          },
-                        ),
-                      ),
-                    )
+                  ? () => unawaited(_run(() => _channelTest(session, l)))
                   : null,
             ),
             SwitchListTile(

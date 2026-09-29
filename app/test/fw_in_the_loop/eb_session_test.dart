@@ -3,6 +3,7 @@
 @Tags(<String>['fwsim'])
 library;
 
+import 'package:electrobright/core/ble/ble_link.dart';
 import 'package:electrobright/core/model/channel_color.dart';
 import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/protocol/eb/eb_constants.dart';
@@ -71,6 +72,57 @@ void main() {
       expect(h.link.writesWithoutResponse, greaterThan(5));
       expect(h.link.writesWithoutResponse, lessThan(40)); // paced, not 1:1
       await h.expectConverged();
+    });
+
+    test('lookDelivered completes once the look reached the light', () async {
+      h = await EbHarness.start();
+      // Nothing outstanding: at once, and nothing is written.
+      int writes = h.link.writes;
+      await h.run(h.session.lookDelivered());
+      expect(h.link.writes, writes);
+
+      // A live frame outstanding: a reliable one follows and completes it.
+      final int unreliable = h.link.writesWithoutResponse;
+      h.session.beginGesture(EbKeys.color);
+      h.session.setColor(ChannelColor.rgbw(9, 8, 7, 6), live: true);
+      await h.run(h.session.lookDelivered());
+      expect(h.link.writes, writes + 2);
+      expect(h.link.writesWithoutResponse, unreliable + 1);
+      expect(await h.deviceColor(), ChannelColor.rgbw(9, 8, 7, 6));
+
+      // Its hold is released: later frames still flow.
+      writes = h.link.writes;
+      h.session.setColor(ChannelColor.rgbw(1, 2, 3, 4), live: true);
+      await h.settle();
+      expect(h.link.writes, greaterThan(writes));
+      expect(await h.deviceColor(), ChannelColor.rgbw(1, 2, 3, 4));
+      h.session.endGesture(EbKeys.color);
+      await h.settle();
+      await h.expectConverged();
+    });
+
+    test('lookDelivered sends a refused frame again', () async {
+      h = await EbHarness.start();
+      h.link.refuseNextWrites = 1;
+      h.session.setColor(ChannelColor.rgbw(5, 6, 7, 8));
+      await h.run(h.session.lookDelivered());
+      expect(h.link.refuseNextWrites, 0);
+      expect(await h.deviceColor(), ChannelColor.rgbw(5, 6, 7, 8));
+      await h.settle();
+      await h.expectConverged();
+    });
+
+    test('lookDelivered fails when the link ends', () async {
+      h = await EbHarness.start();
+      h.session.setColor(ChannelColor.rgbw(5, 6, 7, 8), live: true);
+      // The expectation listens before the link goes, so the error is never
+      // unhandled whichever microtask completes first.
+      final Future<void> failing = expectLater(
+        h.session.lookDelivered(),
+        throwsA(isA<LinkClosedException>()),
+      );
+      await h.link.drop();
+      await h.run(failing);
     });
 
     test(

@@ -465,6 +465,7 @@
   "version": "Version",
   "factoryLook": "Factory look",
   "channelTestHint": "Lights each LED on its own, then puts your look back.",
+  "channelTestStopped": "The channel test stopped early because the light didn't answer. Your look was put back.",
   "identifyHint": "Blinks the light twice.",
   "identifyUnreachable": "{name} didn't connect.",
   "@identifyUnreachable": {

@@ -57,8 +57,11 @@ final class FwSimLink implements BleLink {
   Future<void> _lock = Future<void>.value();
   int _inFlight = 0;
 
-  /// Test knobs: make the next write(s) fail as if the stack refused them.
+  /// Test knobs: make the next write(s) fail as if the link had dropped
+  /// ([failNextWrites]), or be refused by the stack on a link that stays up
+  /// ([refuseNextWrites]).
   int failNextWrites = 0;
+  int refuseNextWrites = 0;
 
   int writes = 0;
   int writesWithoutResponse = 0;
@@ -110,6 +113,10 @@ final class FwSimLink implements BleLink {
     if (failNextWrites > 0) {
       failNextWrites--;
       throw const LinkClosedException(LinkLossReason.failed);
+    }
+    if (refuseNextWrites > 0) {
+      refuseNextWrites--;
+      throw StateError('write refused');
     }
     writes++;
     if (!withResponse) writesWithoutResponse++;

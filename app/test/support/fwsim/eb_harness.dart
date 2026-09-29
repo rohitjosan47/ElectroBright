@@ -165,6 +165,11 @@ final class EbHarness {
     expect(session.view.pending, isEmpty, reason: 'pending $reason');
   }
 
+  /// The colour the light holds (its scene, fwsim STATE).
+  Future<ChannelColor> deviceColor() async => _rgbw(
+    ((await link.deviceState())['scene']! as Map<String, Object?>)['color'],
+  );
+
   /// Firmware counters (fwsim STATE stats).
   Future<Map<String, Object?>> deviceStats() async =>
       (await link.deviceState())['stats']! as Map<String, Object?>;

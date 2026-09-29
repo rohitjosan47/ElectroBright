@@ -14,6 +14,16 @@ void main() {
   Future<void> settle(WidgetTester t, [int seconds = 2]) =>
       DemoApp.settle(t, seconds);
 
+  /// Pumps 100 ms at a time until exactly one widget matches [finder] (at
+  /// most [seconds]).
+  Future<void> until(WidgetTester t, Finder finder, {int seconds = 4}) async {
+    for (int i = 0; i < seconds * 10; i++) {
+      if (finder.evaluate().length == 1) return;
+      await t.pump(const Duration(milliseconds: 100));
+    }
+    expect(finder, findsOneWidget);
+  }
+
   Future<DemoApp> open(WidgetTester t, String name) async {
     t.view.physicalSize = const Size(1179, 7000);
     t.view.devicePixelRatio = 3;
@@ -70,10 +80,17 @@ void main() {
     await t.pump(const Duration(milliseconds: 600));
     expect(find.text('Lighting Red'), findsOneWidget);
     expect(d.twin('Bedroom').color.values, <int>[255, 0, 0, 0, 0]);
-    await settle(t, 3);
-    expect(find.text('Lighting Cool white'), findsOneWidget);
+    // Each LED is reported once the light confirmed it: the twin already
+    // shows it when its name appears.
+    await until(t, find.text('Lighting Cool white'));
     expect(d.twin('Bedroom').color.values, <int>[0, 0, 0, 255, 0]);
-    await settle(t, 4);
+    await until(t, find.text('Lighting Warm white'));
+    expect(d.twin('Bedroom').color.values, <int>[0, 0, 0, 0, 255]);
+    // The last LED gets its whole 1.2 s before the look comes back.
+    await settle(t, 1);
+    expect(find.text('Lighting Warm white'), findsOneWidget);
+    expect(d.twin('Bedroom').color.values, <int>[0, 0, 0, 0, 255]);
+    await settle(t, 3);
     expect(d.twin('Bedroom').color.values, before);
     expect(find.textContaining('Lighting'), findsNothing);
     await DemoApp.shutDown(t);

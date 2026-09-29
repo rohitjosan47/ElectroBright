@@ -94,7 +94,7 @@ A group exists with two or more lights, and new lights join their group on their
 - **Broadcast, not sync:** the same commands go to every light, but each light runs its own effect clock. Two lights running Rainbow are not in step.
 - **Connection limits:** while a group is open, the app connects its lights, favourites first and then in Home's order, up to what this phone allows at once (8 on iOS, 5 on Android). Any others are reported as left out. Leaving the screen releases them after the normal idle grace (60 s).
 - **Catch-up:** a light that connects while the screen is open gets what the group was sent while the screen was open, as far as it applies to it: its look (its own from an applied preset), brightness (at its level), power, then the timer's remaining time (skipped if under 5 s). Nothing is replayed after you leave.
-- **Lights in this group:** each light's type, name, connection and state in the group, its level, **Flash it** (Identify) and its switch. Excluded, own settings, levels and presets are remembered.
+- **Lights in this group:** each light's type, name, connection and state in the group, its level, **Flash** (Identify) and its switch. Excluded, own settings, levels and presets are remembered.
 
 ## 4. Light settings
 - **Name**, **Favourite**, and **Type** (read from the firmware).
@@ -103,8 +103,8 @@ A group exists with two or more lights, and new lights join their group on their
   - effects "12 of 13", and why any are missing;
   - its presets, timer and sound;
   - the firmware model, version and raw capabilities (long-press to copy).
-- **Identify** (Home, the add flow, **Flash it** in groups): a light whose firmware has IDENTIFY (3.6.1+) is sent just that; it flashes twice, chirps once and restores itself, also while asleep. Older firmware dips twice from its level to the lowest one and back (150 ms each) and gets its exact level again: never off, no power change, no sound, and nothing while it sleeps.
-- **Channel test** lights each LED on its own for 1.2 s, then restores the look. If the link drops during the test, the look is restored when the light returns within 60 s.
+- **Identify** (Home, **Flash it** in the add flow, **Flash** in groups): a light whose firmware has IDENTIFY (3.6.1+) is sent just that; it flashes twice, chirps once if its sound is on, and restores itself, also while asleep. Older firmware dips twice from its level to the lowest one and back (150 ms each) and gets its exact level again: never off, no power change, no sound, and nothing while it sleeps.
+- **Channel test** lights each LED on its own for 1.2 s, then restores the look. Each frame is confirmed by the light before its time starts, and a dropped write is sent again. If the light stops answering (or the link drops), the test stops early, puts the look back and says so; a look lost with the link is restored when the light returns within 60 s.
 - **Sound**, **Factory reset** (the confirmation shows the type's factory look; it also clears the preset names) and **Forget**.
 
 ## 4a. Developer tools
