@@ -65,7 +65,7 @@ git tag -a v1.0-rc2 -m "Release candidate 2: app 2.0.0+200, firmware 3.8.2"
 git tag -a v1.0 -m "Release 1.0: app 2.0.0+200, firmware 3.8.2"
 ```
 
-`fw-<version>` tags (`fw-3.4.0-golden`, `fw-3.6.0`) mark firmware milestones between releases; `old-app-final` marks the removal of the previous app. The repository is `origin` = https://github.com/rohitjosan47/ElectroBright (private).
+`fw-<version>` tags (`fw-3.4.0-golden`, `fw-3.6.0`) mark firmware milestones between releases; `old-app-final` marks the removal of the previous app. The repository is `origin` = https://github.com/rohitjosan47/ElectroBright (private). Test builds (`app/dist/*.apk`) are attached to the GitHub release of their tag, marked as a pre-release until the store release.
 
 ## 6. Store submission checklist
 

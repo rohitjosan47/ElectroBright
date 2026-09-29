@@ -7,3 +7,6 @@ firmware/test/build/
 
 # Wireless-update images (tools/build_update_image.sh)
 firmware/update/dist/
+
+# Built APKs handed out for testing (attached to GitHub releases)
+app/dist/
