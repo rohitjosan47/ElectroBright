@@ -155,7 +155,7 @@ A group exists with two or more lights, and new lights join their group on their
 ```bash
 cd app
 flutter run                                  # simulator (demo lights) or a connected phone
-flutter run --release -d <iphone-id>         # install on an iPhone (Developer Mode on)
+flutter run --release -d <iphone-id>         # install on an iPhone (Developer Mode on; full steps and the Android APK: README.md → Get the app)
 tool/check.sh                                # format, analyze, firmware host tests, all app tests (conformance: make -C ../firmware/test conformance)
 flutter test integration_test -d <simulator> # end-to-end flow with every demo light type
 ```

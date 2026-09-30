@@ -4,7 +4,7 @@ Flutter app (iOS, Android) for every ElectroBright fixture: RGBW, RGB, RGBCCT, C
 
 ```bash
 flutter run                              # simulator: choose "Try demo lights"
-flutter run --release -d <iphone-id>     # install on an iPhone
+flutter run --release -d <iphone-id>     # install on an iPhone (full steps: README.md → Get the app)
 tool/check.sh                            # format, analyze, firmware + app tests
 tool/bundle_firmware.sh                  # rebuild the bundled update image (+ debug-only rollback test images)
 ```

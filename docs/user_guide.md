@@ -20,6 +20,7 @@ The app shows only the controls your light can use.
 
 ## First launch
 
+- **Get the app:** the repository's [README](../README.md#get-the-app) has the Android APK download and the iPhone steps.
 - **Try demo lights** gives you one pretend light of every kind. Use them to explore the app without any hardware. A "Demo" badge marks them. You can switch to demo lights later from Settings on Home.
 - **Your lights:** the app asks for Bluetooth permission. Allow it, or the app can't find or control your lights. On Android, the app may also ask for location permission. Older Android versions need it to scan for Bluetooth devices. The app doesn't use your location.
 

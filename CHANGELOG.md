@@ -8,6 +8,7 @@ Newest first. User-visible changes in plain words, from `git log` and the firmwa
 - Accessibility and polish from the release review: the hue wheel exposes Hue, Saturation and Colour brightness to screen readers; a screen whose light or group was removed closes to Home with a notice.
 - A white picked on an RGB + CCT light no longer shows the light as off in the app (the tile and the screen stayed dark although the light was on).
 - **Find the right type** keeps each output lit until you answer instead of 3 s, so a late look no longer reads as "No". Troubleshooting gains a row for one dark LED colour.
+- The white mixer treats an unusable temperature as neutral white instead of switching cool white off.
 
 ## Firmware 3.8.2 (29 Sep)
 - **Safer updates.** A newly installed firmware confirms itself only once it has also written to its storage and read it back, has its control and update services up, and has a spare slot big enough for the next update; otherwise the light returns to its previous firmware.

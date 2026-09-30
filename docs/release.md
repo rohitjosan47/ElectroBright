@@ -58,14 +58,14 @@ flutter build ipa --release            # then upload with Xcode Organizer or Tra
 
 ## 5. Tag
 
-A release is tagged `v<major>.<minor>`, its candidates `v<major>.<minor>-rc<n>`; the review candidate was `v1.0-rc1`, so the first store release is `v1.0`. The release number is the product's and independent of the app version (`2.0.0+200`) and the firmware version (`3.8.2`); the tag message records both:
+A release is tagged `v<major>.<minor>`, its candidates `v<major>.<minor>-rc<n>`; the review candidate was `v1.0-rc1`, test builds followed as `v1.0-rc2` and `v1.0-rc3`, so the first store release is `v1.0`. The release number is the product's and independent of the app version (`2.0.0+200`) and the firmware version (`3.8.2`); the tag message records both:
 
 ```bash
-git tag -a v1.0-rc2 -m "Release candidate 2: app 2.0.0+200, firmware 3.8.2"
+git tag -a v1.0-rc4 -m "Release candidate 4: app 2.0.0+200, firmware 3.8.2"
 git tag -a v1.0 -m "Release 1.0: app 2.0.0+200, firmware 3.8.2"
 ```
 
-`fw-<version>` tags (`fw-3.4.0-golden`, `fw-3.6.0`) mark firmware milestones between releases; `old-app-final` marks the removal of the previous app. The repository is `origin` = https://github.com/rohitjosan47/ElectroBright (private). Test builds (`app/dist/*.apk`) are attached to the GitHub release of their tag, marked as a pre-release until the store release.
+`fw-<version>` tags (`fw-3.4.0-golden`, `fw-3.6.0`) mark firmware milestones between releases; `old-app-final` marks the removal of the previous app. The repository is `origin` = https://github.com/rohitjosan47/ElectroBright (public since 2026-09-30). Test builds (`app/dist/*.apk`) are attached to the GitHub release of their tag, marked as a pre-release until the store release; the README's **Get the app** section links the current one, so update its links and sizes with every release.
 
 ## 6. Store submission checklist
 
