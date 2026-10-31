@@ -2,6 +2,13 @@
 
 Newest first. User-visible changes in plain words, from `git log` and the firmware golden changelog (the comment at the top of `firmware/test/golden/Scenarios.cpp`). All dates are 2026. The app has been version 2.0.0 (`app/pubspec.yaml`) since the rebuild started, so app entries are grouped by the firmware they shipped with. Design reasons are in [docs/design_decisions.md](docs/design_decisions.md).
 
+## Release 1.0: app 2.0.0 with firmware 3.8.2 (1 Nov)
+- **Colour / White / Custom (RGB + CCT):** the tab you pick stays put, each tab returns to its last value, and Custom mixes colour and white (the wheel sets the colour LEDs, the temperature the white LEDs). Moving a colour channel no longer moves the temperature.
+- **Colour temperature:** the slider follows how the LEDs mix, so its centre is exactly where cool and warm are both at full, marked with a notch the knob snaps to. The light echoing a value back no longer moves the knob.
+- **Colour square:** the knob stays exactly where it was put, even for dark colours; black keeps its hue instead of turning red, and each light (and the colour group) remembers its last hue.
+- **Previews and screen colours:** the orb and the screen's palette follow the square smoothly (including its brightness axis) without flicker, on a light's screen and for colour groups; the group's small orbs dim with each light's output.
+- **Flash:** the Flash / Identify buttons play a two-beat burst in time with the light.
+
 ## App 2.0.0 with firmware 3.8.2 (30 Sep)
 - **Channel test:** each LED is now confirmed by the light before its 1.2 s, and a dropped frame is sent again. Before, the frames were fire-and-forget on a latest-wins lane, so the last LED (warm white on RGBCCT) could be overwritten by the restore before it was ever seen. If the light stops answering, the test stops early, puts the look back and says so.
 - Android asks for Bluetooth permission (12+: scan and connect; 11 and older: location) and to switch Bluetooth on. Bluetooth off, permission denied, unsupported and Location Services off each have their own notice on Home, Add light and groups; Add light no longer searches forever. iOS: export-compliance flag and privacy manifest.
