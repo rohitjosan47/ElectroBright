@@ -43,11 +43,18 @@ class GlassSlider extends StatefulWidget {
     this.enabled = true,
     this.glassTier = GlassTier.panel,
     this.elevated = true,
+    this.marks = const <double>[],
     super.key,
   }) : assert(trailing == null || trailingBuilder == null),
        assert(leading == null || leadingBuilder == null);
 
   final double value;
+
+  /// Values marked on a gradient track; the knob snaps to one within
+  /// [markSnap] of the range.
+  final List<double> marks;
+  static const double markSnap = 0.015;
+
   final double min;
   final double max;
   final int? divisions;
@@ -205,6 +212,10 @@ class _GlassSliderState extends State<GlassSlider>
   double _snap(double v) {
     final int? d = widget.divisions;
     final double c = v.clamp(widget.min, widget.max);
+    final double span = widget.max - widget.min;
+    for (final double m in widget.marks) {
+      if ((c - m).abs() <= GlassSlider.markSnap * span) return m;
+    }
     if (d == null || d == 0) return c;
     final double step = (widget.max - widget.min) / d;
     return widget.min + ((c - widget.min) / step).round() * step;
@@ -359,6 +370,7 @@ class _GlassSliderState extends State<GlassSlider>
                       min: widget.min,
                       max: widget.max,
                       track: widget.track,
+                      marks: widget.marks,
                       dark: dark,
                     ),
                     child: Stack(
@@ -420,6 +432,7 @@ class _TrackPainter extends CustomPainter {
     required this.min,
     required this.max,
     required this.track,
+    required this.marks,
     required this.dark,
   }) : super(repaint: value);
 
@@ -427,6 +440,7 @@ class _TrackPainter extends CustomPainter {
   final double min;
   final double max;
   final List<Color>? track;
+  final List<double> marks;
   final bool dark;
 
   @override
@@ -450,6 +464,30 @@ class _TrackPainter extends CustomPainter {
         Paint()
           ..shader = LinearGradient(colors: t).createShader(Offset.zero & size),
       );
+      // Marks: a short notch at the top and bottom of the gradient, under
+      // the knob (it covers them when it sits on one).
+      for (final double m in marks) {
+        final double x = GlassSlider.gradientKnob(
+          size,
+          ((m - min) / (max - min)).clamp(0.0, 1.0),
+        ).centre.dx;
+        final double len = size.height * 0.16;
+        final Paint notch = Paint()
+          ..strokeWidth = 2
+          ..strokeCap = StrokeCap.round
+          ..color = Colors.white.withValues(alpha: 0.9);
+        final Paint shade = Paint()
+          ..strokeWidth = 3.5
+          ..strokeCap = StrokeCap.round
+          ..color = Colors.black.withValues(alpha: dark ? 0.35 : 0.18);
+        for (final (double y0, double y1) in <(double, double)>[
+          (g + 3, g + 3 + len),
+          (size.height - g - 3 - len, size.height - g - 3),
+        ]) {
+          canvas.drawLine(Offset(x, y0), Offset(x, y1), shade);
+          canvas.drawLine(Offset(x, y0), Offset(x, y1), notch);
+        }
+      }
       final (:Offset centre, :double radius) = GlassSlider.gradientKnob(
         size,
         fraction,
@@ -534,6 +572,7 @@ class _TrackPainter extends CustomPainter {
       old.min != min ||
       old.max != max ||
       old.track != track ||
+      !listEquals(old.marks, marks) ||
       old.dark != dark;
 }
 

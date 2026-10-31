@@ -35,14 +35,23 @@ final class DisplayColor {
   }) {
     final ChannelLayout layout = s.layout;
     LinearRgb c;
+    // The colour's own level (perceptual 0..1): the square's value axis.
+    double level = 1;
+    bool black = false;
     if (EbModeCatalog.usesPickedColor(s)) {
       final LinearRgb raw = LayoutPreview.whitesOnly(s.color)
           ? LayoutPreview.neutral
           : emitted(s.color, whitePoints);
-      // Black stays black (the light is off), whatever hue is held.
-      c = raw.max <= 1e-6
-          ? raw
-          : SteadyLevels.colourOf(steady, s.color, whitePoints) ?? raw;
+      final LinearRgb? held = SteadyLevels.colourOf(
+        steady,
+        s.color,
+        whitePoints,
+      );
+      level = s.color.maxChannel / 255;
+      // Black is off, but keeps the held hue as the graphite's trace: the
+      // palette fades into it as the output nears zero, never a step.
+      black = raw.max <= 1e-6;
+      c = held ?? raw;
     } else {
       // The effect makes its own colours: represent it by its accent colour,
       // shown the way this light renders colour (white temperature or
@@ -54,8 +63,8 @@ final class DisplayColor {
     }
     return DisplayColor(
       c.normalized(),
-      s.brightness / 255,
-      off: sleeping || c.max <= 1e-6 || s.brightness == 0,
+      s.brightness / 255 * level,
+      off: sleeping || black || c.max <= 1e-6 || s.brightness == 0,
     );
   }
 
@@ -191,6 +200,12 @@ final class LightTone {
 
   static const double _neutralChroma = 0.03;
 
+  /// Smoothstep of [x] clamped to 0..1.
+  static double _smooth(double x) {
+    final double t = x.clamp(0.0, 1.0);
+    return t * t * (3 - 2 * t);
+  }
+
   /// The neutral tone for "no light" (first launch, nothing connected).
   static LightTone neutral({required bool dark}) =>
       dark ? _neutralDark : _neutralLight;
@@ -202,15 +217,29 @@ final class LightTone {
 
   static LightTone derive(DisplayColor d, {required bool dark}) {
     Oklch o = ColorScience.toOklch(d.color);
-    double chroma = o.c;
-    double hue = o.h;
-    if (chroma < _neutralChroma) {
-      // Whites take a hint of their temperature: warm amber or cool blue.
+    // Whites take a hint of their temperature (warm amber, cool blue),
+    // blended in by how grey the colour is: no threshold anywhere, so a
+    // colour dragged across the square never flips the palette's hue.
+    final double colourWeight = _smooth(o.c / _neutralChroma);
+    double a = o.c * math.cos(o.h * math.pi / 180) * colourWeight;
+    double b = o.c * math.sin(o.h * math.pi / 180) * colourWeight;
+    if (colourWeight < 1) {
       final double k = ColorScience.estimateKelvin(d.color);
-      hue = k < 4500 ? 70 : 245;
-      chroma = k < 3500 || k > 6000 ? 0.02 : 0.008;
+      // Signed: warm below 4500 K, cool above, none at 4500 K itself (so
+      // the switch from amber to blue passes through neutral).
+      final ({double c, double h}) hint = k < 4500
+          ? (c: 0.02 * ((4500 - k) / 1000).clamp(0.0, 1.0), h: 70)
+          : (c: 0.02 * ((k - 4500) / 1500).clamp(0.0, 1.0), h: 245);
+      a += hint.c * math.cos(hint.h * math.pi / 180) * (1 - colourWeight);
+      b += hint.c * math.sin(hint.h * math.pi / 180) * (1 - colourWeight);
     }
-    if (d.off) chroma *= 0.15; // graphite, a trace of the last hue
+    double chroma = math.sqrt(a * a + b * b);
+    final double hue = chroma <= 0
+        ? o.h
+        : (math.atan2(b, a) * 180 / math.pi + 360) % 360;
+    // Graphite with a trace of the last hue when off; fading there
+    // continuously as the output nears zero (the square's bottom edge).
+    chroma *= d.off ? 0.15 : 0.15 + 0.85 * _smooth(d.brightness / 0.3);
     o = Oklch(o.l, chroma, hue);
 
     Oklch stop(double l, double maxC) =>
@@ -271,14 +300,23 @@ final class LightTone {
               ? Oklch(0.75, math.min(o.c * 1.2, 0.2), o.h)
               // Light: a gentle wash of the light's colour, not grey, as
               // light as the hue is vivid (yellow near white, not olive).
+              // The hue's lightness counts by how vivid it is: near grey
+              // the hue is barely defined and must not move the wash.
               : Oklch(
-                  (LightInk.cuspLightness(o.h) - 0.04).clamp(0.8, 0.93),
+                  0.865 +
+                      ((LightInk.cuspLightness(o.h) - 0.04).clamp(0.8, 0.93) -
+                              0.865) *
+                          _smooth(o.c / 0.05),
                   math.min(o.c * 1.25, 0.2),
                   o.h,
                 ),
         ),
       ),
-      glowStrength: d.off ? 0 : (0.25 + 0.75 * d.brightness).clamp(0.0, 1.0),
+      // Fades out near zero output, meeting the off state without a step.
+      glowStrength: d.off
+          ? 0
+          : (0.25 + 0.75 * d.brightness).clamp(0.0, 1.0) *
+                _smooth(d.brightness / 0.3),
       accent: accentArgb,
       onAccent: onAccent,
       tint: tint,

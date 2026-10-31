@@ -260,7 +260,12 @@ final class ColourEngine {
       case ChannelLayout.rgbcct:
         final bool colour = c[0] > 0 || c[1] > 0 || c[2] > 0;
         final bool whites = c[3] > 0 || c[4] > 0;
-        if (colour && whites) return RawIntent(c);
+        // A mix being edited stays a mix, even when one side reaches zero.
+        if (hint is RawIntent || (colour && whites)) return RawIntent(c);
+        // All off: keep the side the user was on (black is not a white).
+        if (!colour && !whites && hint is HsvIntent) {
+          return HsvIntent(hint.hsv.copyWith(v: 0));
+        }
         if (!colour) return _decodeWhites(c[3], c[4], hint);
         return HsvIntent(_hsvOf(c, hint));
       case ChannelLayout.rgb:
@@ -283,6 +288,19 @@ final class ColourEngine {
     final double total = math.max(cw, ww);
     if (total <= 0) {
       return WhiteIntent(hint is WhiteIntent ? hint.kelvin : 4000, 0);
+    }
+    // The white last picked, if it encodes to these bytes (±1 for a light
+    // rounding differently): 8-bit whites cannot resolve the temperature at
+    // low levels, so re-deriving it would make the slider jump.
+    if (hint is WhiteIntent) {
+      final ChannelColor h = _encodeWhite(
+        hint.kelvin,
+        hint.level,
+        ChannelLayout.cct,
+      );
+      if ((h[0] - cwByte).abs() <= 1 && (h[1] - wwByte).abs() <= 1) {
+        return hint;
+      }
     }
     final double t = ww / (cw + ww);
     final double mCw = 1e6 / whitePoints.cwK;

@@ -25,6 +25,7 @@ import '../../sessions/fixture_session.dart';
 import '../../sessions/rituals.dart';
 import '../firmware_update/firmware_update_screen.dart';
 import '../home/bluetooth_notice.dart';
+import '../../design/components/flash_action.dart';
 
 enum _Step { pick, connecting, found, failed }
 
@@ -622,10 +623,18 @@ class _Found extends StatelessWidget {
               ),
               if (caps != null) ...<Widget>[
                 const SizedBox(height: Space.m),
-                OutlinedButton.icon(
-                  onPressed: identifying ? null : onIdentify,
-                  icon: const Icon(Icons.flare_rounded),
-                  label: Text(l.addIdentify),
+                FlashAction(
+                  builder: (_, Widget icon, VoidCallback flash) =>
+                      OutlinedButton.icon(
+                        onPressed: identifying
+                            ? null
+                            : () {
+                                flash();
+                                onIdentify();
+                              },
+                        icon: icon,
+                        label: Text(l.addIdentify),
+                      ),
                 ),
               ],
             ],

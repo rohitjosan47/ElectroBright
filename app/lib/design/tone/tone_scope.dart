@@ -7,10 +7,19 @@ import '../tokens/tokens.dart';
 /// Provides the current [LightTone] (the palette derived from the light's
 /// colour), gliding in OKLab on a [Motion.smooth] spring whenever it changes.
 class ToneScope extends StatefulWidget {
-  const ToneScope({required this.tone, required this.child, super.key});
+  const ToneScope({
+    required this.tone,
+    required this.child,
+    this.follow = false,
+    super.key,
+  });
 
   final LightTone tone;
   final Widget child;
+
+  /// A finger is on the colour: the palette follows it exactly, like the
+  /// orb (a spring retargeted every frame would lag and wobble).
+  final bool follow;
 
   /// The whole palette: rebuilt on every step of a glide.
   static LightTone of(BuildContext context) {
@@ -51,7 +60,9 @@ class _ToneScopeState extends State<ToneScope>
   void didUpdateWidget(ToneScope old) {
     super.didUpdateWidget(old);
     if (widget.tone == _to) return;
-    if (Motion.reduced(context) || widget.tone.dark != _to.dark) {
+    if (widget.follow ||
+        Motion.reduced(context) ||
+        widget.tone.dark != _to.dark) {
       _c.stop();
       _c.value = 1;
       _from = _to = widget.tone;

@@ -41,6 +41,7 @@ import '../control/timer_sheet.dart';
 import '../home/bluetooth_notice.dart';
 import '../shared/removed_screen.dart';
 import 'group_presets_tab.dart';
+import '../../design/components/flash_action.dart';
 
 enum _GroupTab { colour, white, effects, presets }
 
@@ -238,10 +239,24 @@ class _GroupTone extends ConsumerWidget {
           .select((Common<int> m) => m.value ?? EbModeCatalog.solid),
     );
     final bool anyOn = ref.watch(groupAnyOnProvider(kind));
+    // A finger on the group's colour: the palette follows it exactly (as on
+    // a light's screen), no spring retargeted every frame.
+    final bool following = ref
+        .watch(groupStatusProvider(kind))
+        .members
+        .any(
+          (GroupMember m) => ref.watch(
+            fixtureStatusProvider(m.id).select(
+              (FixtureStatus s) =>
+                  s.view?.gestures.contains(EbKeys.color) ?? false,
+            ),
+          ),
+        );
     // The same path as a single light's screen (ControlScreen): a colour
     // group reads as a light showing its colour, a white group as one of
     // its own white lights.
     return ToneScope(
+      follow: following,
       tone: LightTone.derive(
         DisplayColor.ofScene(
           t.look.copyWith(mode: mode),
@@ -271,13 +286,28 @@ typedef _GroupLookOf = ({
 /// (steadyLevelsProvider).
 _GroupLookOf _groupLook(WidgetRef ref, GroupKind kind) {
   if (kind == GroupKind.colour) {
+    final ChannelColor colour = ref.watch(
+      groupColourProvider(kind).select(_groupColour),
+    );
+    final ColourIntent? pick = ref.watch(
+      groupColourProvider(kind).select((Common<ColourIntent> c) => c.value),
+    );
     return (
-      look: EbScene.defaults(ChannelLayout.rgbcct).copyWith(
-        color: ref.watch(groupColourProvider(kind).select(_groupColour)),
-        brightness: 255,
-      ),
+      look: EbScene.defaults(ChannelLayout.rgbcct)
+          .copyWith(color: colour, brightness: 255),
       whitePoints: const LedWhitePoints(),
-      steady: null,
+      // The exact pick, not its 8-bit channels re-read (a different hue at
+      // low values, so the palette would jump as the square is dragged).
+      steady: pick is HsvIntent
+          ? SteadyLevels.next(
+              null,
+              colour,
+              intent: const ColourEngine().fullLevels(
+                pick,
+                ChannelLayout.rgbcct,
+              ),
+            )
+          : null,
     );
   }
   final ({LedWhitePoints wp, bool tunable}) c = ref.watch(
@@ -400,16 +430,19 @@ class _GroupOrb extends ConsumerWidget {
 }
 
 /// A light's steady colour as the rest of the app shows it (null before its
-/// first status), and whether it is on.
-({Color? colour, bool on}) _lightSwatch(WidgetRef ref, String id) {
-  final ({ChannelColor? color, bool on}) s = ref.watch(
+/// first status), and its output (brightness times the colour's level,
+/// 0 while off).
+({Color? colour, double level}) _lightSwatch(WidgetRef ref, String id) {
+  final ({ChannelColor? color, double level}) s = ref.watch(
     fixtureStatusProvider(id).select(
       (FixtureStatus s) => (
         color: s.state?.scene.color,
-        on:
-            s.state != null &&
-            !s.state!.sleeping &&
-            s.state!.scene.brightness > 0,
+        level: s.state == null || s.state!.sleeping
+            ? 0.0
+            : s.state!.scene.brightness /
+                  255 *
+                  s.state!.scene.color.maxChannel /
+                  255,
       ),
     ),
   );
@@ -422,7 +455,7 @@ class _GroupOrb extends ConsumerWidget {
     colour: c == null
         ? null
         : swatchOf(c, wp, steady: ref.watch(steadyLevelsProvider(id))),
-    on: s.on,
+    level: s.level,
   );
 }
 
@@ -434,13 +467,14 @@ class _MiniOrb extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final String? id = this.id;
-    final ({Color? colour, bool on}) s = id == null
-        ? (colour: null, on: false)
+    final ({Color? colour, double level}) s = id == null
+        ? (colour: null, level: 0.0)
         : _lightSwatch(ref, id);
     final Color colour = s.colour ?? const Color(0xFFFFF4E6);
-    final bool on = s.on;
+    // Dims with the light's output (the square's value axis included),
+    // never below the off look.
     return Opacity(
-      opacity: on ? 1 : 0.3,
+      opacity: 0.3 + 0.7 * s.level.clamp(0.0, 1.0),
       child: Container(
         width: _GroupOrb._size,
         height: _GroupOrb._size,
@@ -633,6 +667,7 @@ class _GroupColourTab extends ConsumerWidget {
       padding: const EdgeInsets.all(Space.m),
       child: ColourEditor(
         value: value,
+        memoryKey: 'group-${group.kind.name}',
         showChannels: false,
         enabled: enabled,
         onGestureStart: () => group.beginGesture(EbKeys.color),
@@ -1299,23 +1334,30 @@ class _GroupLightRow extends ConsumerWidget {
                     children: <Widget>[
                       Expanded(child: _trim(l, small, g.trim)),
                       const SizedBox(width: Space.xs),
-                      TextButton.icon(
-                        key: ValueKey<String>('flash-$id'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: fg,
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: Space.xs,
-                          ),
-                        ),
-                        onPressed: ready && session != null
-                            ? () => unawaited(session.identify())
-                            : null,
-                        icon: const Icon(Icons.flare_rounded, size: 18),
-                        label: Text(
-                          l.groupFlash,
-                          semanticsLabel: l.groupIdentify(fixture.name),
-                        ),
+                      FlashAction(
+                        iconSize: 18,
+                        builder: (_, Widget icon, VoidCallback flash) =>
+                            TextButton.icon(
+                              key: ValueKey<String>('flash-$id'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: fg,
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: Space.xs,
+                                ),
+                              ),
+                              onPressed: ready && session != null
+                                  ? () {
+                                      flash();
+                                      unawaited(session.identify());
+                                    }
+                                  : null,
+                              icon: icon,
+                              label: Text(
+                                l.groupFlash,
+                                semanticsLabel: l.groupIdentify(fixture.name),
+                              ),
+                            ),
                       ),
                     ],
                   ),
@@ -1368,12 +1410,12 @@ class _LightDot extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final String? id = this.id;
-    final ({Color? colour, bool on}) s = id == null
-        ? (colour: null, on: false)
+    final ({Color? colour, double level}) s = id == null
+        ? (colour: null, level: 0.0)
         : _lightSwatch(ref, id);
     final Color? colour = s.colour;
     return Opacity(
-      opacity: colour == null || s.on ? 1 : 0.35,
+      opacity: colour == null ? 1 : 0.35 + 0.65 * s.level.clamp(0.0, 1.0),
       child: Container(
         width: _size,
         height: _size,

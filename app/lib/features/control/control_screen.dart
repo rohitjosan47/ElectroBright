@@ -323,13 +323,17 @@ class _Tone extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ({EbScene look, bool sleeping}) t = ref.watch(
+    final ({EbScene look, bool sleeping, bool following}) t = ref.watch(
       fixtureStatusProvider(fixture.id).select(
-        (FixtureStatus s) =>
-            (look: _lookOf(s, layout), sleeping: s.state?.sleeping ?? false),
+        (FixtureStatus s) => (
+          look: _lookOf(s, layout),
+          sleeping: s.state?.sleeping ?? false,
+          following: _following(s),
+        ),
       ),
     );
     return ToneScope(
+      follow: t.following,
       tone: LightTone.derive(
         DisplayColor.ofScene(
           t.look,
@@ -442,7 +446,14 @@ class _Orb extends ConsumerWidget {
       fixture.whitePoints,
       AppLocalizations.of(context),
     );
-    final Animation<double>? level = o.known ? LightLevel.of(context) : null;
+    // The orb's intensity is the light's output: the brightness times the
+    // colour's own level (the square's value axis), so it dims smoothly with
+    // the square instead of staying full and dropping out at black.
+    final double colourLevel = o.look.color.maxChannel / 255;
+    final Animation<double>? level = o.known
+        ? LightLevel.of(context)
+              .drive(Tween<double>(begin: 0, end: colourLevel))
+        : null;
     return ColourGlide(
       follow: o.following,
       colour: swatchOf(
@@ -730,6 +741,7 @@ class _ColourTab extends ConsumerWidget {
           padding: const EdgeInsets.all(Space.m),
           child: ColourEditor(
             value: c.color,
+            memoryKey: fixture.id,
             whitePoints: fixture.whitePoints,
             enabled: s != null,
             onGestureStart: () => s?.beginGesture(EbKeys.color),

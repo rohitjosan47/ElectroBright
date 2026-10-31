@@ -33,6 +33,7 @@ import '../firmware_update/update_firmware_screen.dart';
 import '../firmware_update/update_providers.dart';
 import '../../core/firmware/firmware_bundle.dart';
 import '../shared/removed_screen.dart';
+import '../../design/components/flash_action.dart';
 
 /// One light's settings: name, type and what it can do, identify / channel
 /// test, sound, factory reset and forget.
@@ -142,12 +143,13 @@ class _LightSettingsScreenState extends ConsumerState<LightSettingsScreen> {
       Widget? trailing,
       VoidCallback? onTap,
       Color? color,
+      bool? enabled,
     }) => ListTile(
       key: key,
       title: Text(label, style: title.copyWith(color: color)),
       subtitle: detail == null ? null : Text(detail, style: sub),
       trailing: trailing,
-      enabled: onTap != null || trailing != null,
+      enabled: enabled ?? (onTap != null || trailing != null),
       onTap: onTap,
     );
 
@@ -207,13 +209,24 @@ class _LightSettingsScreenState extends ConsumerState<LightSettingsScreen> {
             ),
           ]),
           section(l.tools, <Widget>[
-            row(
-              l.identify,
-              key: const ValueKey<String>('settings-identify'),
-              detail: l.identifyHint,
-              onTap: ready && !_busy
-                  ? () => unawaited(_run(session.identify))
-                  : null,
+            FlashAction(
+              iconSize: 22,
+              builder: (_, Widget icon, VoidCallback flash) => row(
+                l.identify,
+                key: const ValueKey<String>('settings-identify'),
+                detail: l.identifyHint,
+                trailing: IconTheme.merge(
+                  data: IconThemeData(color: fg),
+                  child: icon,
+                ),
+                enabled: ready && !_busy,
+                onTap: ready && !_busy
+                    ? () {
+                        flash();
+                        unawaited(_run(session.identify));
+                      }
+                    : null,
+              ),
             ),
             row(
               l.channelTest,

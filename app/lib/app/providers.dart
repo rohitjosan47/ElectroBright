@@ -127,12 +127,15 @@ final class SteadyLevelsNotifier extends Notifier<SteadyLevels?> {
       fixtureProvider(id)
           .select((Fixture? f) => f?.whitePoints ?? const LedWhitePoints()),
     );
+    // The pick shows while the light reports it, or while its channels are
+    // still exactly what the pick encoded (a status report in between must
+    // not swap in the colour re-read from 8 bits, which at low levels is a
+    // visibly different hue, and swap back on the next report).
     final bool picked =
         c != null &&
-        origin != null &&
-        origin.byUser &&
         pick != null &&
-        pick.seq == origin.seq;
+        (origin != null && origin.byUser && pick.seq == origin.seq ||
+            _encodes(pick.intent, c, wp));
     if (!picked) return SteadyLevels.next(stateOrNull, c);
     return switch (pick.intent) {
       RawIntent() => SteadyLevels.next(stateOrNull, c, exact: true),
@@ -143,6 +146,12 @@ final class SteadyLevelsNotifier extends Notifier<SteadyLevels?> {
       ),
     };
   }
+
+  static bool _encodes(ColourIntent i, ChannelColor c, LedWhitePoints wp) =>
+      switch (i) {
+        RawIntent(:final ChannelColor color) => color == c,
+        _ => ColourEngine(wp).encode(i, c.layout) == c,
+      };
 }
 
 /// A light advertising nearby that is not saved yet.

@@ -36,7 +36,22 @@ final class Hsv {
   /// HSV of 8-bit RGB. Keeps [previous]'s hue when the colour is (near) grey
   /// or black, so the hue never snaps to red while the user drags into a
   /// corner or a light reports white.
+  ///
+  /// [previous] is kept exactly when it encodes to these bytes (±1 for a
+  /// light rounding differently): 8-bit RGB cannot resolve hue and
+  /// saturation of dark colours, so re-deriving them would move the square's
+  /// knob on every echo. At black its saturation is kept too (black has
+  /// none, and the knob would jump to the square's left edge).
   static Hsv fromRgb8(int r, int g, int b, {Hsv? previous}) {
+    if (previous != null) {
+      final List<int> p = previous.toRgb8();
+      if ((p[0] - r).abs() <= 1 &&
+          (p[1] - g).abs() <= 1 &&
+          (p[2] - b).abs() <= 1) {
+        return previous;
+      }
+      if (r == 0 && g == 0 && b == 0) return previous.copyWith(v: 0);
+    }
     final double rf = r / 255, gf = g / 255, bf = b / 255;
     final double mx = math.max(rf, math.max(gf, bf));
     final double mn = math.min(rf, math.min(gf, bf));

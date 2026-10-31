@@ -41,10 +41,16 @@ class ColourEditor extends StatefulWidget {
     this.onFullRange,
     this.showChannels = true,
     this.enabled = true,
+    this.memoryKey,
     super.key,
   });
 
   final ChannelColor value;
+
+  /// The editor remembers the last colour (hue and saturation) under this
+  /// key (e.g. the light's id), so a black or grey light reopened later
+  /// keeps its hue instead of showing red.
+  final Object? memoryKey;
   final ColourChanged onChanged;
   final LedWhitePoints whitePoints;
   final VoidCallback? onGestureStart;
@@ -81,6 +87,16 @@ class _ColourEditorState extends State<ColourEditor> {
   /// the editor itself just sent (every live frame) gets it back unchanged.
   Widget? _tree;
 
+  /// The RGB+CCT tab the user picked; null follows the colour.
+  _Sub? _view;
+
+  /// Last colour per [ColourEditor.memoryKey], for the app's lifetime.
+  static final Map<Object, Hsv> _hsvMemory = <Object, Hsv>{};
+
+  /// Last colour and white, restored when switching back to their tab.
+  late Hsv _lastHsv = _hsvMemory[widget.memoryKey] ?? const Hsv(30, 1, 1);
+  WhiteIntent _lastWhite = const WhiteIntent(4000, 1);
+
   ColourIntent get _intent => _model.value.intent;
   ChannelColor get _encoded => _model.value.encoded;
   ChannelLayout get _layout => widget.value.layout;
@@ -90,9 +106,23 @@ class _ColourEditorState extends State<ColourEditor> {
     super.initState();
     _engine = ColourEngine(widget.whitePoints);
     _model = ValueNotifier<_Model>((
-      intent: _engine.decode(widget.value),
+      // A grey or black colour keeps the last hue (never red by default).
+      intent: _engine.decode(widget.value, hint: HsvIntent(_lastHsv)),
       encoded: widget.value,
     ));
+    _remember(_intent);
+  }
+
+  void _remember(ColourIntent i) {
+    switch (i) {
+      case HsvIntent(:final Hsv hsv) when hsv.v > 0:
+        _lastHsv = hsv;
+        final Object? key = widget.memoryKey;
+        if (key != null) _hsvMemory[key] = hsv;
+      case final WhiteIntent w when w.level > 0:
+        _lastWhite = w;
+      default:
+    }
   }
 
   @override
@@ -111,6 +141,10 @@ class _ColourEditorState extends State<ColourEditor> {
         intent: _engine.decode(widget.value, hint: _intent),
         encoded: widget.value,
       );
+      _remember(_intent);
+      // An outside change (preset, other app) shows its own tab; the Custom
+      // view can show anything, so it stays.
+      if (_view != _Sub.custom) _view = null;
       _tree = null;
     }
   }
@@ -130,19 +164,30 @@ class _ColourEditorState extends State<ColourEditor> {
   void _apply(ColourIntent i, {required bool live}) {
     final ChannelColor c = _engine.encode(i, _layout);
     _model.value = (intent: i, encoded: c);
+    _remember(i);
     if (!live) _rebuild();
     widget.onChanged(c, live: live, intent: i);
   }
 
   void _rebuild() => setState(() => _tree = null);
 
+  /// The white the white LEDs of [c] make, the colour LEDs ignored: the
+  /// temperature never depends on RGB (a colour beside the whites would
+  /// otherwise decode as a mix and the temperature fall back to a default).
+  WhiteIntent _whitesOf(ChannelColor c) {
+    final ChannelColor whites = c.layout == ChannelLayout.rgbcct
+        ? ChannelColor(c.layout, <int>[0, 0, 0, c[3], c[4]])
+        : c;
+    return switch (_engine.decode(whites, hint: _lastWhite)) {
+      final WhiteIntent w => w,
+      _ => _lastWhite,
+    };
+  }
+
   /// The level of the white being edited (1 unless it came in lower).
   double get _whiteLevel => switch (_intent) {
     WhiteIntent(:final double level) => level,
-    _ => switch (_engine.decode(_encoded)) {
-      WhiteIntent(:final double level) => level,
-      _ => 1,
-    },
+    _ => _whitesOf(_encoded).level,
   };
 
   /// See [ColourEditor.onFullRange].
@@ -170,11 +215,13 @@ class _ColourEditorState extends State<ColourEditor> {
         builder: (BuildContext context, _Model m, _) => b(m.intent, m.encoded),
       );
 
-  _Sub get _sub => switch (_intent) {
-    WhiteIntent() => _Sub.white,
-    RawIntent() => _Sub.custom,
-    HsvIntent() => _Sub.colour,
-  };
+  _Sub get _sub =>
+      _view ??
+      switch (_intent) {
+        WhiteIntent() => _Sub.white,
+        RawIntent() => _Sub.custom,
+        HsvIntent() => _Sub.colour,
+      };
 
   @override
   Widget build(BuildContext context) => _tree ??= _build(context);
@@ -197,21 +244,32 @@ class _ColourEditorState extends State<ColourEditor> {
           segments: <(_Sub, String)>[
             (_Sub.colour, l.tabColour),
             (_Sub.white, l.tabWhite),
-            if (_sub == _Sub.custom) (_Sub.custom, l.tabCustom),
+            (_Sub.custom, l.tabCustom),
           ],
           selected: _sub,
           elevated: false,
           onChanged: (_Sub s) {
-            // Switching is explicit: the other side goes to zero.
-            if (s == _Sub.white) {
-              _apply(const WhiteIntent(4000, 1), live: false);
-            } else if (s == _Sub.colour) {
-              _apply(const HsvIntent(Hsv(30, 1, 1)), live: false);
+            if (s == _sub) return;
+            _view = s;
+            // Colour / White are pure: the other side goes to zero, back to
+            // the last value used there. Custom keeps the light as it is
+            // and mixes both from there.
+            switch (s) {
+              case _Sub.white:
+                _apply(_lastWhite, live: false);
+              case _Sub.colour:
+                _apply(HsvIntent(_lastHsv), live: false);
+              case _Sub.custom:
+                _apply(RawIntent(_encoded), live: false);
             }
           },
         ),
         const SizedBox(height: Space.m),
-        if (_sub == _Sub.white) _kelvinPanel(l) else _wheel(),
+        switch (_sub) {
+          _Sub.white => _kelvinPanel(l),
+          _Sub.colour => _wheel(),
+          _Sub.custom => _mixPanel(l),
+        },
       ],
     };
     return Column(
@@ -228,11 +286,12 @@ class _ColourEditorState extends State<ColourEditor> {
               enabled: widget.enabled,
               onStart: _start,
               onEnd: _end,
-              onChanged: (
-                ChannelColor c, {
-                required bool live,
-                ColourIntent? intent,
-              }) => _apply(RawIntent(c), live: live),
+              onChanged:
+                  (ChannelColor c, {required bool live, ColourIntent? intent}) {
+                    // Exact channels are a mix: shown under Custom.
+                    _view = null;
+                    _apply(RawIntent(c), live: live);
+                  },
             ),
           ),
         ],
@@ -257,6 +316,73 @@ class _ColourEditorState extends State<ColourEditor> {
       onChangeStart: _start,
       onChanged: (Hsv v) => _apply(HsvIntent(v, white: white), live: true),
       onChangeEnd: (_) => _end(),
+    );
+  });
+
+  /// RGB+CCT mix: the wheel sets the colour LEDs and the temperature
+  /// sets the white LEDs (at their level; the brightness pill dims), each leaving the other side as it is.
+  Widget _mixPanel(AppLocalizations l) => _live((
+    ColourIntent intent,
+    ChannelColor encoded,
+  ) {
+    final ({double min, double max}) range = _engine.whiteRange(_layout);
+    final bool hasColour = encoded[0] > 0 || encoded[1] > 0 || encoded[2] > 0;
+    final Hsv hsv = hasColour
+        ? Hsv.fromRgb8(encoded[0], encoded[1], encoded[2], previous: _lastHsv)
+        : _lastHsv.copyWith(v: 0);
+    final WhiteIntent w = _whitesOf(encoded);
+    final double k = w.kelvin.clamp(range.min, range.max);
+
+    void setColour(Hsv v) {
+      _lastHsv = v.v > 0 ? v : _lastHsv.copyWith(h: v.h, s: v.s);
+      final List<int> rgb = v.toRgb8();
+      _apply(
+        RawIntent(ChannelColor(_layout, <int>[...rgb, encoded[3], encoded[4]])),
+        live: true,
+      );
+    }
+
+    void setWhite(double kelvin, double level) {
+      final WhiteIntent nw = WhiteIntent(kelvin, level);
+      if (level > 0) _lastWhite = nw;
+      final ChannelColor wc = _engine.encode(nw, _layout);
+      _apply(
+        RawIntent(
+          ChannelColor(_layout, <int>[
+            encoded[0],
+            encoded[1],
+            encoded[2],
+            wc[3],
+            wc[4],
+          ]),
+        ),
+        live: true,
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        HueWheel(
+          value: hsv,
+          enabled: widget.enabled,
+          onChangeStart: _start,
+          onChanged: setColour,
+          onChangeEnd: (_) => _end(),
+        ),
+        const SizedBox(height: Space.m),
+        KelvinSlider(
+          kelvin: k,
+          min: range.min,
+          max: range.max,
+          whitePoints: widget.whitePoints,
+          enabled: widget.enabled,
+          onChangeStart: _start,
+          // Moving the temperature with the whites off turns them on.
+          onChanged: (double v) => setWhite(v, w.level > 0 ? w.level : 1),
+          onChangeEnd: (_) => _end(),
+        ),
+      ],
     );
   });
 
@@ -308,10 +434,7 @@ class _ColourEditorState extends State<ColourEditor> {
         final ({double min, double max}) range = _engine.whiteRange(_layout);
         final WhiteIntent w = switch (intent) {
           final WhiteIntent w => w,
-          _ => switch (_engine.decode(encoded)) {
-            final WhiteIntent w => w,
-            _ => const WhiteIntent(4000, 1),
-          },
+          _ => _whitesOf(encoded),
         };
         final double k = w.kelvin.clamp(range.min, range.max);
         return Column(
@@ -419,6 +542,20 @@ class KelvinSlider extends StatelessWidget {
   final ValueChanged<double> onChanged;
   final ValueChanged<double>? onChangeEnd;
 
+  /// Slider position 0..1 for [k]: linear in mireds, as the LEDs mix, so the
+  /// centre is the point where cool and warm are both at full.
+  double _posOf(double k) {
+    if (!(max > min)) return 0.5;
+    final double mWarm = 1e6 / min, mCool = 1e6 / max;
+    return ((mWarm - 1e6 / k) / (mWarm - mCool)).clamp(0.0, 1.0);
+  }
+
+  double _kelvinAt(double pos) {
+    if (!(max > min)) return min;
+    final double mWarm = 1e6 / min, mCool = 1e6 / max;
+    return 1e6 / (mWarm + pos * (mCool - mWarm));
+  }
+
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l = AppLocalizations.of(context);
@@ -427,19 +564,21 @@ class KelvinSlider extends StatelessWidget {
       value: l.kelvinValue((kelvin / 10).round() * 10),
       child: GlassSlider(
         elevated: false,
-        value: kelvin,
-        min: min,
-        max: max,
+        value: _posOf(kelvin),
+        // The centre: cool and warm both at full (the knob snaps to it).
+        marks: const <double>[0.5],
         semanticLabel: l.temperature,
         enabled: enabled,
-        valueText: (double v) => l.kelvinValue(v.round()),
+        valueText: (double p) => l.kelvinValue(_kelvinAt(p).round()),
         track: <Color>[
           ledColor(ChannelRole.ww, whitePoints),
           ledColor(ChannelRole.cw, whitePoints),
         ],
         onChangeStart: (_) => onChangeStart?.call(),
-        onChanged: onChanged,
-        onChangeEnd: onChangeEnd,
+        onChanged: (double p) => onChanged(_kelvinAt(p)),
+        onChangeEnd: onChangeEnd == null
+            ? null
+            : (double p) => onChangeEnd!(_kelvinAt(p)),
       ),
     );
   }
