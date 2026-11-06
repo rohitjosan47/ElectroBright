@@ -693,11 +693,28 @@ class LightOrb extends StatelessWidget {
             duration: Motion.medium,
             child: child,
           );
+    // Light theme: a faint cool well behind the orb, so a white or pale glow
+    // still reads against the near-white canvas (dark needs none).
+    final Decoration? well = ToneScope.darkOf(context)
+        ? null
+        : BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(
+              colors: <Color>[
+                const Color(0xFF132C6F).withValues(alpha: 0.10),
+                const Color(0xFF132C6F).withValues(alpha: 0.05),
+                const Color(0xFF132C6F).withValues(alpha: 0),
+              ],
+              stops: const <double>[0, 0.6, 1],
+            ),
+          );
     return Semantics(
       image: true,
       label: on ? l.orbOn(spec.name) : l.orbOff,
-      child: SizedBox.square(
-        dimension: size,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: well,
         child: dim(
           GlyphSwitcher(
             glyph: spec.glyph,

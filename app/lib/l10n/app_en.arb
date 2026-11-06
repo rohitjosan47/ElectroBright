@@ -291,6 +291,10 @@
     }
   },
   "tabColour": "Colour",
+  "tabLight": "Light",
+  "@tabLight": {
+    "description": "Control screen tab of an RGB + CCT light, which holds its own Colour / White / Custom choice"
+  },
   "tabWhite": "White",
   "tabEffects": "Effects",
   "tabPresets": "Presets",

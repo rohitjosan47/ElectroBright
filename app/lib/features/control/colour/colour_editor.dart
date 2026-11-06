@@ -648,12 +648,38 @@ class _Labelled extends StatelessWidget {
 /// Screen colour of a channel colour at full intensity (for swatches).
 /// [steady]: the light's colour kept steady at low channel values (used when
 /// it shows [c]).
-Color swatchOf(ChannelColor c, LedWhitePoints wp, {SteadyLevels? steady}) {
+/// The colour the editor last held for [key] (its hue and saturation at full
+/// value), or null: display only, for a preview that keeps its hue at black.
+Color? rememberedHue(Object key) {
+  final Hsv? hsv = _ColourEditorState._hsvMemory[key];
+  if (hsv == null) return null;
+  final List<int> rgb = Hsv(hsv.h, hsv.s, 1).toRgb8();
+  return Color.fromARGB(255, rgb[0], rgb[1], rgb[2]);
+}
+
+/// [keepHue]: no fade into graphite near black (the caller fades the
+/// preview itself, keeping its hue).
+Color swatchOf(
+  ChannelColor c,
+  LedWhitePoints wp, {
+  SteadyLevels? steady,
+  bool keepHue = false,
+}) {
   // A colour light giving only white light shows neutral white (its white
   // LEDs never tint the colour in the app).
-  if (LayoutPreview.whitesOnly(c)) return screenColour(LayoutPreview.neutral);
+  if (LayoutPreview.whitesOnly(c)) {
+    return screenColour(LayoutPreview.whiteLight(c, wp));
+  }
+  const Color graphite = Color(0xFF202228);
   final LinearRgb lin = DisplayColor.emitted(c, wp);
-  return lin.max <= 0
-      ? const Color(0xFF202228)
-      : screenColour(SteadyLevels.colourOf(steady, c, wp) ?? lin.normalized());
+  if (lin.max <= 0) return graphite;
+  final Color shown = screenColour(
+    SteadyLevels.colourOf(steady, c, wp) ?? lin.normalized(),
+  );
+  // Display only: over the square's bottom edge the swatch fades into the
+  // graphite it shows at black, instead of holding full colour until zero
+  // and switching at once. The light's levels are not touched.
+  if (keepHue) return shown;
+  final double x = (c.maxChannel / 255 / 0.3).clamp(0.0, 1.0);
+  return Color.lerp(graphite, shown, x * x * (3 - 2 * x))!;
 }

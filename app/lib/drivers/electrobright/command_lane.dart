@@ -204,10 +204,12 @@ final class CommandLane {
   );
 
   void _replace(_Job old, _Job fresh) {
-    final List<_Job> items = _queue.toList();
+    // The newer command goes to the tail, not into the old one's place:
+    // moving it ahead of commands queued in between (e.g. MODE ahead of a
+    // later SLEEP, while MODE also wakes) would reorder their effects.
     _queue
-      ..clear()
-      ..addAll(items.map((_Job j) => identical(j, old) ? fresh : j));
+      ..remove(old)
+      ..addLast(fresh);
     _finish(old, EbResult.superseded, pump: false);
   }
 

@@ -324,8 +324,8 @@ void main() {
   });
 
   group('merging and ordering', () {
-    test('queued changes to one setting collapse to the newest, which keeps '
-        'the oldest one\'s place', () async {
+    test('queued changes to one setting collapse to the newest, which goes '
+        'to the tail', () async {
       final _Rig r = _Rig();
       unawaited(r.send(const SetPower(on: true))); // sent: never merged
       unawaited(r.send(SetMode(2)));
@@ -347,7 +347,23 @@ void main() {
         r.lane.onReply(const EbOk());
         await _pump();
       }
-      expect(r.lines, <String>['WAKE', 'MODE:4', 'SOUND_ON']);
+      expect(r.lines, <String>['WAKE', 'SOUND_ON', 'MODE:4']);
+    });
+
+    test('a merged MODE never jumps a SLEEP queued after the one it replaces '
+        '(MODE wakes the light)', () async {
+      final _Rig r = _Rig();
+      unawaited(r.send(SetMode(1))); // sent
+      unawaited(r.send(SetMode(2)));
+      unawaited(r.send(const SetPower(on: false)));
+      unawaited(r.send(SetMode(3)));
+      await _pump();
+      expect(r.lane.merged, 1);
+      for (int i = 0; i < 3; i++) {
+        r.lane.onReply(const EbOk());
+        await _pump();
+      }
+      expect(r.lines, <String>['MODE:1', 'SLEEP', 'MODE:3']);
     });
 
     test('merging never crosses a barrier', () async {

@@ -228,8 +228,9 @@ void main() {
       intent: engine.fullLevels(pick, ChannelLayout.rgbw),
     )!;
     expect(picked.levels.last, 0);
-    // Only the white LEDs on: a neutral white, the same for any white (the
-    // whites still never tint it), and the light is not shown as off.
+    // Only the white LEDs on: RGBW shows a neutral white; RGB + CCT shows its
+    // temperature (warm warmer than cool), as a tunable-white light does.
+    // Never shown as off.
     DisplayColor shownFor(ChannelColor c) => DisplayColor.ofScene(
       EbScene.defaults(c.layout).copyWith(color: c),
       sleeping: false,
@@ -243,10 +244,15 @@ void main() {
     final DisplayColor wOnly = shownFor(ChannelColor.rgbw(0, 0, 0, 255));
     for (final DisplayColor d in <DisplayColor>[warm, cool, wOnly]) {
       expect(d.off, isFalse);
-      expect(<double>[d.color.r, d.color.g, d.color.b], <double>[1, 1, 1]);
     }
+    expect(
+      <double>[wOnly.color.r, wOnly.color.g, wOnly.color.b],
+      <double>[1, 1, 1],
+    );
+    expect(warm.color.b, lessThan(warm.color.r));
+    expect(cool.color.b, greaterThan(warm.color.b));
     // A white picked on an RGB + CCT light moves nothing the app shows: no
-    // levels to keep, and the light is shown as neutral white, not off.
+    // levels to keep, and the light is shown as its temperature, not off.
     const WhiteIntent whitePick = WhiteIntent(4000, 1);
     final ChannelColor rgbcctWhite = engine.encode(
       whitePick,
@@ -264,10 +270,7 @@ void main() {
       steady: none,
     );
     expect(pickedWhite.off, isFalse);
-    expect(
-      <double>[pickedWhite.color.r, pickedWhite.color.g, pickedWhite.color.b],
-      <double>[1, 1, 1],
-    );
+    expect(pickedWhite.color.b, lessThan(pickedWhite.color.r)); // 4000 K
     // On a tunable-white light the pick's levels are kept.
     expect(
       SteadyLevels.next(

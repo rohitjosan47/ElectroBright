@@ -204,6 +204,13 @@ final class LightSurfaces {
   int get activeGlass => activeGlassOf(activeTint);
   int get activeIcon => LightInk.on(activeGlass);
 
+  /// The light theme's brightness pill fill: a soft pastel of the light's
+  /// colour, and the ink on it (>= 4.5:1). Dark keeps the clear pill.
+  static ({int fill, int ink}) pillTintOf(LightTone tone) {
+    assert(!tone.dark, 'light theme only (dark keeps the clear pill)');
+    return (fill: tone.pill, ink: LightInk.on(tone.pill));
+  }
+
   /// The coloured under-light of lit buttons and selected tiles.
   int get glow => underLight(tone.glow);
 

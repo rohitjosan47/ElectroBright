@@ -153,10 +153,10 @@ final class StreamLane {
               // A closed link: the session tears everything down (close()
               // fails the fences). A refused write on a live link must not
               // leave a fence waiting forever: send it again, then give up.
-              if (_closed || !reliable || _fenceWaiters.isEmpty) return;
-              if (e is LinkClosedException) return;
+              if (_closed || e is LinkClosedException) return;
               if (++_fenceFailures >= fenceAttempts) {
                 _fenceFailures = 0;
+                if (_fenceWaiters.isEmpty) return;
                 final List<Completer<void>> failed = List<Completer<void>>.of(
                   _fenceWaiters,
                 );
@@ -166,8 +166,10 @@ final class StreamLane {
                 }
                 return;
               }
+              // Send the newest value again; a failed acknowledged frame (a
+              // fence or the final value of a gesture) stays acknowledged.
               _dirty = true;
-              _terminal = true;
+              _terminal = _terminal || reliable;
             },
           )
           .whenComplete(() {
@@ -181,6 +183,7 @@ final class StreamLane {
 
   void _delivered(StreamValue value, {required bool reliable}) {
     framesWritten++;
+    _fenceFailures = 0;
     if (!reliable) {
       _unfenced++;
       return;
