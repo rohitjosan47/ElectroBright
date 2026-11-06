@@ -198,7 +198,7 @@ void main() {
     expect(find.byType(HueWheel), findsNothing);
     await slideToEnd(t, 'Colour temperature', warm: true);
     expect(d.twin('Bedroom').color.values, <int>[0, 0, 0, 0, 255]);
-    // A picked white is shown as a neutral white, never as off.
+    // A picked white is shown as its temperature (warm here), never as off.
     final ProviderContainer container = ProviderScope.containerOf(
       t.element(find.byType(ColourEditor)),
     );
@@ -208,10 +208,7 @@ void main() {
       steady: container.read(steadyLevelsProvider(DemoApp.idOf('Bedroom'))),
     );
     expect(shown.off, isFalse);
-    expect(
-      <double>[shown.color.r, shown.color.g, shown.color.b],
-      <double>[1, 1, 1],
-    );
+    expect(shown.color.b, lessThan(shown.color.r));
     // Colour: the whites go to zero.
     await t.tap(
       find.descendant(

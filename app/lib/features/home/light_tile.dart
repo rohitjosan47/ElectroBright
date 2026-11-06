@@ -278,20 +278,32 @@ class TileOrb extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) => AnimatedContainer(
-    duration: Motion.medium,
-    width: size,
-    height: size,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      gradient: RadialGradient(
-        colors: <Color>[Color.lerp(color, Colors.white, 0.35)!, color],
+  Widget build(BuildContext context) {
+    // Light theme: a hairline rim and a soft cool shadow, so a white or pale
+    // orb (and its white glow) still reads on the near-white tile.
+    final bool light = !ToneScope.darkOf(context);
+    const Color ink = Color(0xFF132C6F);
+    return AnimatedContainer(
+      duration: Motion.medium,
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(
+          colors: <Color>[Color.lerp(color, Colors.white, 0.35)!, color],
+        ),
+        border: light ? Border.all(color: ink.withValues(alpha: 0.12)) : null,
+        boxShadow: <BoxShadow>[
+          if (light)
+            BoxShadow(
+              color: ink.withValues(alpha: 0.16),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          if (glow)
+            BoxShadow(color: color.withValues(alpha: 0.55), blurRadius: 18),
+        ],
       ),
-      boxShadow: glow
-          ? <BoxShadow>[
-              BoxShadow(color: color.withValues(alpha: 0.55), blurRadius: 18),
-            ]
-          : const <BoxShadow>[],
-    ),
-  );
+    );
+  }
 }

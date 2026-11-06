@@ -108,7 +108,7 @@ void main() {
     expect(find.text('Add your first light'), findsNothing);
     expect(find.text('1 of 1 connected'), findsOneWidget);
     expect(find.text('Tunable white'), findsWidgets); // type badge
-    expect(find.textContaining('On · 100 %'), findsOneWidget);
+    expect(find.textContaining('100 % · '), findsOneWidget);
     expect(find.text('Connected'), findsOneWidget);
     // Screen readers hear that a long press opens the light's options.
     final SemanticsHandle tileSemantics = t.ensureSemantics();

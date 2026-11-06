@@ -38,7 +38,7 @@
   "homeEmpty": "No lights yet. Add your first light to get started.",
   "homeWelcomeTitle": "Add your first light",
   "homeWelcomeBody": "Switch your light on, then tap Add light below.",
-  "stateOnPercent": "On · {percent} %",
+  "stateOnPercent": "{percent} %",
   "@stateOnPercent": {
     "placeholders": {
       "percent": {
@@ -46,7 +46,7 @@
       }
     }
   },
-  "stateOutputPercent": "On · output {percent} %",
+  "stateOutputPercent": "Output {percent} %",
   "@stateOutputPercent": {
     "placeholders": {
       "percent": {
@@ -291,6 +291,10 @@
     }
   },
   "tabColour": "Colour",
+  "tabLight": "Light",
+  "@tabLight": {
+    "description": "Control screen tab of an RGB + CCT light, which holds its own Colour / White / Custom choice"
+  },
   "tabWhite": "White",
   "tabEffects": "Effects",
   "tabPresets": "Presets",

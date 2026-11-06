@@ -205,7 +205,8 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
           const SizedBox(height: Space.m),
           GlassSegmented<ControlTab>(
             segments: <(ControlTab, String)>[
-              for (final ControlTab t in tabs) (t, _tabName(l, t)),
+              for (final ControlTab t in tabs)
+                (t, _tabName(l, t, caps.colourSurface)),
             ],
             selected: tab,
             onChanged: (ControlTab t) => setState(() => _tab = t),
@@ -269,8 +270,17 @@ class _ControlScreenState extends ConsumerState<ControlScreen> {
     );
   }
 
-  static String _tabName(AppLocalizations l, ControlTab t) => switch (t) {
-    ControlTab.colour => l.tabColour,
+  // On RGB + CCT the tab holds its own Colour / White / Custom choice; naming
+  // it "Colour" as well read as a tab inside the same tab.
+  static String _tabName(
+    AppLocalizations l,
+    ControlTab t,
+    ColourSurface surface,
+  ) => switch (t) {
+    ControlTab.colour =>
+      surface == ColourSurface.colourPlusTunableWhite
+          ? l.tabLight
+          : l.tabColour,
     ControlTab.white => l.tabWhite,
     ControlTab.effects => l.tabEffects,
     ControlTab.presets => l.tabPresets,
@@ -456,11 +466,17 @@ class _Orb extends ConsumerWidget {
         : null;
     return ColourGlide(
       follow: o.following,
-      colour: swatchOf(
-        o.look.color,
-        fixture.whitePoints,
-        steady: ref.watch(steadyLevelsProvider(fixture.id)),
-      ),
+      // The orb keeps its hue all the way down the square and fades by its
+      // level instead of turning grey; at black, the hue last picked.
+      colour: o.look.color.maxChannel == 0
+          ? rememberedHue(fixture.id) ??
+                swatchOf(o.look.color, fixture.whitePoints)
+          : swatchOf(
+              o.look.color,
+              fixture.whitePoints,
+              steady: ref.watch(steadyLevelsProvider(fixture.id)),
+              keepHue: true,
+            ),
       builder: (BuildContext context, Color colour, _) => LightOrb(
         spec: mode,
         color: colour,

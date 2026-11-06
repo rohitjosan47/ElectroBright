@@ -534,6 +534,12 @@ final class ConnectionManager {
 
   /// Disconnects the least-recently-used idle light to make room for [forS].
   bool _evictOne(_Slot forS) {
+    final _Slot? victim = _evictionVictim(forS);
+    if (victim != null) unawaited(_disconnect(victim.link));
+    return false; // room appears once the link has closed
+  }
+
+  _Slot? _evictionVictim(_Slot forS) {
     final List<_Slot> idle =
         _slots.values
             .where(
@@ -546,9 +552,7 @@ final class ConnectionManager {
             )
             .toList()
           ..sort((_Slot a, _Slot b) => a.lastUsed.compareTo(b.lastUsed));
-    if (idle.isEmpty) return false;
-    unawaited(_disconnect(idle.first.link));
-    return false; // room appears once the link has closed
+    return idle.isEmpty ? null : idle.first;
   }
 
   void _updateReconnectLease() {
@@ -599,6 +603,17 @@ final class ConnectionManager {
           !identical(_slots[f.id], s)) {
         await _disconnect(link);
         return;
+      }
+      // Connects in progress (parallel ones, iOS open-ended favourites) are
+      // not counted when they start: re-check the limit now that it landed.
+      if (_connectedCount >= policy.maxConnections) {
+        final _Slot? victim = _evictionVictim(s);
+        if (victim == null) {
+          await _disconnect(link);
+          s.session.setPhase(LinkPhase.waiting, detail: 'deferred');
+          return;
+        }
+        unawaited(_disconnect(victim.link));
       }
       s.link = link;
       unawaited(link.closed.then((LinkLossReason r) => _onClosed(s, link!, r)));

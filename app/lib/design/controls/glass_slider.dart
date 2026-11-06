@@ -628,14 +628,29 @@ class _WaterFill extends StatelessWidget {
             if (shapes == null) return const SizedBox.shrink();
             final Rect r = shapes.body.outerRect;
             final double radius = math.min(r.height / 2, r.width / 2);
-            final Widget cues = CustomPaint(
+            // Light theme: the light's own colour under the light cues, so
+            // the level reads apart from the empty track. Dark keeps the
+            // original clear water.
+            final Color? tint = dark
+                ? null
+                : Color(LightSurfaces.pillTintOf(ToneScope.of(context)).fill);
+            final Widget painted = CustomPaint(
               painter: _WaterPainter(glass: g, dark: dark, radius: radius),
               child: const SizedBox.expand(),
             );
+            final Widget cues = tint == null
+                ? painted
+                : DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: tint,
+                      borderRadius: BorderRadius.circular(radius),
+                    ),
+                    child: painted,
+                  );
             final Widget water = (policy?.solid ?? false)
                 ? DecoratedBox(
                     decoration: BoxDecoration(
-                      color: g.solid,
+                      color: tint ?? g.solid,
                       borderRadius: BorderRadius.circular(radius),
                     ),
                   )

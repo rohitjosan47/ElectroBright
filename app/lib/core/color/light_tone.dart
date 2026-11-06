@@ -40,7 +40,7 @@ final class DisplayColor {
     bool black = false;
     if (EbModeCatalog.usesPickedColor(s)) {
       final LinearRgb raw = LayoutPreview.whitesOnly(s.color)
-          ? LayoutPreview.neutral
+          ? LayoutPreview.whiteLight(s.color, whitePoints)
           : emitted(s.color, whitePoints);
       final LinearRgb? held = SteadyLevels.colourOf(
         steady,
@@ -51,7 +51,9 @@ final class DisplayColor {
       // Black is off, but keeps the held hue as the graphite's trace: the
       // palette fades into it as the output nears zero, never a step.
       black = raw.max <= 1e-6;
-      c = held ?? raw;
+      // RGB + CCT white: its temperature (the held colour counts only the
+      // colour LEDs, which are off).
+      c = LayoutPreview.tunableWhitesOnly(s.color) ? raw : held ?? raw;
     } else {
       // The effect makes its own colours: represent it by its accent colour,
       // shown the way this light renders colour (white temperature or
@@ -103,6 +105,25 @@ abstract final class LayoutPreview {
 
   /// What the app shows for a colour light giving only white light.
   static const LinearRgb neutral = LinearRgb(1, 1, 1);
+
+  /// Whether [c] is an RGB + CCT light giving only white light: the app
+  /// shows that white's temperature, as on a tunable-white light.
+  static bool tunableWhitesOnly(ChannelColor c) =>
+      whitesOnly(c) && c.layout.roles.contains(ChannelRole.cw);
+
+  /// What the app shows for a colour light giving only white light: an
+  /// RGB + CCT light its cool/warm mix (normalised), others [neutral].
+  static LinearRgb whiteLight(ChannelColor c, LedWhitePoints wp) {
+    if (!tunableWhitesOnly(c)) return neutral;
+    LinearRgb sum = const LinearRgb(0, 0, 0);
+    for (int i = 0; i < c.layout.n; i++) {
+      final ChannelRole role = c.layout.roles[i];
+      if (role != ChannelRole.cw && role != ChannelRole.ww) continue;
+      final double level = ColorScience.levelToLinear(c[i]);
+      if (level > 0) sum = sum + ledColour(role, wp) * level;
+    }
+    return sum.max <= 0 ? neutral : sum.normalized();
+  }
 
   /// Whether channel [i] of [layout] counts towards the colour the app
   /// shows: on a light with colour LEDs only R, G and B (W, CW and WW never
@@ -174,6 +195,7 @@ final class LightTone {
     required this.onAccent,
     required this.tint,
     required this.hue,
+    required this.pill,
   });
 
   final bool dark;
@@ -197,6 +219,10 @@ final class LightTone {
   /// Glass tint (colour without alpha; the surface picks the opacity).
   final int tint;
   final double hue;
+
+  /// Light theme: the brightness pill's fill, a soft pastel carrying the
+  /// light's colour in proportion to its strength (fading with it).
+  final int pill;
 
   static const double _neutralChroma = 0.03;
 
@@ -261,6 +287,18 @@ final class LightTone {
             _argb(stop(0.965, 0.025)),
             _argb(stop(0.975, 0.012)),
           ];
+    // The same amount of colour for every hue, in proportion to the faded
+    // chroma (so it glides to grey with the canvas, never capped then
+    // dropped); lightness eases down only as far as the hue needs.
+    final double pillC = 0.075 * math.min(1, o.c / 0.15);
+    double pillL = 0.93;
+    while (pillL > 0.8 &&
+        !ColorScience.inGamut(
+          ColorScience.fromOklch(Oklch(pillL, pillC, o.h)),
+        )) {
+      pillL -= 0.005;
+    }
+    final int pill = _argb(ColorScience.toGamut(Oklch(pillL, pillC, o.h)));
     final int tint = _argb(
       ColorScience.toGamut(Oklch(dark ? 0.5 : 0.8, math.min(o.c, 0.1), o.h)),
     );
@@ -321,6 +359,7 @@ final class LightTone {
       onAccent: onAccent,
       tint: tint,
       hue: o.h,
+      pill: pill,
     );
   }
 
@@ -361,6 +400,7 @@ final class LightTone {
       onAccent: t < 0.5 ? a.onAccent : b.onAccent,
       tint: mix(a.tint, b.tint),
       hue: b.hue,
+      pill: mix(a.pill, b.pill),
     );
   }
 
@@ -375,7 +415,8 @@ final class LightTone {
       other.glow == glow &&
       other.glowStrength == glowStrength &&
       other.accent == accent &&
-      other.tint == tint;
+      other.tint == tint &&
+      other.pill == pill;
 
   @override
   int get hashCode => Object.hash(

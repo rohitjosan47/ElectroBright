@@ -51,9 +51,11 @@ class BrightnessPillSlider extends StatelessWidget {
     final AppLocalizations l = AppLocalizations.of(context);
     final bool dark = ToneScope.darkOf(context);
     String text(double x) => mixed ? l.mixed : label(l, x);
-    // One fixed fill per theme, with fixed ink on it: the pill shows the
-    // brightness by its length, never the light's colour.
-    final Color onFill = PillFill.inkOf(dark: dark);
+    // Light: the fill is the light's colour (LightSurfaces.pillTintOf), with
+    // whichever ink reads on it. Dark: the original clear fill and its ink.
+    final Color onFill = dark
+        ? PillFill.inkOf(dark: true)
+        : Color(LightSurfaces.pillTintOf(ToneScope.of(context)).ink);
     // Dimmed, but on light surfaces never below 4.5:1.
     final double dimFloor = dark ? 0 : LightSurfaces.dimAlpha;
     return GlassSlider(

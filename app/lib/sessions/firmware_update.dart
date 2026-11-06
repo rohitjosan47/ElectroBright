@@ -519,6 +519,10 @@ final class _Run {
   /// END went out: the light may have installed the image and restarted.
   bool _endSent = false;
 
+  /// The light's rollback flag before this update (it stays set until the
+  /// next install, so only a change counts).
+  int? _rbBefore;
+
   /// When the wait for the new firmware's confirmation (re)started.
   Duration _verifyFrom = Duration.zero;
 
@@ -667,6 +671,7 @@ final class _Run {
       // back to it.
       final Map<String, int>? before = await session.diag();
       final int? slotBefore = before?['slot'];
+      _rbBefore = before?['rb'];
       _set(progress.copyWith(slotBefore: slotBefore));
       fs.setUpdating(on: true);
       _checkCancel();
@@ -748,6 +753,18 @@ final class _Run {
         _set(progress.copyWith(reconnecting: false));
         if (_endSent && await _restartedInto(session, slotBefore)) {
           return (session: session, restarted: true);
+        }
+        // Back on the old version after END: if the light rolled back (the
+        // new image failed at once), say so instead of sending it again.
+        if (_endSent &&
+            progress.from != progress.to &&
+            FirmwareVersion.tryParse(session.firmware!.version.version) ==
+                progress.from) {
+          final Map<String, int>? d = await session.diag();
+          if (d?['rb'] == 1 && _rbBefore != 1) {
+            _recordDiag(d);
+            throw const _Stop(UpdateStage.rolledBack);
+          }
         }
       } finally {
         port.close();

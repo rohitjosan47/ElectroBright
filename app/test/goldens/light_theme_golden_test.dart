@@ -43,7 +43,11 @@ void main() {
         await t.tap(
           find.descendant(
             of: find.byType(GlassSegmented<ControlTab>),
-            matching: find.text(tab),
+            // RGB + CCT names its colour tab "Light" (it holds its own
+            // Colour / White / Custom choice).
+            matching: find.text(
+              light.key == 'rgbcct' && tab == 'Colour' ? 'Light' : tab,
+            ),
           ),
         );
         await DemoApp.settle(t, 2);
