@@ -2,4 +2,5 @@
 <resources>
     <!-- Must match the app's dark canvas base (lib/design/tokens: Palette.canvasDark). -->
     <color name="launch_background">#0A0C11</color>
+    <color name="ic_launcher_background">#000000</color>
 </resources>

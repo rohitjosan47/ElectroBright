@@ -44,6 +44,24 @@ class DeveloperScreen extends ConsumerWidget {
   }
 }
 
+/// A quiet credit line at the foot of the developer pages.
+class DeveloperCredit extends StatelessWidget {
+  const DeveloperCredit({super.key});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: Space.l, bottom: Space.s),
+    child: Opacity(
+      opacity: 0.45,
+      child: Text(
+        'Developer · @rohit_josan12',
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+    ),
+  );
+}
+
 class _LightRow extends ConsumerWidget {
   const _LightRow({required this.fixture});
   final Fixture fixture;

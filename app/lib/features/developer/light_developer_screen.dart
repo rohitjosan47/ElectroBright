@@ -31,6 +31,7 @@ import '../firmware_update/update_providers.dart';
 import '../home/presence.dart';
 import '../shared/removed_screen.dart';
 import 'diag_report.dart';
+import 'developer_screen.dart' show DeveloperCredit;
 import 'fixture_probe.dart';
 import 'probe_sheet.dart';
 import 'rollback_test.dart';
@@ -481,6 +482,7 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
             ],
           ),
         ],
+        const DeveloperCredit(),
       ],
     );
   }
