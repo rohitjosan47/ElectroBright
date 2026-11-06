@@ -485,7 +485,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 ),
                                 if (app?.demo ?? false) ...<Widget>[
                                   const SizedBox(width: Space.xs),
-                                  Chip(label: Text(l.demoBadge)),
+                                  // A plain tag (a bordered Chip read as a
+                                  // button).
+                                  DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: fg.withValues(alpha: 0.08),
+                                      borderRadius: BorderRadius.circular(
+                                        Radii.small,
+                                      ),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: Space.s,
+                                        vertical: Space.xxs,
+                                      ),
+                                      child: Text(
+                                        l.demoBadge,
+                                        style: TextStyle(
+                                          color: fg.withValues(alpha: 0.75),
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 ],
                               ],
                             ),
