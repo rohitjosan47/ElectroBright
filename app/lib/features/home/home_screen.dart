@@ -317,8 +317,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onTap: () => Navigator.of(ctx).pop('gallery'),
               ),
             ],
-            // Last: the switch for the developer tools and, when on, their
-            // entry.
+            // Last: the developer tools, switched on and opened from one row.
             Consumer(
               builder: (BuildContext ctx, WidgetRef ref, _) {
                 final bool on = ref.watch(developerToolsProvider);
@@ -345,23 +344,62 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ),
                       ),
                     ),
-                    SwitchListTile(
-                      key: const ValueKey<String>('settings-developer-tools'),
-                      secondary: const Icon(Icons.handyman_outlined),
-                      title: Text(l.developerTools),
-                      subtitle: Text(l.developerToolsHint),
-                      value: on,
-                      onChanged: (bool v) =>
-                          ref.read(developerToolsProvider.notifier).set(on: v),
+                    // One row: the switch turns the tools on; once on, the
+                    // label (with its chevron) opens them.
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: ListTile(
+                            key: on
+                                ? const ValueKey<String>('settings-developer')
+                                : null,
+                            enabled: on,
+                            leading: const Icon(Icons.developer_mode_rounded),
+                            title: Row(
+                              children: <Widget>[
+                                Flexible(child: Text(l.developer)),
+                                const SizedBox(width: Space.xxs),
+                                AnimatedOpacity(
+                                  opacity: on ? 1 : 0,
+                                  duration: const Duration(milliseconds: 200),
+                                  child: const Icon(
+                                    Icons.chevron_right_rounded,
+                                    size: 18,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            subtitle: Text(
+                              l.developerToolsHint,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant
+                                    .withValues(alpha: on ? 1 : 0.6),
+                              ),
+                            ),
+                            onTap: on
+                                ? () => Navigator.of(ctx).pop('developer')
+                                : null,
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(right: Space.m),
+                          child: Semantics(
+                            label: l.developerTools,
+                            child: Switch(
+                              key: const ValueKey<String>(
+                                'settings-developer-tools',
+                              ),
+                              value: on,
+                              onChanged: (bool v) => ref
+                                  .read(developerToolsProvider.notifier)
+                                  .set(on: v),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    if (on)
-                      ListTile(
-                        key: const ValueKey<String>('settings-developer'),
-                        leading: const Icon(Icons.developer_mode_rounded),
-                        title: Text(l.developer),
-                        trailing: const Icon(Icons.chevron_right_rounded),
-                        onTap: () => Navigator.of(ctx).pop('developer'),
-                      ),
                   ],
                 );
               },

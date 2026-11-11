@@ -341,7 +341,7 @@ void main() {
     for (final String n in colourLights) {
       final String id = d.id(n);
       final Finder row = find.byKey(ValueKey<String>('group-light-$id'));
-      expect(t.getSize(row).height, lessThan(56), reason: n);
+      expect(t.getSize(row).height, lessThan(64), reason: n);
       expect(
         t
             .widget<Text>(find.descendant(of: row, matching: find.text(n)))

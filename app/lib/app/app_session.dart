@@ -154,16 +154,14 @@ final class AppController extends Notifier<AppSession?> {
   }
 
   Future<void> _start(bool demo) async {
+    // A reset in progress finishes erasing before anything starts.
+    await _resetting;
     final AppServices services = ref.read(servicesProvider);
     final JsonStore main = ref.read(storeProvider);
     final AppSession? old = state;
     if (old != null) {
       state = _runtime.session = null;
-      await old.updates.dispose();
-      await old.bluetooth?.dispose();
-      old.groups.dispose();
-      await old.registry.saveAll();
-      await old.registry.dispose();
+      await _stop(old);
     }
     final JsonStore store = demo ? await ref.read(demoStoreProvider)() : main;
     // One-time startup work, before anything reads the store's presets.
@@ -214,6 +212,56 @@ final class AppController extends Notifier<AppSession?> {
           ? null
           : BluetoothAccess(platform: services.platform, central: ble.central),
     );
+  }
+
+  static Future<void> _stop(AppSession old) async {
+    await old.updates.dispose();
+    await old.bluetooth?.dispose();
+    old.groups.dispose();
+    await old.registry.saveAll();
+    await old.registry.dispose();
+  }
+
+  /// One-time migrations already done: kept by [reset] so they never run
+  /// again (the old app's lights would otherwise be imported back).
+  static const List<String> _keptOnReset = <String>[
+    LegacyImport.doneFlag,
+    PresetReset.doneFlag,
+  ];
+
+  Future<void>? _resetting;
+
+  /// Whether [reset] can run now (not during a wireless firmware update,
+  /// which an interrupted transfer could leave half-written).
+  bool get canReset => state?.updates.activeId == null;
+
+  /// "Reset app": returns the app to a fresh install. Every saved light,
+  /// group, preset and setting (real and demo) is erased, Bluetooth stops,
+  /// and onboarding shows at once. The lights themselves are untouched.
+  Future<void> reset() =>
+      _resetting ??= _reset().whenComplete(() => _resetting = null);
+
+  Future<void> _reset() async {
+    await _starting;
+    final JsonStore main = ref.read(storeProvider);
+    final Map<String, Object?> old = _settings();
+    final Map<String, Object?> kept = <String, Object?>{
+      for (final String k in _keptOnReset)
+        if (old.containsKey(k)) k: old[k],
+    };
+    // Not onboarded any more: the UI switches to onboarding now.
+    main.write('settings', kept);
+    final AppSession? session = state;
+    state = _runtime.session = null;
+    if (session != null) await _stop(session);
+    await ref.read(servicesProvider).stopBle();
+    final JsonStore demo = session != null && session.demo
+        ? session.store
+        : await ref.read(demoStoreProvider)();
+    await demo.clear();
+    await main.clear();
+    main.write('settings', kept);
+    await main.flush();
   }
 
   /// App going to the background: save every light's state now.

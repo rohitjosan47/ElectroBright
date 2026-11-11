@@ -485,12 +485,19 @@
     "description": "Settings section at the bottom of Settings."
   },
   "developerTools": "Developer tools",
-  "developerToolsHint": "Tools for setting up and maintaining your lights.",
+  "developerToolsHint": "Setup and diagnostics",
   "developer": "Developer",
   "@developer": {
     "description": "Row that opens the developer tools, and their title."
   },
   "developerLightsNote": "Set up a light's type, test its outputs or read its diagnostics.",
+  "resetApp": "Reset app",
+  "@resetApp": {
+    "description": "Developer page action (and its dialog title) that returns the app to a fresh install."
+  },
+  "resetAppHint": "Erase everything saved in the app and start again as a fresh install.",
+  "resetAppConfirm": "Every light, group, preset and setting saved in the app will be erased, and setup starts again. Your lights keep their own presets and settings.",
+  "resetAppBusy": "Wait for the firmware update to finish.",
   "firmwareVersionShort": "Firmware {version}",
   "@firmwareVersionShort": {
     "placeholders": {

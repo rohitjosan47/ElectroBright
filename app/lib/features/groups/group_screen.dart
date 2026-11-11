@@ -1097,7 +1097,7 @@ class _GroupLightsState extends ConsumerState<_GroupLights> {
                 ),
             ],
           ),
-          const SizedBox(height: Space.xxs),
+          const SizedBox(height: Space.xs),
           for (int i = 0; i < fixtures.length; i++) ...<Widget>[
             if (i > 0)
               Divider(
@@ -1240,7 +1240,7 @@ class _GroupLightRow extends ConsumerWidget {
                     behavior: HitTestBehavior.opaque,
                     onTap: onToggle,
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: Space.xs),
+                      padding: const EdgeInsets.symmetric(vertical: Space.s),
                       child: Row(
                         children: <Widget>[
                           _LightDot(

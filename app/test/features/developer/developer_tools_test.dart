@@ -103,10 +103,7 @@ void main() {
     final DemoApp d = await start(t);
     await openSheet(t);
     expect(find.text('ADVANCED'), findsOneWidget);
-    expect(
-      find.text('Tools for setting up and maintaining your lights.'),
-      findsOneWidget,
-    );
+    expect(find.text('Setup and diagnostics'), findsOneWidget);
     expect(key('settings-developer'), findsNothing);
     await t.tap(key('settings-developer-tools'));
     await settle(t, 1);
@@ -138,7 +135,15 @@ void main() {
     // Off: gone from Settings and from the light's settings.
     await toggleTools(t);
     expect(key('settings-developer'), findsNothing);
-    expect(find.text('Developer'), findsNothing);
+    // The label stays, greyed out and inert.
+    final ListTile row = t.widget<ListTile>(
+      find.ancestor(
+        of: find.text('Developer'),
+        matching: find.byType(ListTile),
+      ),
+    );
+    expect(row.enabled, isFalse);
+    expect(row.onTap, isNull);
     await closeSheet(t);
     await d.open(t, 'Living room');
     await t.tap(key('settings-button'));

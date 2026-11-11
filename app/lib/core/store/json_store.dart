@@ -96,6 +96,31 @@ final class JsonStore {
     return _writing;
   }
 
+  /// Erases every collection, in memory and on disk (main files, backups and
+  /// leftovers of an interrupted save). Waits for a save in flight first, so
+  /// it cannot land after the erase; pending writes are dropped.
+  Future<void> clear() async {
+    _timer?.cancel();
+    _timer = null;
+    await _writing;
+    _timer?.cancel();
+    _timer = null;
+    _dirty.clear();
+    _cache.clear();
+    lastError = null;
+    final Directory? dir = directory;
+    if (dir == null || !dir.existsSync()) return;
+    await for (final FileSystemEntity e in dir.list()) {
+      final String name = e.uri.pathSegments.last;
+      if (e is File &&
+          (name.endsWith('.json') ||
+              name.endsWith('.json.bak') ||
+              name.endsWith('.json.tmp'))) {
+        await e.delete();
+      }
+    }
+  }
+
   File _file(String c) => File('${directory!.path}/$c.json');
   File _bak(String c) => File('${directory!.path}/$c.json.bak');
 

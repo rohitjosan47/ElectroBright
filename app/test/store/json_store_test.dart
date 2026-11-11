@@ -51,4 +51,23 @@ void main() {
       'f1': 1,
     });
   });
+
+  test('clear erases memory, files, backups and pending writes', () async {
+    final JsonStore a = await JsonStore.open(
+      dir,
+      writeDelay: const Duration(milliseconds: 20),
+    );
+    a.write('fixtures', <Object>['first']);
+    await a.flush();
+    a.write('fixtures', <Object>['second']);
+    await a.flush(); // leaves a .bak
+    File('${dir.path}/settings.json.tmp').writeAsStringSync('torn');
+    a.write('settings', <String, Object>{'x': true}); // still pending
+    await a.clear();
+    expect(a.read('fixtures'), isNull);
+    expect(a.read('settings'), isNull);
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    expect(dir.listSync(), isEmpty); // the pending write never landed
+    expect((await JsonStore.open(dir)).read('fixtures'), isNull);
+  });
 }

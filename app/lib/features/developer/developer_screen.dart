@@ -6,13 +6,18 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/providers.dart';
 import '../../core/model/fixture.dart';
+import '../../app/app_session.dart';
 import '../../design/components/fixture_type.dart';
+import '../../design/components/glass_controls.dart';
 import '../../design/components/settings_list.dart';
+import '../../design/haptics/haptics.dart';
+import '../../design/haptics/haptics_scope.dart';
 import '../../design/tokens/tokens.dart';
 import '../../drivers/electrobright/eb_types.dart';
 import '../../l10n/app_localizations.dart';
 import '../../sessions/fixture_session.dart';
 import '../home/presence.dart';
+import 'developer_tools.dart';
 import 'light_developer_screen.dart';
 
 /// Settings → Developer: every saved light with its type, firmware version
@@ -37,11 +42,93 @@ class DeveloperScreen extends ConsumerWidget {
         if (fixtures.isNotEmpty)
           SettingsSection(
             children: <Widget>[
-              for (final Fixture f in fixtures) _LightRow(fixture: f),
+              for (int i = 0; i < fixtures.length; i++) ...<Widget>[
+                // Slim separators, as in a group's light list.
+                if (i > 0)
+                  Divider(
+                    height: 1,
+                    thickness: 0.5,
+                    indent: Space.m,
+                    endIndent: Space.m,
+                    color: settingsInk(context).withValues(alpha: 0.12),
+                  ),
+                _LightRow(fixture: fixtures[i]),
+              ],
             ],
           ),
+        const SizedBox(height: Space.m),
+        const SettingsSection(children: <Widget>[_ResetAppRow()]),
       ],
     );
+  }
+}
+
+const Color _danger = Color(0xFFE5484D);
+
+/// "Reset app": after a confirmation, erases everything the app saved and
+/// returns to onboarding, as after a fresh install.
+class _ResetAppRow extends ConsumerWidget {
+  const _ResetAppRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppLocalizations l = AppLocalizations.of(context);
+    return ListTile(
+      key: const ValueKey<String>('dev-reset-app'),
+      leading: const Icon(Icons.restart_alt_rounded, color: _danger),
+      title: Text(
+        l.resetApp,
+        style: settingsTitleStyle(context).copyWith(color: _danger),
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: Space.xxs),
+        child: Text(l.resetAppHint, style: settingsDetailStyle(context)),
+      ),
+      onTap: () => unawaited(_confirm(context, ref)),
+    );
+  }
+
+  Future<void> _confirm(BuildContext context, WidgetRef ref) async {
+    final AppLocalizations l = AppLocalizations.of(context);
+    final AppController app = ref.read(appSessionProvider.notifier);
+    if (!app.canReset) {
+      showGlassToast(context, l.resetAppBusy, icon: Icons.downloading_rounded);
+      return;
+    }
+    final Haptics haptics = HapticsScope.of(context);
+    haptics.play(HapticEvent.warning);
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        icon: const Icon(Icons.restart_alt_rounded, color: _danger, size: 32),
+        title: Text(l.resetApp),
+        content: Text(l.resetAppConfirm),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l.cancel),
+          ),
+          FilledButton(
+            key: const ValueKey<String>('dev-reset-app-confirm'),
+            style: FilledButton.styleFrom(backgroundColor: _danger),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l.erase),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted || !app.canReset) return;
+    final ProviderContainer container = ProviderScope.containerOf(
+      context,
+      listen: false,
+    );
+    final NavigatorState nav = Navigator.of(context);
+    haptics.play(HapticEvent.success);
+    // Onboarding takes over underneath at once; erasing finishes behind it.
+    final Future<void> done = app.reset();
+    container.invalidate(developerToolsProvider);
+    nav.popUntil((Route<dynamic> r) => r.isFirst);
+    await done;
   }
 }
 
@@ -106,6 +193,10 @@ class _LightRow extends ConsumerWidget {
     final Color fg = settingsInk(context);
     return ListTile(
       key: ValueKey<String>('dev-light-${f.id}'),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: Space.m,
+        vertical: Space.xxs,
+      ),
       title: Text(f.name, style: settingsTitleStyle(context)),
       subtitle: Padding(
         padding: const EdgeInsets.only(top: Space.xxs),
