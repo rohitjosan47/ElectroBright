@@ -9,6 +9,7 @@ import '../../app/bluetooth_access.dart';
 import '../../app/providers.dart';
 import '../../core/model/fixture.dart';
 import '../../design/canvas/ambient_canvas.dart';
+import '../../design/components/aura_add_button.dart';
 import '../../design/components/fixture_type.dart';
 import '../../design/components/glass_controls.dart';
 import '../../design/components/name_dialog.dart';
@@ -428,29 +429,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      // The count of lights nearby that can be added, on the button's
-      // corner. Brand colour, not the error red: nothing is wrong.
-      floatingActionButton: Badge(
-        isLabelVisible: _nearby > 0,
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        textColor: Theme.of(context).colorScheme.onPrimary,
-        label: ExcludeSemantics(child: Text('$_nearby')),
-        child: FloatingActionButton.extended(
-          onPressed: app == null
-              ? null
-              : () => unawaited(
-                  Navigator.of(context).push(
-                    MaterialPageRoute<String>(
-                      builder: (_) => const AddLightScreen(),
-                    ),
+      // Glowing LED-strip capsule; its badge counts lights nearby that can
+      // be added (brand colour, not the error red: nothing is wrong).
+      floatingActionButton: AuraAddButton(
+        count: _nearby,
+        label: l.addLight,
+        semanticsLabel: _nearby > 0 ? l.addLightNearby(_nearby) : null,
+        onPressed: app == null
+            ? null
+            : () => unawaited(
+                Navigator.of(context).push(
+                  MaterialPageRoute<String>(
+                    builder: (_) => const AddLightScreen(),
                   ),
                 ),
-          icon: const Icon(Icons.add_rounded),
-          label: Text(
-            l.addLight,
-            semanticsLabel: _nearby > 0 ? l.addLightNearby(_nearby) : null,
-          ),
-        ),
+              ),
       ),
       body: AmbientCanvas(
         child: CustomScrollView(

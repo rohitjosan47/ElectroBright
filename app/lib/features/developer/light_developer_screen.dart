@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../design/components/aura_add_button.dart';
 import '../../app/app_session.dart';
 import '../../app/bluetooth_access.dart';
 import '../../app/providers.dart';
@@ -337,7 +338,7 @@ class _LightDeveloperScreenState extends ConsumerState<LightDeveloperScreen> {
         ),
       Padding(
         padding: const EdgeInsets.fromLTRB(Space.m, Space.xs, Space.m, Space.s),
-        child: FilledButton(
+        child: AuraButton(
           key: const ValueKey<String>('dev-change-type'),
           onPressed:
               connected &&

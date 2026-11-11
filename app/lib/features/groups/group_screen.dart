@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../design/components/aura_add_button.dart';
 import '../../app/bluetooth_access.dart';
 import '../../app/providers.dart';
 import '../../core/color/colour_engine.dart';
@@ -1027,7 +1028,7 @@ class _NoneFollowing extends ConsumerWidget {
             style: TextStyle(color: fg.withValues(alpha: 0.8)),
           ),
           const SizedBox(height: Space.m),
-          FilledButton(
+          AuraButton(
             onPressed: group.rejoinAll,
             child: Text(anyOwn ? l.rejoinAll : l.includeLights),
           ),

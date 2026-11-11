@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../design/components/aura_add_button.dart';
 import '../../app/app_session.dart';
 import '../../design/canvas/ambient_canvas.dart';
 import '../../design/glass/glass_surface.dart';
@@ -42,7 +43,7 @@ class OnboardingScreen extends ConsumerWidget {
                   child: Text(l.welcomeBody, textAlign: TextAlign.center),
                 ),
                 const Spacer(),
-                FilledButton(
+                AuraButton(
                   onPressed: () => unawaited(c.useMyLights()),
                   child: Text(l.useMyLights),
                 ),

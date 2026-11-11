@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../design/components/aura_add_button.dart';
 import '../../core/color/led_white_points.dart';
 import '../../core/model/channel_layout.dart';
 import '../../design/components/fixture_type.dart';
@@ -270,7 +271,7 @@ class _ProbeFlowState extends State<ProbeFlow> {
       ],
       const SizedBox(height: Space.l),
       if (type != null) ...<Widget>[
-        FilledButton(
+        AuraButton(
           key: const ValueKey<String>('probe-use'),
           onPressed: () => Navigator.of(context).pop(type),
           child: Text(l.probeUseType),

@@ -1,3 +1,4 @@
+import 'package:electrobright/design/components/aura_add_button.dart';
 import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/model/fixture.dart';
 import 'package:electrobright/design/platform/platform_api.g.dart';
@@ -355,7 +356,7 @@ void main() {
 
     await push(t, UpdateFirmwareScreen(fixtureId: d.id('Desk strip')));
     expect(t.widget<Text>(_key('update-blocked')).data, usb);
-    expect(t.widget<FilledButton>(_key('update-start')).onPressed, isNull);
+    expect(t.widget<AuraButton>(_key('update-start')).onPressed, isNull);
     expect(find.text("This firmware doesn't fit this light."), findsNothing);
     await DemoApp.shutDown(t);
   });
@@ -476,7 +477,7 @@ void main() {
     await _settle(t, 1);
     await push(t, const UpdateFirmwareScreen(fixtureId: 'f-newer'));
     expect(find.text('The light already has newer firmware.'), findsOneWidget);
-    expect(t.widget<FilledButton>(_key('update-start')).onPressed, isNull);
+    expect(t.widget<AuraButton>(_key('update-start')).onPressed, isNull);
     await DemoApp.shutDown(t);
   });
 
@@ -497,10 +498,10 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(t.widget<FilledButton>(_key('update-start')).onPressed, isNull);
+    expect(t.widget<AuraButton>(_key('update-start')).onPressed, isNull);
     d.app.updates.cancel(d.id('Desk strip'));
     await _settle(t, 1);
-    expect(t.widget<FilledButton>(_key('update-start')).onPressed, isNotNull);
+    expect(t.widget<AuraButton>(_key('update-start')).onPressed, isNotNull);
     await DemoApp.shutDown(t);
   });
 

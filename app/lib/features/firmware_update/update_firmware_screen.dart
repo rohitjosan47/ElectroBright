@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../design/components/aura_add_button.dart';
 import '../../app/app_session.dart';
 import '../../app/providers.dart';
 import '../../core/firmware/firmware_bundle.dart';
@@ -251,7 +252,7 @@ class _UpdateFirmwareScreenState extends ConsumerState<UpdateFirmwareScreen> {
             ],
           ),
         ),
-      FilledButton(
+      AuraButton(
         key: const ValueKey<String>('update-start'),
         onPressed: blocker == null && connected ? () => _start(bundle!) : null,
         child: Text(widget.reinstall ? l.reinstallStart : l.updateStart),
@@ -463,7 +464,7 @@ class _UpdateFirmwareScreenState extends ConsumerState<UpdateFirmwareScreen> {
           ),
         ],
       ),
-      FilledButton(
+      AuraButton(
         key: const ValueKey<String>('update-done'),
         onPressed: () => Navigator.of(context).maybePop(),
         child: Text(l.done),

@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
 
+import '../../design/components/aura_add_button.dart';
 import '../../app/providers.dart';
 import '../../bootstrap/service_registry.dart';
 import '../../design/components/glass_controls.dart';
 import '../../design/haptics/haptics.dart';
+import '../../design/haptics/haptics_scope.dart';
 import '../../design/tokens/tokens.dart';
 import '../../design/tone/tone_scope.dart';
 import '../../drivers/electrobright/eb_types.dart';
@@ -108,6 +110,11 @@ class _TimerCountdownState extends ConsumerState<TimerCountdown> {
   bool _ticking = false;
   bool _shown = true;
 
+  /// The deadline being counted down, kept so the light reporting its timer
+  /// done (deadline cleared) a moment before the countdown hits 0 still
+  /// counts as running out, not as a cancel.
+  Duration? _lastDeadline;
+
   @override
   void initState() {
     super.initState();
@@ -155,9 +162,21 @@ class _TimerCountdownState extends ConsumerState<TimerCountdown> {
   void _arm(Duration? deadline) {
     final Duration now = ref.read(servicesProvider).scheduler.now;
     if (deadline == null || deadline <= now || !_shown) {
+      // Ran out while counting down on screen: the light is switching off
+      // now, so the phone confirms it like the power button does. Not on a
+      // cancel with time left or when reopened long after it ended.
+      final Duration? ended = deadline ?? _lastDeadline;
+      if (_ticking &&
+          _shown &&
+          ended != null &&
+          (now - ended).abs() < const Duration(seconds: 2)) {
+        HapticsScope.of(context).play(HapticEvent.powerOff);
+      }
+      _lastDeadline = null;
       _stopTicking();
       return;
     }
+    _lastDeadline = deadline;
     if (_ticking) return;
     _ticking = true;
     _CountdownClock.add(_onTick);
@@ -374,14 +393,14 @@ class _TimerSheetState extends ConsumerState<_TimerSheet> {
               ),
               const SizedBox(height: Space.m),
               if (left == null)
-                FilledButton(
+                AuraButton(
                   key: const ValueKey<String>('timer-start'),
                   onPressed: () =>
                       unawaited(_set(timerSteps[_index].inSeconds)),
                   child: Text(l.timerStart),
                 )
               else
-                FilledButton(
+                AuraButton(
                   key: const ValueKey<String>('timer-cancel'),
                   onPressed: () => unawaited(_set(0)),
                   child: Text(l.timerCancel),

@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
+import 'package:flutter/rendering.dart';
 
 import '../../core/color/light_surfaces.dart';
 import '../../core/color/light_tone.dart';
@@ -45,6 +47,10 @@ class GlassIconButton extends StatefulWidget {
 class _GlassIconButtonState extends State<GlassIconButton> {
   bool _down = false;
 
+  void _release() {
+    if (_down && mounted) setState(() => _down = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     // The palette only matters when lit; otherwise light/dark is enough, so
@@ -58,96 +64,108 @@ class _GlassIconButtonState extends State<GlassIconButton> {
       button: true,
       enabled: enabled,
       label: widget.label,
-      child: GestureDetector(
-        onTapDown: enabled
-            ? (_) {
-                h.prepare(widget.haptic);
-                setState(() => _down = true);
-              }
-            : null,
-        onTapCancel: () => setState(() => _down = false),
-        onTapUp: enabled
-            ? (_) {
-                setState(() => _down = false);
-                h.play(widget.haptic);
-                widget.onPressed!();
-              }
-            : null,
-        child: AnimatedScale(
-          scale: _down ? 0.9 : 1,
-          duration: Motion.fast,
-          curve: Motion.emphasized,
-          child: Opacity(
-            opacity: enabled ? 1 : 0.4,
-            child: SizedBox.square(
-              dimension: widget.size,
-              // Lit: glass tinted in the light's accent, with its glow;
-              // the icon keeps the theme's colour so it reads on both.
-              child: tone != null && !dark
-                  // Light: glass tinted in the light's luminous colour,
-                  // shining onto the surface below; the icon in whichever
-                  // ink reads on it (>= 4.5:1).
-                  ? DecoratedBox(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: <BoxShadow>[
-                          BoxShadow(
-                            color: Color(LightSurfaces(tone).glow)
-                                .withValues(alpha: 0.55),
-                            blurRadius: 16,
-                            offset: const Offset(0, 5),
+      // A touch target 8 pt wider on every side than the glass (layout and
+      // looks unchanged), and press feedback on the raw pointer down, so
+      // the button reacts at once instead of after the tap recognizer's
+      // decision.
+      child: _HitSlop(
+        slop: 8,
+        child: Listener(
+          onPointerDown: enabled
+              ? (_) {
+                  h.prepare(widget.haptic);
+                  setState(() => _down = true);
+                }
+              : null,
+          onPointerUp: (_) => _release(),
+          onPointerCancel: (_) => _release(),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapCancel: _release,
+            onTapUp: enabled
+                ? (_) {
+                    _release();
+                    h.play(widget.haptic);
+                    widget.onPressed!();
+                  }
+                : null,
+            child: AnimatedScale(
+              scale: _down ? 0.9 : 1,
+              duration: Motion.fast,
+              curve: Motion.emphasized,
+              child: Opacity(
+                opacity: enabled ? 1 : 0.4,
+                child: SizedBox.square(
+                  dimension: widget.size,
+                  // Lit: glass tinted in the light's accent, with its glow;
+                  // the icon keeps the theme's colour so it reads on both.
+                  child: tone != null && !dark
+                      // Light: glass tinted in the light's luminous colour,
+                      // shining onto the surface below; the icon in whichever
+                      // ink reads on it (>= 4.5:1).
+                      ? DecoratedBox(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: <BoxShadow>[
+                              BoxShadow(
+                                color: Color(LightSurfaces(tone).glow)
+                                    .withValues(alpha: 0.55),
+                                blurRadius: 16,
+                                offset: const Offset(0, 5),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      child: GlassSurface(
-                        tier: widget.tier,
-                        radius: widget.size / 2,
-                        tint: Color(LightSurfaces(tone).activeTint),
-                        child: Center(
-                          child: Icon(
-                            widget.icon,
-                            color: Color(LightSurfaces(tone).activeIcon),
-                            size: widget.size * 0.48,
+                          child: GlassSurface(
+                            tier: widget.tier,
+                            radius: widget.size / 2,
+                            tint: Color(LightSurfaces(tone).activeTint),
+                            child: Center(
+                              child: Icon(
+                                widget.icon,
+                                color: Color(LightSurfaces(tone).activeIcon),
+                                size: widget.size * 0.48,
+                              ),
+                            ),
+                          ),
+                        )
+                      : tone != null
+                      ? DecoratedBox(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: <BoxShadow>[
+                              BoxShadow(
+                                color: Color(tone.glow).withValues(alpha: 0.45),
+                                blurRadius: 16,
+                              ),
+                            ],
+                          ),
+                          child: GlassSurface(
+                            tier: widget.tier,
+                            radius: widget.size / 2,
+                            tint: Color(tone.accent),
+                            child: Center(
+                              child: Icon(
+                                widget.icon,
+                                color: fg,
+                                size: widget.size * 0.48,
+                              ),
+                            ),
+                          ),
+                        )
+                      : GlassSurface(
+                          tier: widget.tier,
+                          radius: widget.size / 2,
+                          tinted: false,
+                          child: Center(
+                            child: Icon(
+                              widget.icon,
+                              color: fg,
+                              size: widget.size * 0.48,
+                            ),
                           ),
                         ),
-                      ),
-                    )
-                  : tone != null
-                  ? DecoratedBox(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: <BoxShadow>[
-                          BoxShadow(
-                            color: Color(tone.glow).withValues(alpha: 0.45),
-                            blurRadius: 16,
-                          ),
-                        ],
-                      ),
-                      child: GlassSurface(
-                        tier: widget.tier,
-                        radius: widget.size / 2,
-                        tint: Color(tone.accent),
-                        child: Center(
-                          child: Icon(
-                            widget.icon,
-                            color: fg,
-                            size: widget.size * 0.48,
-                          ),
-                        ),
-                      ),
-                    )
-                  : GlassSurface(
-                      tier: widget.tier,
-                      radius: widget.size / 2,
-                      tinted: false,
-                      child: Center(
-                        child: Icon(
-                          widget.icon,
-                          color: fg,
-                          size: widget.size * 0.48,
-                        ),
-                      ),
-                    ),
+                ),
+              ),
             ),
           ),
         ),
@@ -853,18 +871,41 @@ class TimerDial extends StatefulWidget {
 }
 
 class _TimerDialState extends State<TimerDial> {
+  bool _held = false;
+  int _lastIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastIndex = widget.index;
+  }
+
+  @override
+  void didUpdateWidget(TimerDial old) {
+    super.didUpdateWidget(old);
+    if (old.index != widget.index) _lastIndex = old.index;
+  }
+
   void _drag(Offset p, Size size, Haptics h) {
     final Offset d = p - size.center(Offset.zero);
+    // The very centre has no stable angle: ignore it.
+    if (d.distance < size.shortestSide * 0.12) return;
     double a = math.atan2(d.dx, -d.dy); // 0 at 12 o'clock, clockwise
     if (a < 0) a += 2 * math.pi;
-    final int i = (a / (2 * math.pi) * widget.steps.length).floor().clamp(
-      0,
-      widget.steps.length - 1,
-    );
-    if (i != widget.index) {
-      h.play(HapticEvent.detent);
+    final int n = widget.steps.length;
+    int i = (a / (2 * math.pi) * n).floor().clamp(0, n - 1);
+    // Stop at the ends instead of wrapping across 12 o'clock.
+    final int cur = widget.index;
+    if (cur >= n * 3 ~/ 4 && i < n ~/ 4) i = n - 1;
+    if (cur < n ~/ 4 && i >= n * 3 ~/ 4) i = 0;
+    if (i != cur) {
+      h.play(i == 0 || i == n - 1 ? HapticEvent.edge : HapticEvent.detent);
       widget.onChanged(i);
     }
+  }
+
+  void _hold(bool v) {
+    if (_held != v && mounted) setState(() => _held = v);
   }
 
   @override
@@ -872,8 +913,13 @@ class _TimerDialState extends State<TimerDial> {
     final LightTone tone = ToneScope.of(context);
     final Haptics h = HapticsScope.of(context);
     final Color fg = tone.dark ? Colors.white : const Color(0xFF15171C);
+    final bool reduce = MediaQuery.disableAnimationsOf(context);
+    final Duration sweep = reduce ? Duration.zero : Motion.medium;
     // Counting down: a read-only ring, no longer a picker.
     final bool running = widget.progress != null;
+    final double target =
+        widget.progress ?? (widget.index + 1) / widget.steps.length;
+    final bool up = widget.index >= _lastIndex;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
         final double s = math.min(c.maxWidth, 260);
@@ -895,24 +941,55 @@ class _TimerDialState extends State<TimerDial> {
           onDecrease: !running && widget.index > 0
               ? () => widget.onChanged(widget.index - 1)
               : null,
-          child: GestureDetector(
-            onPanDown: running
-                ? null
-                : (DragDownDetails d) => _drag(d.localPosition, size, h),
-            onPanUpdate: running
-                ? null
-                : (DragUpdateDetails d) => _drag(d.localPosition, size, h),
+          // The dial claims a touch as soon as it lands, so the sheet's own
+          // drag and scroll cannot take it over mid-turn.
+          child: RawGestureDetector(
+            behavior: HitTestBehavior.opaque,
+            gestures: running
+                ? const <Type, GestureRecognizerFactory>{}
+                : <Type, GestureRecognizerFactory>{
+                    _EagerPan: GestureRecognizerFactoryWithHandlers<_EagerPan>(
+                      _EagerPan.new,
+                      (_EagerPan r) => r
+                        ..onDown = (DragDownDetails d) {
+                          _hold(true);
+                          _drag(d.localPosition, size, h);
+                        }
+                        ..onUpdate = (DragUpdateDetails d) {
+                          _drag(d.localPosition, size, h);
+                        }
+                        ..onEnd = (_) {
+                          _hold(false);
+                        }
+                        ..onCancel = () {
+                          _hold(false);
+                        },
+                    ),
+                  },
             child: SizedBox.fromSize(
               size: size,
-              child: CustomPaint(
-                painter: _DialPainter(
-                  fraction:
-                      widget.progress ??
-                      (widget.index + 1) / widget.steps.length,
-                  steps: running ? 0 : widget.steps.length,
-                  accent: Color(tone.accent),
-                  dark: tone.dark,
-                ),
+              child: TweenAnimationBuilder<double>(
+                tween: Tween<double>(end: _held ? 1 : 0),
+                duration: reduce ? Duration.zero : Motion.fast,
+                curve: Motion.emphasized,
+                builder: (BuildContext context, double held, Widget? label) =>
+                    TweenAnimationBuilder<double>(
+                      tween: Tween<double>(end: target),
+                      duration: running ? Duration.zero : sweep,
+                      curve: Motion.emphasized,
+                      builder: (BuildContext context, double f, Widget? _) =>
+                          CustomPaint(
+                            painter: _DialPainter(
+                              fraction: f,
+                              steps: running ? 0 : widget.steps.length,
+                              accent: Color(tone.accent),
+                              dark: tone.dark,
+                              held: held,
+                              thumb: !running,
+                            ),
+                            child: label,
+                          ),
+                    ),
                 // Inside the ring's detent dots (32 in from its edge); large
                 // text scales down to fit.
                 child: Padding(
@@ -920,16 +997,62 @@ class _TimerDialState extends State<TimerDial> {
                   child: Center(
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
-                      child: Text(
-                        widget.label(widget.steps[widget.index]),
-                        maxLines: 1,
-                        style: TextStyle(
-                          color: fg,
-                          fontSize: 32,
-                          fontWeight: FontWeight.w600,
-                          fontFeatures: const <FontFeature>[
-                            FontFeature.tabularFigures(),
-                          ],
+                      child: ClipRect(
+                        child: AnimatedSwitcher(
+                          duration: reduce
+                              ? Duration.zero
+                              : const Duration(milliseconds: 240),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeOutCubic,
+                          // Only the newest outgoing label stays, so a fast
+                          // turn never stacks several on top of each other.
+                          layoutBuilder: (Widget? cur, List<Widget> prev) =>
+                              Stack(
+                                alignment: Alignment.center,
+                                children: <Widget>[
+                                  if (prev.isNotEmpty) prev.last,
+                                  ?cur,
+                                ],
+                              ),
+                          // Odometer roll: each label travels a full line, so
+                          // old and new sit edge to edge and never overlap;
+                          // the old one is gone by half-way.
+                          transitionBuilder: (Widget w, Animation<double> a) {
+                            final bool incoming =
+                                w.key == ValueKey<int>(widget.index);
+                            final double dy =
+                                (up ? 1.0 : -1.0) * (incoming ? 1 : -1);
+                            return SlideTransition(
+                              position: Tween<Offset>(
+                                begin: Offset(0, dy),
+                                end: Offset.zero,
+                              ).animate(a),
+                              child: FadeTransition(
+                                opacity: CurvedAnimation(
+                                  parent: a,
+                                  curve: incoming
+                                      ? const Interval(0.25, 1)
+                                      : const Interval(0.5, 1),
+                                ),
+                                child: w,
+                              ),
+                            );
+                          },
+                          child: Text(
+                            widget.label(widget.steps[widget.index]),
+                            // Running: one key, so the countdown ticks in
+                            // place instead of rolling every second.
+                            key: ValueKey<int>(running ? -1 : widget.index),
+                            maxLines: 1,
+                            style: TextStyle(
+                              color: fg,
+                              fontSize: 32,
+                              fontWeight: FontWeight.w600,
+                              fontFeatures: const <FontFeature>[
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -944,46 +1067,136 @@ class _TimerDialState extends State<TimerDial> {
   }
 }
 
+/// A pan that wins the gesture arena the moment the finger lands.
+class _EagerPan extends PanGestureRecognizer {
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    super.addAllowedPointer(event);
+    resolve(GestureDisposition.accepted);
+  }
+}
+
 class _DialPainter extends CustomPainter {
   _DialPainter({
     required this.fraction,
     required this.steps,
     required this.accent,
     required this.dark,
+    this.held = 0,
+    this.thumb = false,
   });
   final double fraction;
   final int steps; // detent dots (0 = none)
   final Color accent;
   final bool dark;
 
+  /// 0..1 while a finger holds the dial (thumb grows, glow lifts).
+  final double held;
+  final bool thumb;
+
   @override
   void paint(Canvas canvas, Size size) {
     final Offset c = size.center(Offset.zero);
     final double r = size.shortestSide / 2 - 14;
-    final Paint track = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 14
-      ..strokeCap = StrokeCap.round
-      ..color = (dark ? Colors.white : Colors.black).withValues(alpha: 0.08);
-    canvas.drawCircle(c, r, track);
-    canvas.drawArc(
-      Rect.fromCircle(center: c, radius: r),
-      -math.pi / 2,
-      2 * math.pi * fraction.clamp(0.0, 1.0),
-      false,
-      track..color = accent,
+    final Rect ring = Rect.fromCircle(center: c, radius: r);
+    final double f = fraction.clamp(0.0, 1.0);
+    final double sweep = 2 * math.pi * f;
+    const double start = -math.pi / 2;
+    final Color ink = dark ? Colors.white : Colors.black;
+
+    // Track.
+    canvas.drawCircle(
+      c,
+      r,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 14
+        ..color = ink.withValues(alpha: dark ? 0.07 : 0.06),
     );
-    for (int i = 0; i < steps; i++) {
-      final double a = -math.pi / 2 + 2 * math.pi * i / steps;
-      canvas.drawCircle(
-        c + Offset(math.cos(a), math.sin(a)) * (r - 18),
-        1.6,
+
+    if (f > 0) {
+      // Soft glow under the arc.
+      canvas.drawArc(
+        ring,
+        start,
+        sweep,
+        false,
         Paint()
-          ..color = (dark ? Colors.white : Colors.black).withValues(
-            alpha: 0.25,
-          ),
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 14
+          ..strokeCap = StrokeCap.round
+          ..color = accent.withValues(alpha: (dark ? 0.30 : 0.22) + 0.15 * held)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 8 + 4 * held),
+      );
+      // Arc: deepens toward its end. Butt ends, with round caps drawn in
+      // each end's own colour so the gradient never wraps at the start.
+      final Color from = accent.withValues(alpha: 0.55);
+      canvas.drawArc(
+        ring,
+        start,
+        sweep,
+        false,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 14
+          ..shader = SweepGradient(
+            endAngle: math.max(sweep, 0.001),
+            colors: <Color>[from, accent],
+            transform: const GradientRotation(start),
+          ).createShader(ring),
+      );
+      canvas.drawArc(
+        Rect.fromCircle(center: c + Offset(0, -r), radius: 7),
+        math.pi / 2,
+        math.pi,
+        true,
+        Paint()..color = from,
       );
     }
+
+    // Detent dots: lit where the arc has passed.
+    for (int i = 0; i < steps; i++) {
+      final double a = start + 2 * math.pi * i / steps;
+      final bool lit = (i + 0.5) / steps <= f;
+      canvas.drawCircle(
+        c + Offset(math.cos(a), math.sin(a)) * (r - 18),
+        lit ? 1.9 : 1.6,
+        Paint()
+          ..color = lit
+              ? accent.withValues(alpha: 0.9)
+              : ink.withValues(alpha: 0.22),
+      );
+    }
+
+    final Offset end =
+        c + Offset(math.cos(start + sweep), math.sin(start + sweep)) * r;
+    if (!thumb) {
+      if (f > 0) canvas.drawCircle(end, 7, Paint()..color = accent);
+      return;
+    }
+
+    // Thumb at the arc's end: a lit glass bead that grows while held.
+    final double tr = 11 + 3 * held;
+    canvas.drawCircle(
+      end,
+      tr + 4,
+      Paint()
+        ..color = accent.withValues(alpha: 0.35 + 0.25 * held)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
+    canvas.drawCircle(
+      end,
+      tr,
+      Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(-0.3, -0.4),
+          colors: <Color>[
+            Colors.white,
+            Color.lerp(Colors.white, accent, 0.25)!,
+          ],
+        ).createShader(Rect.fromCircle(center: end, radius: tr)),
+    );
+    canvas.drawCircle(end, 3.5 + 0.5 * held, Paint()..color = accent);
   }
 
   @override
@@ -991,7 +1204,9 @@ class _DialPainter extends CustomPainter {
       old.fraction != fraction ||
       old.steps != steps ||
       old.accent != accent ||
-      old.dark != dark;
+      old.dark != dark ||
+      old.held != held ||
+      old.thumb != thumb;
 }
 
 /// A short glass toast shown at the top of the screen.
@@ -1092,5 +1307,43 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
         ),
       ),
     );
+  }
+}
+
+/// Accepts touches up to [slop] outside its child, as if they landed on the
+/// child's nearest edge. Layout and painting are untouched. An ancestor that
+/// is no larger than the button still limits it, so nothing outside the
+/// button's own parent can be affected.
+class _HitSlop extends SingleChildRenderObjectWidget {
+  const _HitSlop({required this.slop, required super.child});
+
+  final double slop;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderHitSlop(slop);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderHitSlop r) =>
+      r.slop = slop;
+}
+
+class _RenderHitSlop extends RenderProxyBox {
+  _RenderHitSlop(this.slop);
+
+  double slop;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    final Rect zone = (Offset.zero & size).inflate(slop);
+    if (!zone.contains(position)) return false;
+    final Offset inside = Offset(
+      position.dx.clamp(0.0, size.width),
+      position.dy.clamp(0.0, size.height),
+    );
+    if (hitTestChildren(result, position: inside)) {
+      result.add(BoxHitTestEntry(this, position));
+      return true;
+    }
+    return false;
   }
 }

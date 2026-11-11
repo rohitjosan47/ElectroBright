@@ -1,3 +1,4 @@
+import 'package:electrobright/design/components/aura_add_button.dart';
 import 'package:electrobright/app/app_session.dart';
 import 'package:electrobright/core/model/channel_layout.dart';
 import 'package:electrobright/core/model/fixture.dart';
@@ -245,7 +246,7 @@ void main() {
     // The current type can't be "changed" to.
     await t.tap(key('dev-type-W'));
     await settle(t, 1);
-    expect(t.widget<FilledButton>(key('dev-change-type')).onPressed, isNull);
+    expect(t.widget<AuraButton>(key('dev-change-type')).onPressed, isNull);
     await t.tap(key('dev-type-RGB'));
     await settle(t, 1);
     await t.tap(key('dev-change-type'));
@@ -524,7 +525,7 @@ void main() {
       findsOneWidget,
     );
     expect(key('dev-find-type'), findsNothing);
-    expect(t.widget<FilledButton>(key('dev-change-type')).onPressed, isNull);
+    expect(t.widget<AuraButton>(key('dev-change-type')).onPressed, isNull);
     await DemoApp.shutDown(t);
   });
 }

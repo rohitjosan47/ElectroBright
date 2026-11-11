@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../design/components/aura_add_button.dart';
 import '../../app/app_session.dart';
 import '../../app/bluetooth_access.dart';
 import '../../app/providers.dart';
@@ -381,7 +382,6 @@ class _PickList extends ConsumerWidget {
                   .firstOrNull
                   ?.name,
               onTap: () => onPick(n),
-              onHide: () => hide.hide(n.seen.id),
             ),
           ),
         if (unsupported.isNotEmpty) ...<Widget>[
@@ -570,7 +570,7 @@ class _Failed extends StatelessWidget {
       children: <Widget>[
         Text(l.addFailed, textAlign: TextAlign.center),
         const SizedBox(height: Space.m),
-        FilledButton(onPressed: onRetry, child: Text(l.tryAgain)),
+        AuraButton(onPressed: onRetry, child: Text(l.tryAgain)),
       ],
     );
   }
@@ -648,7 +648,7 @@ class _Found extends StatelessWidget {
           onSubmitted: (_) => onSave(),
         ),
         const SizedBox(height: Space.l),
-        FilledButton(onPressed: onSave, child: Text(l.addSave)),
+        AuraButton(onPressed: onSave, child: Text(l.addSave)),
       ],
     );
   }

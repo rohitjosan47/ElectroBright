@@ -7,6 +7,7 @@ import 'package:electrobright/sim/sim_central.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:electrobright/design/components/aura_add_button.dart';
 
 import '../support/demo_app.dart';
 
@@ -35,14 +36,8 @@ void main() {
 
   /// The count on "Add light", or null when it has none.
   int? badge(WidgetTester t) {
-    final Badge b = t.widget<Badge>(
-      find.ancestor(
-        of: find.byType(FloatingActionButton),
-        matching: find.byType(Badge),
-      ),
-    );
-    if (!b.isLabelVisible) return null;
-    return int.parse(((b.label! as ExcludeSemantics).child! as Text).data!);
+    final int n = t.widget<AuraAddButton>(find.byType(AuraAddButton)).count;
+    return n > 0 ? n : null;
   }
 
   void expectHomeListsNoNearby() {

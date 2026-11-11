@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../design/components/aura_add_button.dart';
 import '../../design/canvas/ambient_canvas.dart';
 import '../../design/components/glass_controls.dart';
 import '../../design/glass/glass_surface.dart';
@@ -81,7 +82,7 @@ class FirmwareUpdateScreen extends StatelessWidget {
               ),
               const SizedBox(height: Space.l),
               if (onRetry != null)
-                FilledButton(onPressed: onRetry, child: Text(l.tryAgain)),
+                AuraButton(onPressed: onRetry, child: Text(l.tryAgain)),
               if (onForget != null)
                 TextButton(onPressed: onForget, child: Text(l.forgetLight)),
             ],
