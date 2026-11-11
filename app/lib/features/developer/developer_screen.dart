@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/providers.dart';
 import '../../core/model/fixture.dart';
@@ -46,19 +47,43 @@ class DeveloperScreen extends ConsumerWidget {
 
 /// A quiet credit line at the foot of the developer pages.
 class DeveloperCredit extends StatelessWidget {
-  const DeveloperCredit({super.key});
+  const DeveloperCredit({super.key, this.subtle = false});
+
+  /// A fainter, smaller footnote for the welcome screen.
+  final bool subtle;
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: Space.l, bottom: Space.s),
-    child: Opacity(
-      opacity: 0.45,
-      child: Text(
-        'Developer · @rohit_josan12',
-        textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.bodySmall,
+    padding: subtle
+        ? EdgeInsets.zero
+        : const EdgeInsets.only(top: Space.l, bottom: Space.s),
+    child: Semantics(
+      link: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => unawaited(
+          launchUrl(_instagram, mode: LaunchMode.externalApplication),
+        ),
+        child: Opacity(
+          opacity: subtle ? 0.28 : 0.45,
+          child: Text(
+            'Developer · @rohit_josan12',
+            textAlign: TextAlign.center,
+            style: subtle
+                ? Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w400,
+                    letterSpacing: 0.2,
+                  )
+                : Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
       ),
     ),
+  );
+
+  static final Uri _instagram = Uri.parse(
+    'https://www.instagram.com/rohit_josan12/',
   );
 }
 

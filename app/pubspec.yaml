@@ -22,6 +22,7 @@ dependencies:
   meta: ^1.19.0
   path_provider: ^2.1.6
   shared_preferences: ^2.5.5 # one-time import of the previous app's data only
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:
