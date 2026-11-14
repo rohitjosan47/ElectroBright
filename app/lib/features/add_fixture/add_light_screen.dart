@@ -625,15 +625,21 @@ class _Found extends StatelessWidget {
                 const SizedBox(height: Space.m),
                 FlashAction(
                   builder: (_, Widget icon, VoidCallback flash) =>
-                      OutlinedButton.icon(
+                      AuraButton(
                         onPressed: identifying
                             ? null
                             : () {
                                 flash();
                                 onIdentify();
                               },
-                        icon: icon,
-                        label: Text(l.addIdentify),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            icon,
+                            const SizedBox(width: 8),
+                            Flexible(child: Text(l.addIdentify)),
+                          ],
+                        ),
                       ),
                 ),
               ],

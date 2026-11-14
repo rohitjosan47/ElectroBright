@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +12,7 @@ import '../../design/components/glass_controls.dart';
 import '../../design/haptics/haptics.dart';
 import '../../design/haptics/haptics_scope.dart';
 import '../../design/tokens/tokens.dart';
+import '../../core/color/light_tone.dart';
 import '../../design/tone/tone_scope.dart';
 import '../../drivers/electrobright/eb_types.dart';
 import '../../l10n/app_localizations.dart';
@@ -290,20 +292,237 @@ Future<void> showSleepTimerSheet(
   required String spanKey,
   required Future<String?> Function(Duration d) onStart,
   required Future<String?> Function() onCancel,
-}) => showModalBottomSheet<void>(
-  context: context,
-  isScrollControlled: true,
-  showDragHandle: true,
-  builder: (BuildContext ctx) => ToneScope(
-    tone: ToneScope.of(context),
-    child: _TimerSheet(
-      deadline: deadline,
-      spanKey: spanKey,
-      onStart: onStart,
-      onCancel: onCancel,
+}) {
+  final NavigatorState nav = Navigator.of(context);
+  return nav.push(
+    _BlurredSheetRoute<void>(
+      barrierLabel: MaterialLocalizations.of(context).scrimLabel,
+      isScrollControlled: true,
+      // Own drag handle (below), drawn above the sheet's heavy blur.
+      showDragHandle: false,
+      // No dark dim: the screen behind is softly blurred instead.
+      modalBarrierColor: Colors.transparent,
+      builder: (BuildContext ctx) => _LiveTone(
+        outer: context,
+        child: Stack(
+          children: <Widget>[
+            // Heavy blur only where the sheet covers the screen (on top of
+            // the soft blur everywhere), so nothing behind it distracts.
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(28),
+                ),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            ),
+            // Fully opaque from the bottom up to the Start button, then
+            // fading into the translucent upper part (both modes).
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Builder(
+                  builder: (BuildContext c) {
+                    final Color solid =
+                        Theme.of(c).brightness == Brightness.dark
+                        ? const Color(0xFF08090B)
+                        : const Color(0xFFFFFFFF);
+                    return DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(28),
+                        ),
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: <Color>[
+                            solid.withValues(alpha: 0),
+                            solid.withValues(alpha: 0),
+                            solid,
+                            solid,
+                          ],
+                          stops: const <double>[0, 0.55, 0.76, 1],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            // Hairline along the rounded top edge, so the sheet separates
+            // from the background in both modes.
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: _TopHairline(
+                    Theme.of(ctx).brightness == Brightness.dark
+                        ? const Color(0x2EFFFFFF)
+                        : const Color(0x1F000000),
+                  ),
+                ),
+              ),
+            ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 22),
+                  child: Container(
+                    width: 32,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant
+                          .withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                _TimerSheet(
+                  deadline: deadline,
+                  spanKey: spanKey,
+                  onStart: onStart,
+                  onCancel: onCancel,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     ),
-  ),
-);
+  );
+}
+
+/// Passes the control screen's light palette into the sheet, and keeps it
+/// matching the current light/dark theme: after a theme switch it rebuilds
+/// until the screen's palette has caught up, showing a neutral palette for
+/// that frame instead of a stale one.
+class _LiveTone extends StatefulWidget {
+  const _LiveTone({required this.outer, required this.child});
+
+  final BuildContext outer;
+  final Widget child;
+
+  @override
+  State<_LiveTone> createState() => _LiveToneState();
+}
+
+class _LiveToneState extends State<_LiveTone> {
+  int _retries = 0; // bounded, so a mismatch can never spin forever
+
+  @override
+  Widget build(BuildContext context) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    LightTone tone = widget.outer.mounted
+        ? ToneScope.of(widget.outer)
+        : LightTone.neutral(dark: dark);
+    if (tone.dark != dark) {
+      tone = LightTone.neutral(dark: dark);
+      if (_retries++ < 60) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() {});
+        });
+      }
+    } else {
+      _retries = 0;
+    }
+    return ToneScope(tone: tone, child: widget.child);
+  }
+}
+
+/// A hairline along a sheet's top edge and its 28 pt rounded corners.
+class _TopHairline extends CustomPainter {
+  const _TopHairline(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const double r = 28;
+    final Path edge = Path()
+      ..moveTo(0.25, r)
+      ..arcToPoint(const Offset(r, 0.25), radius: const Radius.circular(r))
+      ..lineTo(size.width - r, 0.25)
+      ..arcToPoint(
+        Offset(size.width - 0.25, r),
+        radius: const Radius.circular(r),
+      );
+    canvas.drawPath(
+      edge,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.5
+        ..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_TopHairline o) => o.color != color;
+}
+
+/// A bottom sheet whose backdrop blurs the screen behind it (under the
+/// sheet), easing in and out with the sheet's own open, close and drag.
+class _BlurredSheetRoute<T> extends ModalBottomSheetRoute<T> {
+  _BlurredSheetRoute({
+    required super.builder,
+    required super.isScrollControlled,
+    super.capturedThemes,
+    super.barrierLabel,
+    super.modalBarrierColor,
+    super.showDragHandle,
+  });
+
+  // The sheet's colour follows the current theme live, so switching
+  // light/dark while the sheet is open repaints it correctly.
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    // Translucent over the blur: 78% white (light), 95% near-black (dark).
+    final Color fill = theme.brightness == Brightness.dark
+        ? const Color(0xF208090B)
+        : const Color(0xC7FFFFFF);
+    return Theme(
+      data: theme.copyWith(
+        bottomSheetTheme: theme.bottomSheetTheme.copyWith(
+          backgroundColor: fill,
+          modalBackgroundColor: fill,
+        ),
+      ),
+      child: super.buildPage(context, animation, secondaryAnimation),
+    );
+  }
+
+  @override
+  Widget buildModalBarrier() => Stack(
+    fit: StackFit.expand,
+    children: <Widget>[
+      IgnorePointer(
+        child: AnimatedBuilder(
+          animation: animation!,
+          builder: (BuildContext context, Widget? child) {
+            // Reaches full blur in the first 40% of the slide.
+            final double t = const Interval(
+              0,
+              0.4,
+              curve: Curves.easeOut,
+            ).transform(animation!.value.clamp(0.0, 1.0));
+            if (t == 0) return const SizedBox.expand();
+            return BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10 * t, sigmaY: 10 * t),
+              child: const SizedBox.expand(),
+            );
+          },
+        ),
+      ),
+      super.buildModalBarrier(),
+    ],
+  );
+}
 
 class _TimerSheet extends ConsumerStatefulWidget {
   const _TimerSheet({

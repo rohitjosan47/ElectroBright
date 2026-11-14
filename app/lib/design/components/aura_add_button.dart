@@ -8,13 +8,6 @@ import '../haptics/haptics.dart';
 import '../haptics/haptics_scope.dart';
 import '../tokens/tokens.dart';
 
-/// Light theme body: a soft, light candy sky blue.
-const Color _skyTop = Color(0xFFE8F5FF);
-const Color _skyBottom = Color(0xFFCBE7FC);
-
-/// Deep navy that tints the dark theme's liquid glass.
-const Color _darkGlassTint = Color(0xFF1F2B48);
-
 /// "Add light": an [AuraButton] with the plus and the nearby-count badge.
 ///
 /// - Badge: lights nearby that are not added yet. The number rolls up or
@@ -257,7 +250,7 @@ class _AuraButtonState extends State<AuraButton> with TickerProviderStateMixin {
     final PillGlass glass = PillFill.of(dark: dark);
     final IconData? icon = widget.icon;
     // Light: a deep sky-navy that sits softly on the sky-blue glass.
-    final Color ink = dark ? glass.ink : const Color(0xFF1E3A5F);
+    final Color ink = dark ? Colors.white : const Color(0xFF3A3F47);
 
     final Widget content = SizedBox(
       height: 48,
@@ -309,25 +302,30 @@ class _AuraButtonState extends State<AuraButton> with TickerProviderStateMixin {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(24),
               boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: glass.halo.withValues(alpha: 0.18),
-                  blurRadius: 18,
-                ),
+                // A very soft, faint light glow around the glass.
+                const BoxShadow(color: Color(0x0FFFFFFF), blurRadius: 14),
+                // Colourless glass: a neutral drop shadow.
                 const BoxShadow(
                   color: Color(0x99000000),
-                  blurRadius: 12,
-                  offset: Offset(0, 6),
+                  blurRadius: 14,
+                  offset: Offset(0, 8),
                 ),
               ],
             ),
             child: GlassSurface(
               tier: GlassTier.chrome,
               radius: 24,
-              tint: _darkGlassTint,
+              // Clear, frosted glass that takes the background's colour.
+              tint: const Color(0xFF1C1E23),
+              liquid: true,
               child: content,
             ),
           )
         : CustomPaint(painter: _LightBodyPainter(glass), child: content);
+    final Widget shiny = CustomPaint(
+      foregroundPainter: _ShinyRim(dark: dark),
+      child: body,
+    );
 
     final Widget capsule = AnimatedBuilder(
       animation: Listenable.merge(<Listenable>[_drift, _pressCurve, _release]),
@@ -358,7 +356,7 @@ class _AuraButtonState extends State<AuraButton> with TickerProviderStateMixin {
           ),
         );
       },
-      child: body,
+      child: shiny,
     );
 
     return Semantics(
@@ -382,7 +380,7 @@ class _AuraButtonState extends State<AuraButton> with TickerProviderStateMixin {
   }
 }
 
-/// Light theme body: soft blue glass with a top highlight (no shadow).
+/// Light theme body: clear frosted glass (shadow and rim drawn outside).
 class _LightBodyPainter extends CustomPainter {
   const _LightBodyPainter(this.glass);
 
@@ -391,26 +389,200 @@ class _LightBodyPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final Rect rect = Offset.zero & size;
-    final RRect pill = RRect.fromRectAndRadius(
-      rect,
-      Radius.circular(size.height / 2),
+    RRect pill(double inset) => RRect.fromRectAndRadius(
+      rect.deflate(inset),
+      Radius.circular(size.height / 2 - inset),
     );
+
+    // Polished metal bezel, light steel. The base is lighter on top and
+    // a little deeper at the bottom; glints and dark reflections are
+    // scattered unevenly, different on the top and bottom edges, so no
+    // two parts of the rim look the same.
+    final RRect rim = pill(1.2);
     canvas.drawRRect(
-      pill,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          // Light candy sky blue, a touch deeper at the bottom.
-          colors: <Color>[_skyTop, _skyBottom],
-        ).createShader(rect),
-    );
-    canvas.drawRRect(
-      pill.deflate(0.5),
+      rim,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1
-        ..color = glass.halo.withValues(alpha: 0.10),
+        ..strokeWidth = 2
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: <Color>[
+            Color(0xFFDDE0E4),
+            Color(0xFFC6C9CE),
+            Color(0xFFB9BDC3),
+          ],
+          stops: <double>[0, 0.55, 1],
+        ).createShader(rect),
+    );
+    void streaks(
+      Rect clip,
+      List<double> stops,
+      List<double> alphas,
+      Color tone,
+      double width, {
+      double blur = 0,
+    }) {
+      canvas.save();
+      canvas.clipRect(clip);
+      final Paint paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width
+        ..shader = LinearGradient(
+          colors: <Color>[
+            for (final double a in alphas) tone.withValues(alpha: a * tone.a),
+          ],
+          stops: stops,
+        ).createShader(rect);
+      paint.maskFilter = MaskFilter.blur(BlurStyle.normal, math.max(blur, 0.7));
+      canvas.drawRRect(rim, paint);
+      canvas.restore();
+    }
+
+    final Rect top = Rect.fromLTRB(-4, -4, size.width + 4, size.height * 0.5);
+    final Rect bottom = Rect.fromLTRB(
+      -4,
+      size.height * 0.5,
+      size.width + 4,
+      size.height + 4,
+    );
+    const Color steel = Color(0x402A2D33); // dark reflections at ~25%
+    // Controlled highlights, as from one key light at the top left with
+    // a softer fill from the bottom right: a main glint on each edge, one
+    // gentle secondary, and two small, soft shadows opposite them.
+    streaks(
+      top,
+      const <double>[0, 0.06, 0.28, 0.42, 0.55, 0.68, 1],
+      const <double>[0.7, 1, 0, 0, 0.35, 0, 0],
+      Colors.white,
+      1.3,
+    );
+    streaks(
+      bottom,
+      const <double>[0, 0.24, 0.36, 0.48, 0.7, 0.92, 1],
+      const <double>[0, 0, 0.3, 0, 0, 0.9, 0.6],
+      Colors.white,
+      1.3,
+    );
+    // Soft bloom around the two main glints.
+    streaks(
+      top,
+      const <double>[0, 0.07, 0.22, 1],
+      const <double>[0.45, 0.6, 0, 0],
+      Colors.white,
+      2.6,
+      blur: 1.6,
+    );
+    streaks(
+      bottom,
+      const <double>[0, 0.76, 0.92, 1],
+      const <double>[0, 0, 0.5, 0.35],
+      Colors.white,
+      2.6,
+      blur: 1.6,
+    );
+    // Shadows: top right and bottom left only, faint and smooth.
+    streaks(
+      top,
+      const <double>[0, 0.7, 0.85, 1],
+      const <double>[0, 0, 0.35, 0.15],
+      steel,
+      1.1,
+    );
+    streaks(
+      bottom,
+      const <double>[0, 0.12, 0.3, 1],
+      const <double>[0.2, 0.35, 0, 0],
+      steel,
+      1.1,
+    );
+
+    // Thin bright lip just inside the bezel.
+    canvas.drawRRect(
+      pill(2.8),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.7
+        ..color = const Color(0xB3FFFFFF),
+    );
+
+    // Glass body: bright top half, a soft gloss break at the middle, and a
+    // light grey lower half catching reflected light.
+    final RRect body = pill(3.4);
+    canvas.drawRRect(
+      body,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: <Color>[
+            Color(0xFFFDFDFE),
+            Color(0xFFF6F7F9),
+            Color(0xFFEEF0F3),
+            Color(0xFFF1F2F5),
+            Color(0xFFF6F7F9),
+          ],
+          stops: <double>[0, 0.38, 0.62, 0.85, 1],
+        ).createShader(body.outerRect),
+    );
+
+    canvas.save();
+    canvas.clipRRect(body);
+    final double h = size.height;
+    final double w = size.width;
+    void reflection(Rect r, List<Color> colors, double blur) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(r, Radius.circular(r.height / 2)),
+        Paint()
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, blur * 2)
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: colors,
+          ).createShader(r),
+      );
+    }
+
+    // Broad, soft reflection of the sky across the top.
+    reflection(Rect.fromLTWH(h * 0.28, 3, w - h * 0.56, h * 0.4), <Color>[
+      Colors.white.withValues(alpha: 0.75),
+      Colors.white.withValues(alpha: 0),
+    ], 2.5);
+    // Light bouncing up from below, along the bottom.
+    reflection(Rect.fromLTWH(h * 0.5, h * 0.66, w - h, h * 0.24), <Color>[
+      Colors.white.withValues(alpha: 0),
+      Colors.white.withValues(alpha: 0.55),
+    ], 3);
+    // Two soft diagonal window reflections near the left.
+    for (final (double x, double width, double a) in <(double, double, double)>[
+      (0.2, 0.06, 0.32),
+      (0.29, 0.025, 0.24),
+    ]) {
+      canvas.save();
+      canvas.translate(w * x, 0);
+      canvas.skew(-0.45, 0);
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, w * width, h),
+        Paint()
+          ..color = Colors.white.withValues(alpha: a)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+      );
+      canvas.restore();
+    }
+    canvas.restore();
+
+    // Sparkle near the top left of the glass.
+    final Offset spark = Offset(size.height * 0.62, size.height * 0.2);
+    canvas.drawCircle(
+      spark,
+      4,
+      Paint()
+        ..shader = RadialGradient(
+          colors: <Color>[
+            Colors.white.withValues(alpha: 0.7),
+            Colors.white.withValues(alpha: 0),
+          ],
+        ).createShader(Rect.fromCircle(center: spark, radius: 4)),
     );
   }
 
@@ -568,8 +740,11 @@ class _NearbyBadgeState extends State<NearbyBadge>
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    // Light mode: a vivid brand blue (the theme's primary reads dull there).
+    final Color base = dark ? scheme.primary : const Color(0xFF3B7BFF);
     final TextStyle digits = TextStyle(
-      color: scheme.onPrimary,
+      color: dark ? scheme.onPrimary : Colors.white,
       fontSize: 11,
       fontWeight: FontWeight.w700,
       height: 1,
@@ -621,7 +796,7 @@ class _NearbyBadgeState extends State<NearbyBadge>
               borderRadius: BorderRadius.circular(11),
               boxShadow: <BoxShadow>[
                 BoxShadow(
-                  color: scheme.primary.withValues(alpha: 0.20 + 0.30 * b),
+                  color: base.withValues(alpha: 0.20 + 0.30 * b),
                   blurRadius: 4 + 8 * b,
                 ),
               ],
@@ -644,8 +819,8 @@ class _NearbyBadgeState extends State<NearbyBadge>
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: <Color>[
-                Color.lerp(scheme.primary, Colors.white, 0.25)!,
-                scheme.primary,
+                Color.lerp(base, Colors.white, 0.25)!,
+                base,
               ],
             ),
             border: Border.all(
@@ -673,4 +848,75 @@ class _NearbyBadgeState extends State<NearbyBadge>
       ),
     );
   }
+}
+
+/// A crisp, shiny glass edge: bright where light hits (top and bottom
+/// right), dim along the sides, plus a faint inner line for thickness.
+class _ShinyRim extends CustomPainter {
+  const _ShinyRim({required this.dark});
+
+  final bool dark;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (!dark) return;
+    final Rect rect = Offset.zero & size;
+    final RRect pill = RRect.fromRectAndRadius(
+      rect,
+      Radius.circular(size.height / 2),
+    );
+    // Key light from the top left: a thin highlight that fades out
+    // across the top, plus a weaker bounce at the bottom right.
+    canvas.drawRRect(
+      pill.deflate(0.6),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.1
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: const Alignment(0.5, 1),
+          colors: <Color>[
+            Colors.white.withValues(alpha: dark ? 0.55 : 0.95),
+            Colors.white.withValues(alpha: dark ? 0.14 : 0.45),
+            Colors.white.withValues(alpha: 0),
+          ],
+          stops: const <double>[0, 0.4, 0.8],
+        ).createShader(rect),
+    );
+    canvas.drawRRect(
+      pill.deflate(0.6),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.8
+        ..shader = LinearGradient(
+          begin: const Alignment(0.2, -0.2),
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            Colors.white.withValues(alpha: 0),
+            Colors.white.withValues(alpha: dark ? 0.22 : 0.6),
+          ],
+        ).createShader(rect),
+    );
+    // Inner line: the glass's thickness.
+    canvas.drawRRect(
+      pill.deflate(2.5),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = (dark ? Colors.white : Colors.black).withValues(
+          alpha: dark ? 0.06 : 0.05,
+        ),
+    );
+    // Outer hairline so the edge reads on any background.
+    canvas.drawRRect(
+      pill,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.6
+        ..color = Colors.black.withValues(alpha: dark ? 0.35 : 0.14),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ShinyRim o) => o.dark != dark;
 }

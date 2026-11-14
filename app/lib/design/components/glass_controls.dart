@@ -89,10 +89,12 @@ class _GlassIconButtonState extends State<GlassIconButton> {
                     widget.onPressed!();
                   }
                 : null,
+            // Press: a quick squeeze. Release: a springy bounce back past
+            // full size (jelly feel), with no extra GPU work.
             child: AnimatedScale(
-              scale: _down ? 0.9 : 1,
-              duration: Motion.fast,
-              curve: Motion.emphasized,
+              scale: _down ? 0.86 : 1,
+              duration: _down ? Motion.fast : const Duration(milliseconds: 420),
+              curve: _down ? Motion.emphasized : Curves.easeOutBack,
               child: Opacity(
                 opacity: enabled ? 1 : 0.4,
                 child: SizedBox.square(

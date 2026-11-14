@@ -129,7 +129,7 @@ class GlassSurface extends StatelessWidget {
           thickness: 18,
           blur: 6,
         ),
-        child: child,
+        child: _withSheen(child, dark: true),
       );
     }
 
